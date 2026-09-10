@@ -1,0 +1,71 @@
+/* Tiptap Editor Styles */
+.ProseMirror {
+    min-height: 400px;
+    padding: 1rem;
+    outline: none;
+}
+
+.ProseMirror p.is-editor-empty:first-child::before {
+    color: #adb5bd;
+    content: attr(data-placeholder);
+    float: left;
+    height: 0;
+    pointer-events: none;
+}
+
+.ProseMirror h1 {
+    font-size: 1.5em;
+    font-weight: 700;
+    margin-top: 1.5em;
+    margin-bottom: 0.5em;
+    color: #1e293b;
+    border-bottom: 2px solid #e2e8f0;
+    padding-bottom: 0.3em;
+}
+
+.ProseMirror h2 {
+    font-size: 1.3em;
+    font-weight: 700;
+    margin-top: 1.5em;
+    margin-bottom: 0.5em;
+    color: #1e293b;
+}
+
+.ProseMirror h3 {
+    font-size: 1.1em;
+    font-weight: 600;
+    margin-top: 1.2em;
+    margin-bottom: 0.5em;
+    color: #334155;
+}
+
+.ProseMirror p {
+    margin-bottom: 1em;
+    line-height: 1.8;
+    color: #334155;
+}
+
+.ProseMirror ul,
+.ProseMirror ol {
+    margin: 1em 0;
+    padding-left: 2em;
+}
+
+.ProseMirror li {
+    margin-bottom: 0.5em;
+    line-height: 1.6;
+}
+
+.ProseMirror strong {
+    font-weight: 600;
+    color: #1e293b;
+}
+
+.ProseMirror em {
+    font-style: italic;
+    color: #475569;
+}
+
+.ProseMirror:focus {
+    outline: none;
+}
