@@ -8,15 +8,15 @@ import { isValidAiSessionId } from "@/app/lib/ai-session";
 const API_KEY = process.env.OPENROUTER_API_KEY || "";
 const BASE_URL = "https://openrouter.ai/api/v1";
 const MODELS: Record<string, string> = {
-  segment: "qwen/qwen3.8-27b:free",
-  full: "qwen/qwen3.8-27b:free",
-  qa: "qwen/qwen3.8-27b:free",
-  fill_placeholders: "qwen/qwen3.8-27b:free",
-  detect_fill: "qwen/qwen3.8-27b:free",
-  extract_json: "qwen/qwen3.8-27b:free",
+  segment: "nvidia/nemotron-3-super-120b-a12b:free",
+  full: "nvidia/nemotron-3-super-120b-a12b:free",
+  qa: "nvidia/nemotron-3-super-120b-a12b:free",
+  fill_placeholders: "nvidia/nemotron-3-super-120b-a12b:free",
+  detect_fill: "nvidia/nemotron-3-super-120b-a12b:free",
+  extract_json: "nvidia/nemotron-3-super-120b-a12b:free",
 };
-const DEFAULT_MODEL = "qwen/qwen3.8-27b:free";
-const FALLBACK_MODELS = ["qwen/qwen3.8-27b:free"];
+const DEFAULT_MODEL = "nvidia/nemotron-3-super-120b-a12b:free";
+const FALLBACK_MODELS = ["nvidia/nemotron-3-super-120b-a12b:free"];
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
