@@ -8,15 +8,15 @@ import { isValidAiSessionId } from "@/app/lib/ai-session";
 const API_KEY = process.env.GOOGLE_AI_API_KEY || "";
 const BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai";
 const MODELS = {
-  segment: "gemini-2.5-flash",
-  full: "gemini-2.5-flash",
-  qa: "gemini-2.5-flash",
-  fill_placeholders: "gemini-2.5-flash",
-  detect_fill: "gemini-2.5-flash",
-  extract_json: "gemini-2.5-flash",
+  segment: "gemini-3.7-flash",
+  full: "gemini-3.7-flash",
+  qa: "gemini-3.7-flash",
+  fill_placeholders: "gemini-3.7-flash",
+  detect_fill: "gemini-3.7-flash",
+  extract_json: "gemini-3.7-flash",
 };
-const DEFAULT_MODEL = "gemini-2.5-flash";
-const FALLBACK_MODELS = ["gemini-2.5-flash"];
+const DEFAULT_MODEL = "gemini-3.7-flash";
+const FALLBACK_MODELS = ["gemini-3.6-flash"];
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
