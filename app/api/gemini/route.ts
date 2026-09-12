@@ -5,18 +5,18 @@ import { stripCjk, stripThinking } from "@/app/lib/text";
 import { parseAiJson } from "@/app/lib/json-parser";
 import { isValidAiSessionId } from "@/app/lib/ai-session";
 
-const API_KEY = process.env.OPENROUTER_API_KEY || "";
-const BASE_URL = "https://openrouter.ai/api/v1";
-const MODELS: Record<string, string> = {
-  segment: "nvidia/nemotron-3-super-120b-a12b:free",
-  full: "nvidia/nemotron-3-super-120b-a12b:free",
-  qa: "nvidia/nemotron-3-super-120b-a12b:free",
-  fill_placeholders: "nvidia/nemotron-3-super-120b-a12b:free",
-  detect_fill: "nvidia/nemotron-3-super-120b-a12b:free",
-  extract_json: "nvidia/nemotron-3-super-120b-a12b:free",
+const API_KEY = process.env.GOOGLE_AI_API_KEY || "";
+const BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai";
+const MODELS = {
+  segment: "gemini-2.5-flash",
+  full: "gemini-2.5-flash",
+  qa: "gemini-2.5-flash",
+  fill_placeholders: "gemini-2.5-flash",
+  detect_fill: "gemini-2.5-flash",
+  extract_json: "gemini-2.5-flash",
 };
-const DEFAULT_MODEL = "nvidia/nemotron-3-super-120b-a12b:free";
-const FALLBACK_MODELS = ["nvidia/nemotron-3-super-120b-a12b:free"];
+const DEFAULT_MODEL = "gemini-2.5-flash";
+const FALLBACK_MODELS = ["gemini-2.0-flash"];
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -55,8 +55,6 @@ async function generateWithRetry(prompt: string, model: string, mode: string, se
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${API_KEY}`,
-          "HTTP-Referer": "https://smart-noting.vercel.app",
-          "X-Title": "Smart Meeting Assistant",
         },
         body: JSON.stringify({
           model: model,
