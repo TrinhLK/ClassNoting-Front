@@ -106,17 +106,15 @@ export default function DashboardState({
     const unsubscribe = onSnapshot(q, async () => {
       try {
         const { getAllDraftsMeta } = await import("../lib/indexedDB");
-        const [paginated, allCloud, localDrafts] = await Promise.all([
-          getMeetingsPaginated(user.uid, undefined, false),
+        const [allCloud, localDrafts] = await Promise.all([
           getAllMeetings(user.uid),
           getAllDraftsMeta(user.uid),
         ]);
-        const cloudActive = paginated.meetings.filter(m => !m.isMinuteOnly);
+        const cloudActive = allCloud.filter(m => !m.isDeleted && !m.isMinuteOnly);
         const cloudTrash = allCloud.filter(m => m.isDeleted);
         const all = [...localDrafts, ...cloudActive, ...cloudTrash].sort((a, b) => b.createdAt - a.createdAt);
         setMeetings(all);
-        setLastDoc(paginated.lastDoc);
-        setHasMore(paginated.hasMore);
+        setHasMore(false);
         setLoading(false);
 
         if (localDrafts.length > 0 && !hasShownDraftWarning.current) {

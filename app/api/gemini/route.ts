@@ -220,6 +220,8 @@ export async function POST(req: Request) {
       Bạn là chuyên gia ghi chép biên bản cuộc họp theo thời gian thực (Live-taker).
       Nhiệm vụ: Tóm tắt đoạn hội thoại mới nhất ("VĂN BẢN MỚI") để nối tiếp vào biên bản ("NGỮ CẢNH").
 
+      ⚠️ QUAN TRỌNG: TUYỆT ĐỐI CHỈ TRẢ LỜI BẰNG TIẾNG VIỆT. KHÔNG được dùng tiếng Anh hay bất kỳ ngôn ngữ nào khác.
+
       QUY TRÌNH TƯ DUY (Không in ra):
       1. So sánh "VĂN BẢN MỚI" với "NGỮ CẢNH" xem có thông tin gì thực sự mới không.
       2. Nếu "VĂN BẢN MỚI" chỉ là lặp lại ý cũ, lời ậm ừ, hoặc các câu đệm vô nghĩa -> Bỏ qua.
@@ -230,7 +232,8 @@ export async function POST(req: Request) {
       - Chỉ xuất ra thông tin mới (Incremental Update).
       - Nếu đoạn văn bản vô nghĩa hoặc lặp hoàn toàn -> Trả về rỗng hoặc câu cực ngắn.
       - Không dùng các từ nối rườm rà như "Tiếp theo", "Sau đó", "Ông ấy nói rằng". Đi thẳng vào nội dung.
-      - Giữ nguyên thuật ngữ chuyên ngành.
+      - Giữ nguyên thuật ngữ chuyên ngành hoặc tên gọi.
+      - CHỈ SỬ DỤNG TIẾNG VIỆT trong toàn bộ output.
 
       -----
       NGỮ CẢNH (Những gì đã diễn ra trước đó):
