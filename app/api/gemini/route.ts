@@ -17,10 +17,6 @@ const MODELS: Record<string, string> = {
 };
 const DEFAULT_MODEL = "qwen/qwen3.8-27b:free";
 const FALLBACK_MODELS = ["qwen/qwen3.8-27b:free"];
-const BODY_OPTIONS_BY_MODE: Record<string, Record<string, unknown>> = {
-  segment: { reasoning: false },
-  full: { reasoning: false },
-};
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -66,7 +62,6 @@ async function generateWithRetry(prompt: string, model: string, mode: string, se
           model: model,
           messages: [{ role: "user", content: prompt }],
           max_tokens: 16384,
-          ...(BODY_OPTIONS_BY_MODE[mode] || {}),
         }),
       });
       logDiagnostic("headers", diagnostic, { ...metadata, status: response.status, headersMs: performance.now() - startedAt });
