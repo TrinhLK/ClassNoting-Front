@@ -159,6 +159,7 @@ export const requestSegmentSummary = async (text: string, sessionId: string, pre
       mode: "segment"
     });
     if (data.summary) return data.summary;
+    console.warn("[requestSegmentSummary] Empty summary returned:", JSON.stringify(data).slice(0, 200));
     return "";
   } catch (e) {
     console.error("Lỗi Live Summary:", e);

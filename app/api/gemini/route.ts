@@ -440,12 +440,19 @@ export async function POST(req: Request) {
       `;
     }
 
-    const summary = stripCjk(await generateWithFallback(prompt, chosenModels, mode, sessionId, requestId));
+    const rawResult = await generateWithFallback(prompt, chosenModels, mode, sessionId, requestId);
+    console.log("[gemini]", { event: "segment_result", requestId, rawLength: rawResult.length, preview: rawResult.slice(0, 100) });
+    const summary = stripCjk(rawResult);
+    console.log("[gemini]", { event: "after_stripCjk", requestId, finalLength: summary.length });
     return NextResponse.json({ summary });
 
   } catch (error: any) {
-    console.error("[gemini]", { event: "route_failure", requestId });
-    const errorMessage = error.status === 503
+    console.error("[gemini]", { event: "route_failure", requestId, message: error.message, status: error.status });
+    const errorMessage = error.status === 403
+      ? "Model AI bị chặn vùng. Vui lòng liên hệ quản trị."
+      : error.status === 401
+      ? "API key không hợp lệ hoặc chưa có phương thức thanh toán."
+      : error.status === 503
       ? "Hệ thống AI đang quá tải, vui lòng thử lại sau."
       : (error.message || "Lỗi xử lý AI.");
     return NextResponse.json({ error: errorMessage, detail: error.message }, { status: 500 });
