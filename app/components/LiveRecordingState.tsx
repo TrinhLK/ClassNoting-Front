@@ -308,11 +308,15 @@ export default function LiveRecordingState({
         });
 
         if (liveSessionIdRef.current) {
-          await updateLiveSession(
-            liveSessionIdRef.current,
-            finalSegments,
-            finalSummary
-          );
+          try {
+            await updateLiveSession(
+              liveSessionIdRef.current,
+              finalSegments,
+              finalSummary
+            );
+          } catch (lsErr) {
+            console.warn("⚠️ Auto-save Live Session thất bại — dữ liệu vẫn giữ ở IndexedDB:", lsErr);
+          }
         }
 
         // B. Save Audio Chunks (Incremental)
@@ -454,16 +458,22 @@ export default function LiveRecordingState({
         setLiveSessionId(newSessionId);
         liveSessionIdRef.current = newSessionId;
 
-        await createLiveSession({
-          id: newSessionId,
-          hostId: user.uid,
-          title: meetingTitle.trim() || `Live Meeting ${new Date().toLocaleString('vi-VN')}`,
-          language: language,
-          segments: [],
-          summary: "",
-          status: "live",
-          startedAt: Date.now()
-        });
+        try {
+          await createLiveSession({
+            id: newSessionId,
+            hostId: user.uid,
+            title: meetingTitle.trim() || `Live Meeting ${new Date().toLocaleString('vi-VN')}`,
+            language: language,
+            segments: [],
+            summary: "",
+            status: "live",
+            startedAt: Date.now()
+          });
+        } catch (sessionErr) {
+          console.warn("⚠️ Không tạo được Live Session trên Firestore — ghi âm vẫn tiếp tục:", sessionErr);
+          liveSessionIdRef.current = null;
+          setLiveSessionId(null);
+        }
       }
 
       let finalStream: MediaStream;

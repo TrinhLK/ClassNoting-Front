@@ -16,7 +16,7 @@ const MODELS = {
   extract_json: "gemini-2.5-flash",
 };
 const DEFAULT_MODEL = "gemini-2.5-flash";
-const FALLBACK_MODELS = ["gemini-2.0-flash"];
+const FALLBACK_MODELS = ["gemini-2.5-flash"];
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
