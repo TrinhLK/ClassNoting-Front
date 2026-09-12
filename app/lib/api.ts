@@ -162,6 +162,11 @@ export const requestSegmentSummary = async (text: string, sessionId: string, pre
     return "";
   } catch (e) {
     console.error("Lỗi Live Summary:", e);
+    const msg = (e as Error).message || "Không xác định";
+    if (typeof window !== "undefined") {
+      const { toast } = await import("sonner");
+      toast.error("Lỗi tóm tắt: " + msg);
+    }
     return "";
   }
 };

@@ -104,25 +104,28 @@ export default function DashboardState({
       orderBy("createdAt", "desc")
     );
     const unsubscribe = onSnapshot(q, async () => {
-      // Trigger reload when any meeting data changes in Firestore
-      // This catches all status updates, deletes, etc.
-      const { getAllDraftsMeta } = await import("../lib/indexedDB");
-      const [paginated, allCloud, localDrafts] = await Promise.all([
-        getMeetingsPaginated(user.uid, undefined, false),
-        getAllMeetings(user.uid),
-        getAllDraftsMeta(user.uid),
-      ]);
-      const cloudActive = paginated.meetings.filter(m => !m.isMinuteOnly);
-      const cloudTrash = allCloud.filter(m => m.isDeleted);
-      const all = [...localDrafts, ...cloudActive, ...cloudTrash].sort((a, b) => b.createdAt - a.createdAt);
-      setMeetings(all);
-      setLastDoc(paginated.lastDoc);
-      setHasMore(paginated.hasMore);
-      setLoading(false);
+      try {
+        const { getAllDraftsMeta } = await import("../lib/indexedDB");
+        const [paginated, allCloud, localDrafts] = await Promise.all([
+          getMeetingsPaginated(user.uid, undefined, false),
+          getAllMeetings(user.uid),
+          getAllDraftsMeta(user.uid),
+        ]);
+        const cloudActive = paginated.meetings.filter(m => !m.isMinuteOnly);
+        const cloudTrash = allCloud.filter(m => m.isDeleted);
+        const all = [...localDrafts, ...cloudActive, ...cloudTrash].sort((a, b) => b.createdAt - a.createdAt);
+        setMeetings(all);
+        setLastDoc(paginated.lastDoc);
+        setHasMore(paginated.hasMore);
+        setLoading(false);
 
-      if (localDrafts.length > 0 && !hasShownDraftWarning.current) {
-        toast.info(`Bạn có ${localDrafts.length} bản nháp chưa lưu lên Cloud`);
-        hasShownDraftWarning.current = true;
+        if (localDrafts.length > 0 && !hasShownDraftWarning.current) {
+          toast.info(`Bạn có ${localDrafts.length} bản nháp chưa lưu lên Cloud`);
+          hasShownDraftWarning.current = true;
+        }
+      } catch (innerError) {
+        console.error("Error loading meetings in snapshot callback:", innerError);
+        setLoading(false);
       }
     }, (error) => {
       console.error("Snapshot error:", error);

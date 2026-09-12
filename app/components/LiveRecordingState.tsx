@@ -122,6 +122,7 @@ export default function LiveRecordingState({
   const wordCountRef = useRef(0);
 
   const isInterimActiveRef = useRef(false);
+  const flushDeferredCountRef = useRef(0);
 
   // 1. Hàm gọi API tóm tắt
   const flushBuffer = useCallback(async (force: boolean = false) => {
@@ -131,22 +132,28 @@ export default function LiveRecordingState({
     if (wordCountRef.current < minWords) return;
 
     if (!force && isInterimActiveRef.current) {
-      // Hẹn giờ check lại sau 2s
-      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-      silenceTimerRef.current = setTimeout(() => flushBuffer(false), 2000);
-      return;
+      flushDeferredCountRef.current += 1;
+      // Force flush nếu đã defer quá 5 lần (10s)
+      if (flushDeferredCountRef.current > 5) {
+        flushDeferredCountRef.current = 0;
+      } else {
+        if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+        silenceTimerRef.current = setTimeout(() => flushBuffer(false), 2000);
+        return;
+      }
     }
 
+    flushDeferredCountRef.current = 0;
 
     // UI Loading
     const currentId = Date.now();
-    const currentTimer = latestStateRef.current.timer; // Dùng ref để tránh stale closure khi setTimeout gọi
+    const currentTimer = latestStateRef.current.timer;
     const previewText = content.length > 50 ? content.substring(0, 50) + "..." : content;
     setSummaries(prev => [...prev, {
       id: currentId,
       content: `⏳ Đang xử lý: "${previewText}"`,
       isLoading: true,
-      timestamp: currentTimer // Lưu lại mốc thời gian
+      timestamp: currentTimer
     }]);
 
     // Reset Buffer
@@ -156,7 +163,12 @@ export default function LiveRecordingState({
 
     try {
       const sessionId = aiSessionIdRef.current ??= createAiSessionId("live");
-      const summary = await requestSegmentSummary(textToProcess, sessionId);
+      const prevSummary = latestStateRef.current.summaries
+        .filter(s => !s.isLoading)
+        .slice(-1)
+        .map(s => s.content)
+        .join("\n\n");
+      const summary = await requestSegmentSummary(textToProcess, sessionId, prevSummary);
       if (aiSessionIdRef.current !== sessionId) return;
       setSummaries(prev => prev.map(item =>
         item.id === currentId
@@ -605,8 +617,8 @@ export default function LiveRecordingState({
     setIsUploading(true);
 
     try {
-      // Chờ 1 chút để chunks được đẩy hết vào mảng
-      await new Promise(r => setTimeout(r, 500));
+      // Chờ足够 thời gian để MediaRecorder đẩy chunk cuối vào mảng
+      await new Promise(r => setTimeout(r, 1500));
 
       // 2. Tạo File MP3 từ Blob
       const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/mp3' });
