@@ -324,11 +324,6 @@ export default function LiveRecordingState({
           lastSavedChunkIndexRef.current = currentChunks.length;
         }
 
-        if (currentChunks.length > 100) {
-          audioChunksRef.current = [];
-          lastSavedChunkIndexRef.current = 0;
-        }
-
       } catch (e) {
         console.error("Auto-save failed:", e);
       }
@@ -617,13 +612,25 @@ export default function LiveRecordingState({
     setIsUploading(true);
 
     try {
-      // Chờ足够 thời gian để MediaRecorder đẩy chunk cuối vào mảng
+      // Chờ đủ thời gian để MediaRecorder đẩy chunk cuối vào mảng
       await new Promise(r => setTimeout(r, 1500));
 
-      // 2. Tạo File MP3 từ Blob
-      const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/mp3' });
-      const fileName = `Live Meeting ${new Date().toLocaleString('vi-VN').replace(/[:/]/g, '-')}.mp3`;
-      const file = new File([audioBlob], fileName, { type: 'audio/mp3' });
+      // 2. Load audio — ưu tiên từ IndexedDB (đã lưu đầy đủ qua auto-save)
+      let audioBlob: Blob;
+      try {
+        const { getDraftFull } = await import("../lib/indexedDB");
+        const draft = await getDraftFull(draftIdRef.current);
+        if (draft?.audioBlob && draft.audioBlob.size > 0) {
+          audioBlob = draft.audioBlob;
+        } else {
+          audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        }
+      } catch (err) {
+        console.error("Failed to load audio from IndexedDB:", err);
+        audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+      }
+      const fileName = `Live Meeting ${new Date().toLocaleString('vi-VN').replace(/[:/]/g, '-')}.webm`;
+      const file = new File([audioBlob], fileName, { type: audioBlob.type || 'audio/webm' });
 
       // 3. Upload lên Firebase Storage (Vẫn cần để nghe lại)
       const audioUrl = await uploadAudioToFirebase(file, user.uid);
