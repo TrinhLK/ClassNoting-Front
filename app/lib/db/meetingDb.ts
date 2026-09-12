@@ -1,7 +1,7 @@
 import { db } from "../firebase";
 import {
   collection, doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc,
-  query, where, orderBy, limit, startAfter, onSnapshot,
+  query, where, limit, onSnapshot,
   type QueryConstraint, type QueryDocumentSnapshot
 } from "firebase/firestore";
 import { Segment, Speaker, RAW_TRANSCRIPT_FILE, RAW_SUMMARY_FILE } from "../mockData";
@@ -79,7 +79,7 @@ export const PAGE_SIZE = 20;
 
 export const getMeetingsPaginated = async (
   userId: string,
-  cursor?: QueryDocumentSnapshot,
+  _cursor?: QueryDocumentSnapshot,
   deleted?: boolean
 ): Promise<{ meetings: Meeting[]; lastDoc: QueryDocumentSnapshot | null; hasMore: boolean }> => {
   const constraints: QueryConstraint[] = [
@@ -88,9 +88,7 @@ export const getMeetingsPaginated = async (
   if (deleted !== undefined) {
     constraints.push(where("isDeleted", "==", deleted));
   }
-  constraints.push(orderBy("createdAt", "desc"));
   constraints.push(limit(PAGE_SIZE + 1));
-  if (cursor) constraints.push(startAfter(cursor));
 
   const q = query(collection(db, COLLECTION_NAME), ...constraints);
   const snap = await getDocs(q);
@@ -98,8 +96,10 @@ export const getMeetingsPaginated = async (
   const hasMore = docs.length > PAGE_SIZE;
   const visible = hasMore ? docs.slice(0, PAGE_SIZE) : docs;
 
+  const sorted = visible.map(d => d.data() as Meeting).sort((a, b) => b.createdAt - a.createdAt);
+
   return {
-    meetings: visible.map(d => d.data() as Meeting),
+    meetings: sorted,
     lastDoc: visible[visible.length - 1] ?? null,
     hasMore
   };
@@ -110,11 +110,12 @@ export const getAllMeetings = async (userId: string): Promise<Meeting[]> => {
     const meetingsRef = collection(db, COLLECTION_NAME);
     const q = query(
       meetingsRef,
-      where("userId", "==", userId),
-      orderBy("createdAt", "desc")
+      where("userId", "==", userId)
     );
     const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map(doc => doc.data() as Meeting);
+    return querySnapshot.docs
+      .map(doc => doc.data() as Meeting)
+      .sort((a, b) => b.createdAt - a.createdAt);
   } catch (error) {
     console.error("Lỗi lấy danh sách:", error);
     return [];

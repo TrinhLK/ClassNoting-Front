@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { QueryDocumentSnapshot, onSnapshot, query, where, orderBy, collection } from "firebase/firestore";
+import { QueryDocumentSnapshot, onSnapshot, query, where, collection } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import {
   PAGE_SIZE,
@@ -100,8 +100,7 @@ export default function DashboardState({
     if (!user) return;
     const q = query(
       collection(db, COLLECTION_NAME),
-      where("userId", "==", user.uid),
-      orderBy("createdAt", "desc")
+      where("userId", "==", user.uid)
     );
     const unsubscribe = onSnapshot(q, async () => {
       try {
