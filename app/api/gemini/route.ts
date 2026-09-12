@@ -5,18 +5,18 @@ import { stripCjk, stripThinking } from "@/app/lib/text";
 import { parseAiJson } from "@/app/lib/json-parser";
 import { isValidAiSessionId } from "@/app/lib/ai-session";
 
-const API_KEY = process.env.OPEN_CODE_GO_API_KEY || "";
-const BASE_URL = "https://opencode.ai/zen/go/v1";
+const API_KEY = process.env.OPENROUTER_API_KEY || "";
+const BASE_URL = "https://openrouter.ai/api/v1";
 const MODELS: Record<string, string> = {
-  segment: "deepseek-v4-flash",
-  full: "minimax-m3",
-  qa: "deepseek-v4-flash",
-  fill_placeholders: "deepseek-v4-flash",
-  detect_fill: "deepseek-v4-flash",
-  extract_json: "deepseek-v4-flash",
+  segment: "qwen/qwen3.8-27b:free",
+  full: "qwen/qwen3.8-27b:free",
+  qa: "qwen/qwen3.8-27b:free",
+  fill_placeholders: "qwen/qwen3.8-27b:free",
+  detect_fill: "qwen/qwen3.8-27b:free",
+  extract_json: "qwen/qwen3.8-27b:free",
 };
-const DEFAULT_MODEL = "mimo-v2.5";
-const FALLBACK_MODELS = ["minimax-m3", "mimo-v2.5"];
+const DEFAULT_MODEL = "qwen/qwen3.8-27b:free";
+const FALLBACK_MODELS = ["qwen/qwen3.8-27b:free"];
 const BODY_OPTIONS_BY_MODE: Record<string, Record<string, unknown>> = {
   segment: { reasoning: false },
   full: { reasoning: false },
@@ -59,7 +59,8 @@ async function generateWithRetry(prompt: string, model: string, mode: string, se
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${API_KEY}`,
-          "x-opencode-session": sessionId,
+          "HTTP-Referer": "https://smart-noting.vercel.app",
+          "X-Title": "Smart Meeting Assistant",
         },
         body: JSON.stringify({
           model: model,
@@ -440,19 +441,12 @@ export async function POST(req: Request) {
       `;
     }
 
-    const rawResult = await generateWithFallback(prompt, chosenModels, mode, sessionId, requestId);
-    console.log("[gemini]", { event: "segment_result", requestId, rawLength: rawResult.length, preview: rawResult.slice(0, 100) });
-    const summary = stripCjk(rawResult);
-    console.log("[gemini]", { event: "after_stripCjk", requestId, finalLength: summary.length });
+    const summary = stripCjk(await generateWithFallback(prompt, chosenModels, mode, sessionId, requestId));
     return NextResponse.json({ summary });
 
   } catch (error: any) {
-    console.error("[gemini]", { event: "route_failure", requestId, message: error.message, status: error.status });
-    const errorMessage = error.status === 403
-      ? "Model AI bị chặn vùng. Vui lòng liên hệ quản trị."
-      : error.status === 401
-      ? "API key không hợp lệ hoặc chưa có phương thức thanh toán."
-      : error.status === 503
+    console.error("[gemini]", { event: "route_failure", requestId });
+    const errorMessage = error.status === 503
       ? "Hệ thống AI đang quá tải, vui lòng thử lại sau."
       : (error.message || "Lỗi xử lý AI.");
     return NextResponse.json({ error: errorMessage, detail: error.message }, { status: 500 });
