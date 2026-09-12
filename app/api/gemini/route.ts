@@ -157,8 +157,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Thiếu nội dung text" }, { status: 400 });
     }
 
-    const primaryModel = MODELS[mode] || DEFAULT_MODEL;
-    const chosenModels = MODELS[mode]
+    const primaryModel = (MODELS as Record<string, string>)[mode] || DEFAULT_MODEL;
+    const chosenModels = (MODELS as Record<string, string>)[mode]
       ? [...new Set([primaryModel, ...FALLBACK_MODELS])]
       : [primaryModel];
 
