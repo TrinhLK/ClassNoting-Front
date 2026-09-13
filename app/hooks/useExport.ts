@@ -107,16 +107,21 @@ export function useExport(
       const blob = await response.blob();
       if (blob.size === 0) throw new Error("Audio file is empty");
 
-      const extension = blob.type.includes("webm")
-        ? "webm"
-        : blob.type.includes("mp4")
-          ? "m4a"
-          : blob.type.includes("ogg")
-            ? "ogg"
-            : "mp3";
-      saveAs(blob, `${meeting.title}.${extension}`);
       toast.dismiss(toastId);
-      toast.success("Đã tải audio");
+      const convertToastId = toast.loading("Đang chuyển đổi sang MP3...") as string;
+      try {
+        const { convertToMp3 } = await import("../lib/converter");
+        const mp3File = await convertToMp3(
+          new File([blob], "audio.webm", { type: blob.type || "audio/webm" }),
+          () => {}
+        );
+        toast.dismiss(convertToastId);
+        saveAs(mp3File, `${meeting.title}.mp3`);
+        toast.success("Đã tải audio MP3");
+      } catch {
+        toast.dismiss(convertToastId);
+        toast.error("Lỗi chuyển đổi MP3");
+      }
     } catch {
       toast.dismiss(toastId);
       toast.error("Lỗi khi tải audio");
