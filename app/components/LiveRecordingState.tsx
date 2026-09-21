@@ -176,7 +176,12 @@ export default function LiveRecordingState({
           : item
       ));
     } catch (e) {
-      setSummaries(prev => prev.filter(item => item.id !== currentId));
+      // Thay vì xóa mục loading, hiển thị thông báo lỗi để người dùng biết
+      setSummaries(prev => prev.map(item =>
+        item.id === currentId
+          ? { ...item, content: "❌ Lỗi xử lý tóm tắt. Vui lòng thử lại sau.", isLoading: false }
+          : item
+      ));
     }
   }, []);
 

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Word } from "../lib/mockData";
 import { formatTranscriptText, formatWords } from "../lib/utils";
 
@@ -74,54 +74,24 @@ export default function useLocalTranscription(
     const lastEndTimestampRef = useRef<number>(0);
 
     const serverStartOffsetRef = useRef<number | null>(null);
+
+    // --- REFS CHO RECONNECTION ---
+    const isReconnectingRef = useRef(false);
+    const reconnectAttemptsRef = useRef(0);
+    const maxReconnectAttempts = 5;
+    const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const languageRef = useRef<string>("vi");
+    const startTimeOffsetRef = useRef<number>(0);
+    const heartbeatRef = useRef<NodeJS.Timeout | null>(null);
+    const isListeningRef = useRef(false);
     // -----------------------------------------------------
 
-    const startListening = async (rawStream: MediaStream, startTimeOffset: number = 0, language: string = "vi") => {
-        // 1. CẬP NHẬT THỜI GIAN
-        offsetTimeRef.current = startTimeOffset;
-        setIsListening(true);
-        serverStartOffsetRef.current = null;
+    // Sync isListeningRef with isListening state
+    useEffect(() => {
+        isListeningRef.current = isListening;
+    }, [isListening]);
 
-        if (startTimeOffset === 0) {
-            lastEndTimestampRef.current = 0;
-        }
-
-        // 2. SETUP WEBSOCKET
-        const finalUrl = `${serverUrl}/?language=${language}`;
-        const ws = new WebSocket(finalUrl);
-        socketRef.current = ws;
-
-        ws.onopen = () => { setConnectionError(null); };
-        ws.onmessage = (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                handleServerResponse(data);
-            } catch (e) { console.error("Parse error:", e); }
-        };
-        ws.onerror = () => {
-            setConnectionError("Không thể kết nối đến server xử lý giọng nói. Kiểm tra lại kết nối mạng.");
-        };
-
-        // 3. AUDIO PROCESSING (Raw Int16 16kHz)
-        const audioContext = new AudioContext();
-        audioContextRef.current = audioContext;
-        const source = audioContext.createMediaStreamSource(rawStream);
-        const processor = audioContext.createScriptProcessor(4096, 1, 1);
-        processorRef.current = processor;
-
-        source.connect(processor);
-        processor.connect(audioContext.destination);
-
-        processor.onaudioprocess = (e) => {
-            if (ws.readyState !== WebSocket.OPEN) return;
-            const inputData = e.inputBuffer.getChannelData(0);
-            const pcmData = downsampleBuffer(inputData, audioContext.sampleRate, 16000);
-            ws.send(pcmData.buffer);
-        };
-        streamRef.current = rawStream;
-    };
-
-    const handleServerResponse = (data: any) => {
+    const handleServerResponse = useCallback((data: any) => {
         // Server sẽ gửi { ..., "is_final": false } cho text xám
         // và { ..., "is_final": true } cho text chốt.
         const isFinalPacket = data.is_final;
@@ -129,32 +99,21 @@ export default function useLocalTranscription(
         if (data.channel && data.channel.alternatives?.[0]) {
             const alt = data.channel.alternatives[0];
 
-            // import { formatTranscriptText } from "../lib/utils"; (Sẽ được auto-import hoặc thêm ở đầu file)
-            // Lưu ý: Cần thêm import thủ công nếu tool không tự làm.
             const rawTranscript = alt.transcript;
             if (!rawTranscript) return;
 
-            // Xử lý format
             const transcript = formatTranscriptText(rawTranscript);
 
-            // --- TRƯỜNG HỢP 1: KẾT QUẢ TẠM (Interim / Màu xám) ---
             if (!isFinalPacket) {
-                // Chỉ cập nhật state tạm để UI hiển thị text xám (nhảy liên tục)
                 setInterimContent(transcript);
-                return; // Dừng lại, không thêm vào segments chính thức
+                return;
             }
 
-            // --- TRƯỜNG HỢP 2: KẾT QUẢ CHỐT (Final / Màu thường) ---
-            // Khi câu đã chốt, xóa text tạm và đưa text vào segments
             setInterimContent("");
 
-            // Logic thêm vào segments giữ nguyên như cũ
-
-            // import { formatWords } from "../lib/utils";
             let rawWords = (alt.words || []).map((w: any) => {
-                // Nếu timestamp đầu tiên quá lớn (> 3600s = 1h), coi đó là lỗi Server Offset và trừ đi
                 if (serverStartOffsetRef.current === null) {
-                    if (w.start > 3600) { // Ngưỡng 1 giờ
+                    if (w.start > 3600) {
                         serverStartOffsetRef.current = w.start;
                         console.warn(`⚠️ Server timestamp huge (${w.start}s). Normalizing to 0.`);
                     } else {
@@ -185,8 +144,6 @@ export default function useLocalTranscription(
                     lastEndTimestampRef.current = words[words.length - 1].end;
                 }
 
-                // SỬA ĐIỀU KIỆN GỘP:
-                // Chỉ gộp khi CÙNG Speaker VÀ gần nhau
                 if (lastSegment && lastSegment.speaker === serverSpeaker && gap < 1.0) {
                     return [
                         ...prev.slice(0, -1),
@@ -198,21 +155,112 @@ export default function useLocalTranscription(
                     ];
                 }
 
-                // NẾU KHÁC SPEAKER -> TẠO SEGMENT MỚI (Xuống dòng)
                 return [...prev, {
-                    speaker: serverSpeaker, // Dùng đúng serverSpeaker thay vì tự tính nextSpeaker
+                    speaker: serverSpeaker,
                     content: transcript,
                     isFinal: true,
                     words: words
                 }];
             });
         }
+    }, [onFinal]);
+
+    const setupWebSocket = useCallback((language: string) => {
+        const finalUrl = `${serverUrl}/?language=${language}`;
+        const ws = new WebSocket(finalUrl);
+        socketRef.current = ws;
+
+        ws.onopen = () => {
+            setConnectionError(null);
+            isReconnectingRef.current = false;
+            reconnectAttemptsRef.current = 0;
+            
+            if (heartbeatRef.current) clearInterval(heartbeatRef.current);
+            
+            heartbeatRef.current = setInterval(() => {
+                if (ws.readyState === WebSocket.OPEN) {
+                    ws.send(new Uint8Array(0));
+                }
+            }, 30000);
+        };
+
+        ws.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                handleServerResponse(data);
+            } catch (e) { console.error("Parse error:", e); }
+        };
+
+        ws.onerror = () => {};
+
+        ws.onclose = (event) => {
+            if (heartbeatRef.current) clearInterval(heartbeatRef.current);
+
+            if (event.code === 1000) return;
+
+            if (!isReconnectingRef.current && isListeningRef.current) {
+                isReconnectingRef.current = true;
+                const attempts = reconnectAttemptsRef.current;
+
+                if (attempts < maxReconnectAttempts) {
+                    const delay = Math.min(1000 * Math.pow(2, attempts), 16000);
+                    setConnectionError(`Mất kết nối, đang thử kết nối lại... (${attempts + 1}/${maxReconnectAttempts})`);
+
+                    reconnectTimeoutRef.current = setTimeout(() => {
+                        reconnectAttemptsRef.current++;
+                        setupWebSocket(languageRef.current);
+                    }, delay);
+                } else {
+                    setConnectionError("Mất kết nối vĩnh viễn. Vui lòng bấm dừng và bắt đầu lại.");
+                    setIsListening(false);
+                }
+            }
+        };
+    }, [serverUrl, handleServerResponse]);
+
+    const startListening = async (rawStream: MediaStream, startTimeOffset: number = 0, language: string = "vi") => {
+        offsetTimeRef.current = startTimeOffset;
+        startTimeOffsetRef.current = startTimeOffset;
+        languageRef.current = language;
+        setIsListening(true);
+        serverStartOffsetRef.current = null;
+
+        if (startTimeOffset === 0) {
+            lastEndTimestampRef.current = 0;
+        }
+
+        setupWebSocket(language);
+
+        if (!audioContextRef.current) {
+            const audioContext = new AudioContext();
+            audioContextRef.current = audioContext;
+            const source = audioContext.createMediaStreamSource(rawStream);
+            const processor = audioContext.createScriptProcessor(4096, 1, 1);
+            processorRef.current = processor;
+
+            source.connect(processor);
+            processor.connect(audioContext.destination);
+
+            processor.onaudioprocess = (e) => {
+                const ws = socketRef.current;
+                if (!ws || ws.readyState !== WebSocket.OPEN) return;
+                const inputData = e.inputBuffer.getChannelData(0);
+                const pcmData = downsampleBuffer(inputData, audioContext.sampleRate, 16000);
+                ws.send(pcmData.buffer);
+            };
+        }
+        streamRef.current = rawStream;
     };
 
 
     const stopListening = () => {
         setIsListening(false);
-        socketRef.current?.close();
+        // Hủy các timer reconnect và heartbeat
+        if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+        if (heartbeatRef.current) clearInterval(heartbeatRef.current);
+        isReconnectingRef.current = false; // Đánh dấu là chủ động dừng
+
+        socketRef.current?.close(1000, "User stopped"); // Close code 1000 = chủ động đóng
 
         if (processorRef.current) {
             processorRef.current.disconnect();
