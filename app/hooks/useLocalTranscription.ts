@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { Word } from "../lib/mockData";
 import { formatTranscriptText, formatWords } from "../lib/utils";
 
-// HÀM NỐI CHUỖI THÔNG MINH (CHỐNG LẶP) - COPY TỪ CODE CŨ CỦA BẠN
+// HÀM NỐI CHUỖI THÔNG MINH (CHỐNG LẶP)
 const mergeText = (prev: string, next: string) => {
     const p = prev.trim();
     const n = next.trim();
@@ -46,6 +46,12 @@ const convertFloat32ToInt16 = (buffer: Float32Array) => {
     return buf;
 };
 
+// Silence buffer: 1 giây audio rỗng (16000 samples @ 16kHz) - dùng làm heartbeat
+const SILENCE_BUFFER = new Int16Array(16000);
+
+// Giới hạn buffer audio trong lúc mất kết nối (tối đa ~5 giây)
+const MAX_AUDIO_BUFFER_SIZE = 50;
+
 export type TranscriptSegment = {
     speaker: number;
     content: string;
@@ -57,7 +63,6 @@ export default function useLocalTranscription(
     onFinal?: (data: any) => void
 ) {
     const serverUrl = process.env.NEXT_PUBLIC_REALTIME_PROCESSING_SERVER || "wss://asr.noting.io.vn";
-    // const serverUrl = "ws://localhost:6006";`
     // --- STATE ---
     const [segments, setSegments] = useState<TranscriptSegment[]>([]);
     const [interimContent, setInterimContent] = useState<string>("");
@@ -84,6 +89,7 @@ export default function useLocalTranscription(
     const startTimeOffsetRef = useRef<number>(0);
     const heartbeatRef = useRef<NodeJS.Timeout | null>(null);
     const isListeningRef = useRef(false);
+    const audioBufferRef = useRef<Int16Array[]>([]); // Buffer audio trong lúc mất kết nối
     // -----------------------------------------------------
 
     // Sync isListeningRef with isListening state
@@ -92,8 +98,6 @@ export default function useLocalTranscription(
     }, [isListening]);
 
     const handleServerResponse = useCallback((data: any) => {
-        // Server sẽ gửi { ..., "is_final": false } cho text xám
-        // và { ..., "is_final": true } cho text chốt.
         const isFinalPacket = data.is_final;
 
         if (data.channel && data.channel.alternatives?.[0]) {
@@ -166,6 +170,9 @@ export default function useLocalTranscription(
     }, [onFinal]);
 
     const setupWebSocket = useCallback((language: string) => {
+        // Reset timestamp refs cho server session mới
+        serverStartOffsetRef.current = null;
+
         const finalUrl = `${serverUrl}/?language=${language}`;
         const ws = new WebSocket(finalUrl);
         socketRef.current = ws;
@@ -174,14 +181,30 @@ export default function useLocalTranscription(
             setConnectionError(null);
             isReconnectingRef.current = false;
             reconnectAttemptsRef.current = 0;
-            
+
+            // [P0] Resume AudioContext nếu bị browser suspension
+            if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+                audioContextRef.current.resume().catch(() => {});
+            }
+
+            // [P1] Flush audio buffer đã tích lũy trong lúc mất kết nối
+            if (audioBufferRef.current.length > 0) {
+                const buffered = audioBufferRef.current.splice(0);
+                for (const chunk of buffered) {
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(chunk.buffer);
+                    }
+                }
+            }
+
             if (heartbeatRef.current) clearInterval(heartbeatRef.current);
-            
+
+            // [P0+P2] Heartbeat: gửi silence buffer 16kHz thay vì empty frame, interval 15s
             heartbeatRef.current = setInterval(() => {
                 if (ws.readyState === WebSocket.OPEN) {
-                    ws.send(new Uint8Array(0));
+                    ws.send(SILENCE_BUFFER.buffer);
                 }
-            }, 30000);
+            }, 15000);
         };
 
         ws.onmessage = (event) => {
@@ -224,6 +247,7 @@ export default function useLocalTranscription(
         languageRef.current = language;
         setIsListening(true);
         serverStartOffsetRef.current = null;
+        audioBufferRef.current = [];
 
         if (startTimeOffset === 0) {
             lastEndTimestampRef.current = 0;
@@ -243,7 +267,29 @@ export default function useLocalTranscription(
 
             processor.onaudioprocess = (e) => {
                 const ws = socketRef.current;
-                if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+                // [P1] Nếu WebSocket không open -> buffer audio thay vì drop
+                if (!ws || ws.readyState !== WebSocket.OPEN) {
+                    if (isReconnectingRef.current) {
+                        const inputData = e.inputBuffer.getChannelData(0);
+                        const pcmData = downsampleBuffer(inputData, audioContext.sampleRate, 16000);
+                        audioBufferRef.current.push(pcmData);
+                        // Giới hạn bộ nhớ: giữ tối đa ~5 giây
+                        if (audioBufferRef.current.length > MAX_AUDIO_BUFFER_SIZE) {
+                            audioBufferRef.current.shift();
+                        }
+                    }
+                    return;
+                }
+
+                // Flush buffer trước khi gửi audio mới
+                if (audioBufferRef.current.length > 0) {
+                    const buffered = audioBufferRef.current.splice(0);
+                    for (const chunk of buffered) {
+                        ws.send(chunk.buffer);
+                    }
+                }
+
                 const inputData = e.inputBuffer.getChannelData(0);
                 const pcmData = downsampleBuffer(inputData, audioContext.sampleRate, 16000);
                 ws.send(pcmData.buffer);
@@ -252,15 +298,14 @@ export default function useLocalTranscription(
         streamRef.current = rawStream;
     };
 
-
     const stopListening = () => {
         setIsListening(false);
-        // Hủy các timer reconnect và heartbeat
         if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
         if (heartbeatRef.current) clearInterval(heartbeatRef.current);
-        isReconnectingRef.current = false; // Đánh dấu là chủ động dừng
+        isReconnectingRef.current = false;
+        audioBufferRef.current = [];
 
-        socketRef.current?.close(1000, "User stopped"); // Close code 1000 = chủ động đóng
+        socketRef.current?.close(1000, "User stopped");
 
         if (processorRef.current) {
             processorRef.current.disconnect();
@@ -273,7 +318,6 @@ export default function useLocalTranscription(
     };
 
     const resetTranscript = () => {
-        // Chỉ khi người dùng ấn nút Thùng rác mới xóa
         setSegments([]);
         setInterimContent("");
     };
