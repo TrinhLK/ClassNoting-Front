@@ -42,7 +42,7 @@ const downsampleBuffer = (buffer: Float32Array, inputSampleRate: number, outputS
 const convertFloat32ToInt16 = (buffer: Float32Array) => {
     let l = buffer.length;
     const buf = new Int16Array(l);
-    while (l--) buf[l] = Math.min(1, buffer[l]) * 0x7FFF;
+    while (l--) buf[l] = Math.max(-1, Math.min(1, buffer[l])) * 0x7FFF;
     return buf;
 };
 
@@ -98,6 +98,9 @@ export default function useLocalTranscription(
     }, [isListening]);
 
     const handleServerResponse = useCallback((data: any) => {
+        // [FIX] Bỏ qua keepalive messages từ server
+        if (data.type === "keepalive") return;
+
         const isFinalPacket = data.is_final;
 
         if (data.channel && data.channel.alternatives?.[0]) {
@@ -170,6 +173,11 @@ export default function useLocalTranscription(
     }, [onFinal]);
 
     const setupWebSocket = useCallback((language: string) => {
+        // [FIX] Đóng WS cũ nếu vẫn đang open (tránh orphaned connection)
+        if (socketRef.current && socketRef.current.readyState < 2) {
+            socketRef.current.close(1000, "Reconnecting");
+        }
+
         // Reset timestamp refs cho server session mới
         serverStartOffsetRef.current = null;
 
@@ -259,7 +267,7 @@ export default function useLocalTranscription(
             const audioContext = new AudioContext();
             audioContextRef.current = audioContext;
             const source = audioContext.createMediaStreamSource(rawStream);
-            const processor = audioContext.createScriptProcessor(4096, 1, 1);
+            const processor = audioContext.createScriptProcessor(8192, 1, 1);
             processorRef.current = processor;
 
             source.connect(processor);
