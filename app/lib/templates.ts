@@ -17,21 +17,28 @@ export const DEFAULT_TEMPLATES: MeetingTemplate[] = [
 
       ## 1. TỔNG QUAN
       - **Mục đích:** (Tóm tắt mục tiêu chính)
+      - **Thành phần tham gia:** (Nếu có trong transcript)
 
-      ## 2. NỘI DUNG CHÍNH & THẢO LUẬN
+      ## 2. TÓM TẮT TỪNG CHỦ ĐỀ
+      *(Liệt kê và diễn giải TẤT CẢ các chủ đề đã được thảo luận)*
       - **[Chủ đề 1]:**
-        - Diễn giải ý chính...
-        - Số liệu đi kèm...
+        - Ai nói / trình bày: ...
+        - Nội dung chi tiết: ...
+        - Số liệu / dữ kiện cụ thể (nếu có): ...
+        - Kết luận: ...
 
-      ## 3. TRANH LUẬN & GHI CHÚ QUAN TRỌNG
-      - **[Tên]:** [Quan điểm]
+      ## 3. QUYẾT ĐỊNH ĐÃ CHỐT
+      - **[Quyết định 1]:** ... (người quyết định: ...)
 
-      ## 4. KẾT LUẬN & KẾ HOẠCH HÀNH ĐỘNG
-      **Các quyết định đã chốt:**
-        - [Quyết định]
+      ## 4. PHÂN CÔNG NHIỆM VỤ (ACTION ITEMS)
+      - [ ] **[Tên người]** - [Nhiệm vụ] - [Deadline]
 
-      **Phân công nhiệm vụ (Action Items):**
-        - [ ] **Ai làm?** - [Nhiệm vụ] - [Deadline]
+      ## 5. VẤN ĐỀ CHƯA GIẢI QUYẾT / RỦI RO
+      - ...
+
+      ## 6. GHI CHÚ BỔ SUNG
+      *(Số liệu quan trọng, câu nói đáng chú ý)*
+      - ...
     `
     },
     {

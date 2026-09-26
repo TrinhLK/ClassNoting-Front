@@ -59,7 +59,7 @@ async function generateWithRetry(prompt: string, model: string, mode: string, se
         body: JSON.stringify({
           model: model,
           messages: [{ role: "user", content: prompt }],
-          max_tokens: 16384,
+          max_tokens: 32768,
         }),
       });
       logDiagnostic("headers", diagnostic, { ...metadata, status: response.status, headersMs: performance.now() - startedAt });
@@ -350,24 +350,46 @@ export async function POST(req: Request) {
       # BIÊN BẢN TÓM TẮT CUỘC HỌP
 
       ## 1. TỔNG QUAN
-      - [00:00] **Mục đích:** (Tóm tắt mục tiêu chính của cuộc họp trong 1-2 dòng)
+      - **Mục đích:** (Tóm tắt mục tiêu chính của cuộc họp trong 1-2 dòng)
+      - **Thành phần tham gia:** (Liệt kê tên/vai trò người tham gia nếu có trong transcript)
 
-      ## 2. NỘI DUNG CHÍNH & THẢO LUẬN
+      ## 2. TÓM TẮT TỪNG CHỦ ĐỀ
+      *(Liệt kê và diễn giải TẤT CẢ các chủ đề đã được thảo luận. Cuộc họp dài phải có nhiều mục con, mỗi mục chứa nội dung chi tiết)*
       - [mm:ss] **[Chủ đề 1]:**
-        - Diễn giải ý chính và các kết luận thống nhất...
-        - Các thông số/dữ kiện đi kèm (nếu có)...
+        - Ai nói / trình bày: ...
+        - Nội dung chi tiết: ...
+        - Số liệu / dữ kiện cụ thể (nếu có): ...
+        - Kết luận của chủ đề này: ...
+      - [mm:ss] **[Chủ đề 2]:**
+        - ...
 
-      ## 3. TRANH LUẬN & GHI CHÚ QUAN TRỌNG
-      *(Ghi lại các ý kiến trái chiều hoặc các điểm nhấn đặc biệt)*
-      - [mm:ss] **[Tên/Vai trò]:** [Nội dung quan điểm]
+      ## 3. QUYẾT ĐỊNH ĐÃ CHỐT
+      *(Liệt kê TẤT CẢ các quyết định cuối cùng, ghi rõ ai quyết định và thời gian)*
+      - [mm:ss] **[Quyết định 1]:** ... (người quyết định: ...)
+      - [mm:ss] **[Quyết định 2]:** ...
 
-      ## 4. KẾT LUẬN & KẾ HOẠCH HÀNH ĐỘNG
-      **Các quyết định đã chốt:**
-        - [mm:ss] [Quyết định 1]
+      ## 4. PHÂN CÔNG NHIỆM VỤ (ACTION ITEMS)
+      *(Ghi rõ ai làm gì, deadline khi nào — nếu transcript có nhắc đến)*
+      - [ ] **[Tên người]** - [Nhiệm vụ cụ thể] - [Deadline (nếu có)]
 
-      **Phân công nhiệm vụ (Action Items):**
-        - [ ] **Ai làm?** - [Nhiệm vụ cụ thể] - [Deadline (ghi chính xác ngày/tháng nếu có)]
+      ## 5. VẤN ĐỀ CHƯA GIẢI QUYẾT / RỦI RO
+      *(Các điểm còn bỏ ngỏ, chưa thống nhất, hoặc rủi ro được nhắc đến trong cuộc họp)*
+      - ...
+
+      ## 6. GHI CHÚ BỔ SUNG
+      *(Số liệu quan trọng, câu nói đáng chú ý, hoặc thông tin khác worth noting)*
+      - ...
       `;
+
+      const durationMinutes = duration ? Math.floor(duration / 60) : 0;
+      const isLongMeeting = durationMinutes >= 20;
+      const isVeryLongMeeting = durationMinutes >= 45;
+
+      const durationHint = isVeryLongMeeting
+        ? `\n📌 CUỘC HỌP DÀI (${durationMinutes} PHÚT): Đây là cuộc họp rất dài. Bạn PHẢI viết biên bản CHI TIẾT, bao quát TẤT CẢ các chủ đề đã được thảo luận. KHÔNG được bỏ sót bất kỳ ý chính nào. Mỗi chủ đề phải có phần diễn giải cụ thể, ghi rõ ai nói gì, số liệu bao nhiêu, quyết định cuối cùng là gì.`
+        : isLongMeeting
+          ? `\n📌 CUỘC HỌP DÀI (${durationMinutes} PHÚT): Bạn cần viết biên bản chi tiết, bao quát đầy đủ các chủ đề. Mỗi chủ đề nên có diễn giải cụ thể, không được tóm tắt quá ngắn gọn.`
+        : "";
 
       const objectivesPrompt = meetingObjectives
         ? `\n🎯 MỤC TIÊU CUỘC HỌP (TRỌNG TÂM CẦN BÁM SÁT):\nNgười dùng yêu cầu bạn đặc biệt tập trung tóm tắt và làm nổi bật các nội dung/thảo luận/quyết định có liên quan đến các mục tiêu dưới đây:\n"""\n${meetingObjectives}\n"""\n`
@@ -396,7 +418,8 @@ export async function POST(req: Request) {
         : dateContext || "không rõ";
 
       prompt = `
-      Bạn là Thư Ký Cấp Cao chuyên nghiệp. Nhiệm vụ của bạn là tổng hợp biên bản cuộc họp từ văn bản thô (transcript), đảm bảo tính chính xác tuyệt đối của thông tin.
+      Bạn là Thư Ký Cấp Cao chuyên nghiệp. Nhiệm vụ của bạn là tổng hợp BIÊN BẢN CHI TIẾT cuộc họp từ văn bản thô (transcript), đảm bảo tính chính xác tuyệt đối của thông tin.
+      ${durationHint}
       ${objectivesPrompt}
       THÔNG TIN CUỘC HỌP:
       - Thời gian bắt đầu: ${startDateContextStr}.
@@ -404,22 +427,29 @@ export async function POST(req: Request) {
       - Thời gian kết thúc: ${endTimeStr}.
       - Chuỗi thời gian chuẩn để fill vào template (nếu template có dòng "- **Thời gian:** HH:mm - HH:mm, ngày dd/mm/yyyy"): "${fullTimeStr}".
       (Dùng thời gian bắt đầu để quy đổi các cụm từ chỉ thời gian tương đối trong transcript như "ngày mai", "thứ 2 tới", "tuần sau" thành ngày cụ thể.)
+
+      NGUYÊN TẮC TƯ DUY (KHÔNG IN RA):
+      1. Đọc TOÀN BỘ transcript. Liệt kê ra giấy (hoặc trong đầu) tất cả các chủ đề đã được nhắc đến.
+      2. Với mỗi chủ đề, xác định: Ai nói? Nói gì cụ thể? Có số liệu nào không? Quyết định cuối cùng là gì?
+      3. Kiểm tra lại: Có chủ đề nào bị bỏ sót không? Có số liệu nào cần trích xuất chính xác không?
+
       YÊU CẦU CỐT LÕI (XỬ LÝ DỮ LIỆU):
-      1.  **Bảo toàn nguyên vẹn số liệu:** Mọi dữ kiện định lượng (con số, ngày tháng, thời gian, chi phí, số lượng...) phải được trích xuất chính xác như trong transcript. 
-        Lưu ý: Transcript là dạng văn nói (speech-to-text), nên các số thường bị viết thành từ ngữ âm tiếng Việt. 
+      1.  **Bảo toàn nguyên vẹn số liệu:** Mọi dữ kiện định lượng (con số, ngày tháng, thời gian, chi phí, số lượng, phần trăm...) phải được trích xuất CHÍNH XÁC TUYỆT ĐỐI như trong transcript.
+        Lưu ý: Transcript là dạng văn nói (speech-to-text), nên các số thường bị viết thành từ ngữ âm tiếng Việt.
         Ví dụ: năm hai không hai tư -> nên chuyển thành 2024; phiên bản vê một -> nên chuyển thành phiên bản v1.
           * *Tuyệt đối không* tự ý làm tròn số (trừ khi được yêu cầu trong văn bản).
           * *Tuyệt đối không* suy đoán hay tự điền số liệu nếu transcript không nhắc đến.
-      2.  **Tư duy tổng hợp:** Viết tóm tắt súc tích, tập trung vào kết quả và quyết định, nhưng phải lồng ghép chính xác các dữ kiện số liệu vào ngữ cảnh của câu.
+      2.  **Viết chi tiết, đầy đủ:** KHÔNG viết tóm tắt quá ngắn gọn. Mỗi chủ đề thảo luận phải có diễn giải cụ thể với các ý chính, luận điểm, và kết luận. Phải bao quát được TOÀN BỘ nội dung cuộc họp, không được bỏ sót chủ đề.
       3.  **Gắn mốc thời gian (Timestamp):** Đây là yêu cầu BẮT BUỘC. Hãy chèn mốc thời gian bắt đầu của ý kiến hoặc chủ đề đó theo định dạng [mm:ss] (ví dụ: [01:23], [10:05]) vào đầu mỗi gạch đầu dòng hoặc tiêu đề mục lục nếu có thể. Điều này giúp người dùng dễ dàng đối chiếu với bản ghi âm.
-      ${meetingObjectives ? `4.  **Định hướng nội dung theo mục tiêu:** Ưu tiên trích xuất và làm sâu sắc thêm các chi tiết liên quan đến "MỤC TIÊU CUỘC HỌP" đã nêu trên.` : ""}
+      4.  **Ghi rõ người nói:** Khi một ý kiến hoặc quyết định được đưa ra, PHẢI ghi rõ ai là người nói (nếu transcript có tên/vai trò). Ví dụ: "[Anh Minh]: Dự án sẽ hoàn thành vào tháng 3."
+      ${meetingObjectives ? `5.  **Định hướng nội dung theo mục tiêu:** Ưu tiên trích xuất và làm sâu sắc thêm các chi tiết liên quan đến "MỤC TIÊU CUỘC HỌP" đã nêu trên.` : ""}
 
       DỮ LIỆU ĐẦU VÀO:
       "${text}"
 
       YÊU CẦU ĐỊNH DẠNG ĐẦU RA (Markdown):
       Hãy viết biên bản dựa trên cấu trúc (Template) sau đây:
-      
+
       ${structureInstruction}
 
       ⚠️ QUY TẮC BẮT BUỘC KHI ÁP DỤNG TEMPLATE:
@@ -428,12 +458,14 @@ export async function POST(req: Request) {
       2. **Dòng "Thời gian:" trong template**: Nếu template có dòng bắt đầu bằng "- **Thời gian:**", BẮT BUỘC thay bằng đúng chuỗi thời gian đã chuẩn bị ở THÔNG TIN CUỘC HỌP (đã có sẵn trong prompt). KHÔNG giữ nguyên giá trị ví dụ/placeholder trong template. KHÔNG tự ý bịa thời gian.
       3. **Chỉ thay nội dung placeholder**: thay các chỗ có ngoặc vuông [...] hoặc chỗ trống (...) bằng nội dung thực tế từ transcript. Không tự ý thêm/bớt heading hay bullet ngoài template.
       4. **CHỈ sử dụng tiếng Việt** trong toàn bộ output. TUYỆT ĐỐI KHÔNG trộn từ ngữ tiếng Trung, tiếng Anh hay bất kỳ ngôn ngữ nào khác (trừ tên riêng, thuật ngữ kỹ thuật phổ biến như "API", "CDN").
+      5. **KHÔNG được viết quá ngắn gọn.** Mỗi mục trong template phải có nội dung chi tiết, cụ thể. Nếu một mục không có thông tin relevant thì ghi "Không có" thay vì bỏ trống.
 
       LƯU Ý TRÌNH BÀY:
       - Văn phong khách quan, chuyên nghiệp.
       - Tuân thủ chặt chẽ cấu trúc đề bài (các mục H1, H2...).
       - Mỗi ý chính hoặc mục thảo luận nên có mốc thời gian [mm:ss] đi kèm.
       - Nếu transcript có thông tin mâu thuẫn (VD: Lúc đầu nói A, sau sửa thành B), hãy ghi nhận thông tin cuối cùng đã được chốt lại (B).
+      - Cuộc họp dài có nhiều chủ đề → Phải liệt kê TẤT CẢ các chủ đề, không được tóm gộp quá nhiều vào một mục duy nhất.
       `;
     }
 
