@@ -207,12 +207,12 @@ export default function useLocalTranscription(
 
             if (heartbeatRef.current) clearInterval(heartbeatRef.current);
 
-            // [P0+P2] Heartbeat: gửi silence buffer 16kHz thay vì empty frame, interval 15s
+            // [P0+P2] Heartbeat: gửi silence buffer 16kHz mỗi 8s — giữ connection sống trước Cloudflare idle timeout
             heartbeatRef.current = setInterval(() => {
                 if (ws.readyState === WebSocket.OPEN) {
                     ws.send(SILENCE_BUFFER.buffer);
                 }
-            }, 15000);
+            }, 8000);
         };
 
         ws.onmessage = (event) => {
@@ -225,6 +225,7 @@ export default function useLocalTranscription(
         ws.onerror = () => {};
 
         ws.onclose = (event) => {
+            console.warn(`[WS] Connection closed: code=${event.code} reason="${event.reason}" wasClean=${event.wasClean}`);
             if (heartbeatRef.current) clearInterval(heartbeatRef.current);
 
             if (event.code === 1000) return;
