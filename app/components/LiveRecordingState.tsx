@@ -214,7 +214,12 @@ export default function LiveRecordingState({
     }, timeoutMs);
   }, [flushBuffer]);
 
-  const { segments, interimContent, isListening, connectionError, startListening, stopListening, resetTranscript } = useLocalTranscription(handleDeepgramFinal);
+  // [P0] Nhận thông báo mất kết nối VĨNH VIỄN từ hook (dùng ref để không phụ thuộc thứ tự khai báo)
+  const onPermanentErrorRef = useRef<(code: number) => void>(() => {});
+  const { segments, interimContent, isListening, connectionError, startListening, stopListening, resetTranscript } = useLocalTranscription(
+    handleDeepgramFinal,
+    (code: number) => onPermanentErrorRef.current(code)
+  );
 
 
   useEffect(() => {
@@ -566,6 +571,15 @@ export default function LiveRecordingState({
     setVolume(0);
   }, [stopListening, releaseWakeLock]);
 
+  // [P0] Server ASR chết hẳn sau 5 lần retry -> dừng ghi nền, giữ nguyên dữ liệu, báo user bấm nút để nối lại
+  useEffect(() => {
+    onPermanentErrorRef.current = (code: number) => {
+      console.error(`[Live] ASR kết nối vĩnh viễn, mã lỗi ${code}`);
+      stopRecordingSession();
+      toast.error("Mất kết nối máy chủ ASR. Bấm nút ghi âm để tiếp tục — dữ liệu đã ghi vẫn được giữ.");
+    };
+  }, [stopRecordingSession, toast]);
+
   // --- ACTIONS ---
   const scrollToLiveSegment = useCallback((time: number) => {
     // Tìm segment có start gần nhất với time
@@ -741,7 +755,15 @@ export default function LiveRecordingState({
           {connectionError && (
             <div className="bg-amber-50 border border-amber-200 text-amber-700 text-xs font-medium p-3 rounded-xl flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0" />
-              {connectionError}
+              <span className="flex-1">{connectionError}</span>
+              {!isListening && (
+                <button
+                  onClick={() => startRecordingSession()}
+                  className="shrink-0 rounded-lg bg-amber-600 hover:bg-amber-700 text-white px-3 py-1 font-semibold transition-colors cursor-pointer"
+                >
+                  Thử lại
+                </button>
+              )}
             </div>
           )}
 

@@ -52,6 +52,9 @@ const SILENCE_BUFFER = new Int16Array(16000);
 // Giới hạn buffer audio trong lúc mất kết nối (tối đa ~5 giây)
 const MAX_AUDIO_BUFFER_SIZE = 50;
 
+// Nếu WS không mở được sau thời gian này -> ép close để kích hoạt retry
+const CONNECT_TIMEOUT_MS = 8000;
+
 export type TranscriptSegment = {
     speaker: number;
     content: string;
@@ -60,7 +63,8 @@ export type TranscriptSegment = {
 };
 
 export default function useLocalTranscription(
-    onFinal?: (data: any) => void
+    onFinal?: (data: any) => void,
+    onPermanentError?: (code: number) => void
 ) {
     const serverUrl = process.env.NEXT_PUBLIC_REALTIME_PROCESSING_SERVER || "wss://asr.noting.io.vn";
     // --- STATE ---
@@ -90,12 +94,19 @@ export default function useLocalTranscription(
     const heartbeatRef = useRef<NodeJS.Timeout | null>(null);
     const isListeningRef = useRef(false);
     const audioBufferRef = useRef<Int16Array[]>([]); // Buffer audio trong lúc mất kết nối
+    const clientCloseRef = useRef(false); // Close do client chủ động (không retry)
+    const connectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const onPermanentErrorRef = useRef<((code: number) => void) | undefined>(onPermanentError);
     // -----------------------------------------------------
 
     // Sync isListeningRef with isListening state
     useEffect(() => {
         isListeningRef.current = isListening;
     }, [isListening]);
+
+    useEffect(() => {
+        onPermanentErrorRef.current = onPermanentError;
+    }, [onPermanentError]);
 
     const handleServerResponse = useCallback((data: any) => {
         // [FIX] Bỏ qua keepalive messages từ server
@@ -180,12 +191,27 @@ export default function useLocalTranscription(
 
         // Reset timestamp refs cho server session mới
         serverStartOffsetRef.current = null;
+        clientCloseRef.current = false;
+
+        if (connectTimeoutRef.current) clearTimeout(connectTimeoutRef.current);
 
         const finalUrl = `${serverUrl}/?language=${language}`;
         const ws = new WebSocket(finalUrl);
         socketRef.current = ws;
 
+        // [P0] Health-check: WS treo quá 8s ở trạng thái CONNECTING -> ép close để retry
+        connectTimeoutRef.current = setTimeout(() => {
+            if (ws.readyState === WebSocket.CONNECTING) {
+                console.warn(`[WS] Connect timeout ${CONNECT_TIMEOUT_MS}ms -> force close để retry`);
+                ws.close();
+            }
+        }, CONNECT_TIMEOUT_MS);
+
         ws.onopen = () => {
+            if (connectTimeoutRef.current) {
+                clearTimeout(connectTimeoutRef.current);
+                connectTimeoutRef.current = null;
+            }
             setConnectionError(null);
             isReconnectingRef.current = false;
             reconnectAttemptsRef.current = 0;
@@ -222,30 +248,55 @@ export default function useLocalTranscription(
             } catch (e) { console.error("Parse error:", e); }
         };
 
-        ws.onerror = () => {};
+        ws.onerror = () => {
+            console.warn(`[WS] Error: url=${finalUrl} readyState=${ws.readyState}`);
+        };
 
         ws.onclose = (event) => {
+            if (connectTimeoutRef.current) {
+                clearTimeout(connectTimeoutRef.current);
+                connectTimeoutRef.current = null;
+            }
+
+            // [FIX] Bỏ qua close của socket ĐÃ BỊ THAY THẾ (race với heartbeat cũ)
+            if (ws !== socketRef.current) return;
+
+            if (heartbeatRef.current) {
+                clearInterval(heartbeatRef.current);
+                heartbeatRef.current = null;
+            }
+
+            // Close do client chủ động (stopListening) hoặc đã không còn nghe -> không retry
+            if (clientCloseRef.current || !isListeningRef.current) return;
+
             console.warn(`[WS] Connection closed: code=${event.code} reason="${event.reason}" wasClean=${event.wasClean}`);
-            if (heartbeatRef.current) clearInterval(heartbeatRef.current);
 
-            if (event.code === 1000) return;
+            // Đánh dấu đang reconnect -> buffer audio thay vì drop
+            isReconnectingRef.current = true;
 
-            if (!isReconnectingRef.current && isListeningRef.current) {
-                isReconnectingRef.current = true;
-                const attempts = reconnectAttemptsRef.current;
-
-                if (attempts < maxReconnectAttempts) {
-                    const delay = Math.min(1000 * Math.pow(2, attempts), 16000);
-                    setConnectionError(`Mất kết nối, đang thử kết nối lại... (${attempts + 1}/${maxReconnectAttempts})`);
-
-                    reconnectTimeoutRef.current = setTimeout(() => {
-                        reconnectAttemptsRef.current++;
-                        setupWebSocket(languageRef.current);
-                    }, delay);
-                } else {
-                    setConnectionError("Mất kết nối vĩnh viễn. Vui lòng bấm dừng và bắt đầu lại.");
-                    setIsListening(false);
-                }
+            const attempts = reconnectAttemptsRef.current;
+            if (attempts < maxReconnectAttempts) {
+                const delay = Math.min(1000 * Math.pow(2, attempts), 16000);
+                const isOffline = typeof navigator !== "undefined" && navigator.onLine === false;
+                setConnectionError(
+                    isOffline
+                        ? `Mất mạng internet, đang thử kết nối lại... (${attempts + 1}/${maxReconnectAttempts})`
+                        : `Mất kết nối máy chủ ASR (lỗi ${event.code}), đang thử kết nối lại... (${attempts + 1}/${maxReconnectAttempts})`
+                );
+                // [FIX] Tăng attempts NGAY TẠI ĐÂY (không trong setTimeout) để lần close
+                // kế tiếp vẫn lặp lại được -> retry đúng 5 lần thay vì kẹt ở (1/5)
+                reconnectAttemptsRef.current = attempts + 1;
+                reconnectTimeoutRef.current = setTimeout(() => {
+                    reconnectTimeoutRef.current = null;
+                    setupWebSocket(languageRef.current);
+                }, delay);
+            } else {
+                setConnectionError(
+                    `Mất kết nối máy chủ ASR sau ${maxReconnectAttempts} lần thử (lỗi ${event.code}). Bấm nút ghi âm để kết nối lại — dữ liệu đã ghi vẫn được giữ.`
+                );
+                isReconnectingRef.current = false;
+                setIsListening(false);
+                onPermanentErrorRef.current?.(event.code);
             }
         };
     }, [serverUrl, handleServerResponse]);
@@ -254,9 +305,24 @@ export default function useLocalTranscription(
         offsetTimeRef.current = startTimeOffset;
         startTimeOffsetRef.current = startTimeOffset;
         languageRef.current = language;
+        // [FIX] Gán ref NGAY (không chờ effect sync) để onclose đầu tiên thấy isListening=true
+        isListeningRef.current = true;
         setIsListening(true);
         serverStartOffsetRef.current = null;
         audioBufferRef.current = [];
+
+        // [FIX] Reset toàn bộ trạng thái retry cho phiên ghi âm mới
+        if (reconnectTimeoutRef.current) {
+            clearTimeout(reconnectTimeoutRef.current);
+            reconnectTimeoutRef.current = null;
+        }
+        if (connectTimeoutRef.current) {
+            clearTimeout(connectTimeoutRef.current);
+            connectTimeoutRef.current = null;
+        }
+        reconnectAttemptsRef.current = 0;
+        isReconnectingRef.current = false;
+        clientCloseRef.current = false;
 
         if (startTimeOffset === 0) {
             lastEndTimestampRef.current = 0;
@@ -308,12 +374,19 @@ export default function useLocalTranscription(
     };
 
     const stopListening = () => {
+        isListeningRef.current = false;
         setIsListening(false);
         if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+        if (connectTimeoutRef.current) clearTimeout(connectTimeoutRef.current);
+        connectTimeoutRef.current = null;
         if (heartbeatRef.current) clearInterval(heartbeatRef.current);
+        heartbeatRef.current = null;
         isReconnectingRef.current = false;
         audioBufferRef.current = [];
 
+        // [FIX] Đánh dấu close do client -> onclose sẽ không retry
+        clientCloseRef.current = true;
         socketRef.current?.close(1000, "User stopped");
 
         if (processorRef.current) {
@@ -321,10 +394,41 @@ export default function useLocalTranscription(
             processorRef.current = null;
         }
         if (audioContextRef.current) {
-            audioContextRef.current.close();
+            audioContextRef.current.close().catch(() => {});
             audioContextRef.current = null;
         }
     };
+
+    // [P1] Tự kết nối lại NGAY khi máy có mạng trở lại (thay vì chờ backoff tiếp)
+    useEffect(() => {
+        const handleOnline = () => {
+            if (!isListeningRef.current || !isReconnectingRef.current) return;
+            if (reconnectTimeoutRef.current) {
+                clearTimeout(reconnectTimeoutRef.current);
+                reconnectTimeoutRef.current = null;
+            }
+            reconnectAttemptsRef.current = 0;
+            setupWebSocket(languageRef.current);
+        };
+        window.addEventListener("online", handleOnline);
+        return () => window.removeEventListener("online", handleOnline);
+    }, [setupWebSocket]);
+
+    // Cleanup khi unmount: dọn toàn bộ WS + timer + audio (tránh leak/retry mồ côi)
+    useEffect(() => {
+        return () => {
+            if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+            if (connectTimeoutRef.current) clearTimeout(connectTimeoutRef.current);
+            if (heartbeatRef.current) clearInterval(heartbeatRef.current);
+            clientCloseRef.current = true;
+            socketRef.current?.close(1000, "Unmount");
+            socketRef.current = null;
+            processorRef.current?.disconnect();
+            processorRef.current = null;
+            audioContextRef.current?.close().catch(() => {});
+            audioContextRef.current = null;
+        };
+    }, []);
 
     const resetTranscript = () => {
         setSegments([]);
