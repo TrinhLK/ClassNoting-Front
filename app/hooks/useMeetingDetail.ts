@@ -5,6 +5,8 @@ import type { MeetingTemplate } from "../lib/templates";
 import type { Segment, Speaker } from "../lib/db";
 import { formatTime } from "../lib/format";
 
+export type MeetingTab = "transcript" | "summary" | "chat";
+
 export function useMeetingDetail(
   initialMeeting: Meeting,
   onSummarize?: (m: Meeting, text: string, structure?: string) => void,
@@ -13,7 +15,7 @@ export function useMeetingDetail(
 ) {
   const [meeting, setMeeting] = useState(initialMeeting);
   const [showTemplateModal, setShowTemplateModal] = useState(false);
-  const [activeTab, setActiveTab] = useState<"transcript" | "summary">("transcript");
+  const [activeTab, setActiveTab] = useState<MeetingTab>("transcript");
   const [filteredSpeakerId, setFilteredSpeakerId] = useState<string | null>(null);
 
   const handleShare = useCallback(async () => {

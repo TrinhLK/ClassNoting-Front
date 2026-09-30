@@ -3,19 +3,26 @@ import { cn } from "@/app/lib/cn";
 import Button from "@/app/components/ui/Button";
 import type { ReactNode } from "react";
 
+export interface HeroAction {
+  label: string;
+  onClick: () => void;
+  icon?: ReactNode;
+}
+
 interface HeroCardProps {
   title: string;
   description?: string;
   icon: ReactNode;
-  primaryAction: { label: string; onClick: () => void; icon?: ReactNode };
-  secondaryAction?: { label: string; onClick: () => void; icon?: ReactNode };
+  primaryAction: HeroAction;
+  secondaryAction?: HeroAction;
+  tertiaryAction?: HeroAction;
   stepNumber?: number;
   totalSteps?: number;
   className?: string;
 }
 
 export default function HeroCard({
-  title, description, icon, primaryAction, secondaryAction,
+  title, description, icon, primaryAction, secondaryAction, tertiaryAction,
   stepNumber, totalSteps, className
 }: HeroCardProps) {
   return (
@@ -45,7 +52,7 @@ export default function HeroCard({
           )}
         </div>
 
-        <div className="flex flex-col sm:flex-row gap-2 shrink-0">
+        <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2 shrink-0">
           {secondaryAction && (
             <Button
               variant="outline"
@@ -54,6 +61,16 @@ export default function HeroCard({
               leftIcon={secondaryAction.icon}
             >
               {secondaryAction.label}
+            </Button>
+          )}
+          {tertiaryAction && (
+            <Button
+              variant="outline"
+              size="md"
+              onClick={tertiaryAction.onClick}
+              leftIcon={tertiaryAction.icon}
+            >
+              {tertiaryAction.label}
             </Button>
           )}
           <Button

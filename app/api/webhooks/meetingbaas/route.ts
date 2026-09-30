@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
-import { saveMeeting, updateMeetingProcess, Meeting, Speaker, Segment } from '@/app/lib/db';
-import { getAdminStorage } from '@/app/lib/firebase-admin';
+import { saveMeeting, updateMeetingProcess, Meeting, Speaker, Segment, ChatMessage } from '@/app/lib/db';
+import { getAdminDb, getAdminStorage } from '@/app/lib/firebase-admin';
 import { MEETING_STATUS } from '@/app/lib/constants';
 
 export const dynamic = 'force-dynamic';
 
 const WEBHOOK_SECRET = process.env.MEETINGBAAS_WEBHOOK_SECRET;
+const MAX_CHAT_MESSAGES = 500;
 
 async function verifySignature(rawBody: string, signature: string | null): Promise<boolean> {
   // Trước đây: `if (!WEBHOOK_SECRET) return true` → bypass auth nếu thiếu env trong production
@@ -25,6 +26,28 @@ async function verifySignature(rawBody: string, signature: string | null): Promi
     mismatch |= signature.charCodeAt(i) ^ expectedHex.charCodeAt(i);
   }
   return mismatch === 0;
+}
+
+function toChatMessage(raw: any): ChatMessage | null {
+  const text = String(raw?.text ?? raw?.message ?? "").trim();
+  if (!text) return null;
+  return {
+    id: String(raw?.id ?? `chat_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`),
+    sender: String(raw?.sender ?? raw?.speaker ?? raw?.author ?? "Khách"),
+    text,
+    timestamp: Number(raw?.timestamp ?? raw?.created_at ?? Date.now()),
+  };
+}
+
+async function appendLiveChat(botId: string, msg: ChatMessage) {
+  const ref = getAdminDb().collection("meeting_bots").doc(botId);
+  const snap = await ref.get();
+  const prev = (snap.exists ? (snap.data()?.chatMessages as ChatMessage[] | undefined) : undefined) ?? [];
+  const next = [...prev, msg].slice(-MAX_CHAT_MESSAGES);
+  await ref.set(
+    { chatMessages: next, updatedAt: Date.now() },
+    { merge: true }
+  );
 }
 
 export async function POST(req: Request) {
@@ -48,6 +71,40 @@ export async function POST(req: Request) {
         const body = JSON.parse(rawBody);
         const { event, data } = body;
 
+        // --- Chat realtime: chỉ đọc, không gửi. Lưu vào meeting_bots để client poll/subscribe. ---
+        if (event === 'bot.chat_message' && data) {
+            const botId = data.bot_id || data.botId;
+            const msg = toChatMessage(data.message ?? data);
+            if (botId && msg) {
+                try {
+                    await appendLiveChat(botId, msg);
+                } catch (err) {
+                    console.error("[Webhook] Failed to append live chat:", err);
+                }
+            }
+            return NextResponse.json({ received: true });
+        }
+
+        // --- Cập nhật trạng thái/participants live ---
+        if ((event === 'bot.status_change' || event === 'status_change') && data) {
+            const botId = data.bot_id || data.botId;
+            if (botId) {
+                try {
+                    const payload: Record<string, unknown> = {
+                        status: data.status,
+                        updatedAt: Date.now(),
+                        userId,
+                    };
+                    if (Array.isArray(data.participants)) payload.participants = data.participants;
+                    if (Array.isArray(data.speakers)) payload.speakers = data.speakers;
+                    await getAdminDb().collection("meeting_bots").doc(botId).set(payload, { merge: true });
+                } catch (err) {
+                    console.error("[Webhook] Failed to update live status:", err);
+                }
+            }
+            return NextResponse.json({ received: true });
+        }
+
         if (event === 'failed') {
             console.error("[Webhook] Bot failed:", data?.error);
             const failedBotId = data?.bot_id;
@@ -58,6 +115,10 @@ export async function POST(req: Request) {
                         errorMessage: data?.error || "Bot không thể tham gia cuộc họp.",
                         jobId: undefined as any,
                     });
+                    await getAdminDb().collection("meeting_bots").doc(failedBotId).set(
+                        { status: "failed", error: data?.error || "Bot failed", updatedAt: Date.now(), userId },
+                        { merge: true }
+                    );
                 } catch (err) {
                     console.error("[Webhook] Failed to mark meeting as failed:", err);
                 }
@@ -136,6 +197,22 @@ export async function POST(req: Request) {
                 });
             }
 
+            // Gộp chat đã lưu live vào biên bản (tab riêng + mốc trong transcript do client render).
+            let chatMessages: ChatMessage[] = [];
+            try {
+                const liveSnap = await getAdminDb().collection("meeting_bots").doc(bot_id).get();
+                if (liveSnap.exists) {
+                    const live = liveSnap.data() as { chatMessages?: ChatMessage[] };
+                    if (Array.isArray(live.chatMessages)) chatMessages = live.chatMessages.slice(-MAX_CHAT_MESSAGES);
+                }
+            } catch (err) {
+                console.error("[Webhook] Failed to read live chat:", err);
+            }
+            const inlineChat = Array.isArray(data.chat ?? data.chat_messages)
+                ? (data.chat ?? data.chat_messages).map(toChatMessage).filter((m: ChatMessage | null): m is ChatMessage => m !== null)
+                : [];
+            if (inlineChat.length) chatMessages = [...chatMessages, ...inlineChat].slice(-MAX_CHAT_MESSAGES);
+
             const meetingStatus = mappedSegments.length > 0 ? MEETING_STATUS.TRANSCRIBED : MEETING_STATUS.FAILED;
 
             const newMeeting: Meeting = {
@@ -149,7 +226,10 @@ export async function POST(req: Request) {
                 speakers: speakerList,
                 summary: "",
                 status: meetingStatus,
-                isDeleted: false
+                isDeleted: false,
+                botId: bot_id,
+                meetingUrl: data.meeting_url,
+                chatMessages,
             };
 
             if (meetingStatus === MEETING_STATUS.TRANSCRIBED || mappedSegments.length > 0) {

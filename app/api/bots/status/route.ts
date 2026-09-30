@@ -1,13 +1,41 @@
-
 import { NextResponse } from 'next/server';
 import { checkRateLimit } from '@/app/lib/rate-limit';
-import fs from 'fs';
-import path from 'path';
-import { getMeetingById, Meeting, Speaker, Segment } from '@/app/lib/db';
+import { getAdminDb } from '@/app/lib/firebase-admin';
+import { Meeting, Speaker, Segment, ChatMessage, MeetingParticipant } from '@/app/lib/db';
 import { MEETING_STATUS } from '@/app/lib/constants';
+import { detectProvider } from '@/app/lib/meeting-links';
 
 // Force dynamic
 export const dynamic = 'force-dynamic';
+
+const MAX_CHAT_MESSAGES = 500;
+
+function toChatMessages(raw: unknown): ChatMessage[] {
+    if (!Array.isArray(raw)) return [];
+    return raw
+        .map((m: any, idx: number) => ({
+            id: String(m?.id ?? `chat_${idx}`),
+            sender: String(m?.sender ?? m?.speaker ?? m?.author ?? "Khách"),
+            text: String(m?.text ?? m?.message ?? ""),
+            timestamp: Number(m?.timestamp ?? m?.created_at ?? Date.now()),
+        }))
+        .filter((m) => m.text.trim() !== "")
+        .slice(-MAX_CHAT_MESSAGES);
+}
+
+function toParticipants(raw: unknown): MeetingParticipant[] {
+    if (!Array.isArray(raw)) return [];
+    const out: MeetingParticipant[] = [];
+    for (const item of raw as any[]) {
+        const name = String(item?.display_name ?? item?.name ?? "").trim();
+        if (!name) continue;
+        const p: MeetingParticipant = { name };
+        if (item?.id !== undefined) p.id = item.id;
+        if (item?.display_name) p.displayName = String(item.display_name);
+        out.push(p);
+    }
+    return out;
+}
 
 export async function GET(req: Request) {
     const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
@@ -48,15 +76,26 @@ export async function GET(req: Request) {
         }
         const status = botData.status;
 
-        // Check for failure: Call ended but never joined (Not Admitted / Timeout)
-        // [RELAXED] Tạm bỏ check joined_at vì có trường hợp Bot vào rồi nhưng joined_at vẫn null
-        /* if (botData.status === 'call_ended' && !botData.joined_at) {
-            console.error("[Polling] Bot failed to join (joined_at is null)", botData);
-            return NextResponse.json({
-                status: 'failed',
-                error: "Bot không vào được phòng (Có thể chưa được duyệt)."
-            });
-        } */
+        // 1b. Merge live state (chat + participants) cached via webhook.
+        let liveChat: ChatMessage[] = [];
+        let liveParticipants: MeetingParticipant[] = [];
+        try {
+            const snap = await getAdminDb().collection("meeting_bots").doc(botId).get();
+            if (snap.exists) {
+                const live = snap.data() as { chatMessages?: unknown; participants?: unknown };
+                liveChat = toChatMessages(live.chatMessages);
+                liveParticipants = toParticipants(live.participants);
+            }
+        } catch (e) {
+            console.warn("[Polling] Live state read failed:", e);
+        }
+
+        const provider = detectProvider(botData.meeting_url || "") ?? undefined;
+        const participants = toParticipants(botData.participants);
+        const speakersRaw = Array.isArray(botData.speakers) ? botData.speakers : [];
+        // Webhook chat từ MeetingBaas có thể nằm ở bot.chat / botData.chat_messages
+        const baasChat = toChatMessages(botData.chat ?? botData.chat_messages ?? botData.messages);
+        const chatMessages = [...liveChat, ...baasChat].slice(-MAX_CHAT_MESSAGES);
 
         // 2. If 'completed', try to save (Idempotent)
         if (status === 'completed' || status === 'call_ended') {
@@ -69,15 +108,25 @@ export async function GET(req: Request) {
             // Detect extension from URL or default
             let extension = 'mp4';
             if (mediaUrl) {
-                const urlPath = new URL(mediaUrl).pathname;
-                const ext = path.extname(urlPath).replace('.', '');
-                if (ext) extension = ext;
-                else if (mp3 || audio) extension = 'mp3';
+                try {
+                    const urlPath = new URL(mediaUrl).pathname;
+                    const ext = urlPath.split('.').pop()?.toLowerCase() || '';
+                    if (ext) extension = ext;
+                    else if (mp3 || audio) extension = 'mp3';
+                } catch {
+                    if (mp3 || audio) extension = 'mp3';
+                }
             }
+            void extension;
 
             if (!mediaUrl) {
                 if (status === 'call_ended') {
-                    return NextResponse.json({ status: 'processing', saved: false });
+                    return NextResponse.json({
+                        status: 'processing',
+                        saved: false,
+                        participants: participants.length ? participants : liveParticipants,
+                        chatMessages,
+                    });
                 }
 
                 // Nếu status là 'completed' mà vẫn không có file -> Lỗi thật
@@ -89,7 +138,12 @@ export async function GET(req: Request) {
             }
 
             if (botData.transcription_status === 'transcribing' || botData.transcription_status === 'queued') {
-                return NextResponse.json({ status: 'transcribing', saved: false });
+                return NextResponse.json({
+                    status: 'transcribing',
+                    saved: false,
+                    participants: participants.length ? participants : liveParticipants,
+                    chatMessages,
+                });
             }
 
             let transcriptData = transcript;
@@ -116,9 +170,13 @@ export async function GET(req: Request) {
             // Generate initial speaker list from Bot Data (Backup)
             let speakerList: Speaker[] = (speakers || []).map((s: any, idx: number) => ({
                 id: `SPEAKER_${idx.toString().padStart(2, '0')}`,
-                name: s.name || `Speaker ${idx + 1}`,
+                name: typeof s === "string" ? s : (s.name || `Speaker ${idx + 1}`),
                 color: "bg-indigo-100 text-indigo-700"
             }));
+
+            // Chèn mốc chat vào segments rỗng: client sẽ merge chi tiết sau transcribe.
+            // Ở đây giữ segments rỗng (HYBRID pipeline điền sau), nhưng đính kèm chatMessages.
+            const meetingSegments: Segment[] = [];
 
             // Construct Meeting Object (BUT DO NOT SAVE)
             const meetingData: Meeting = {
@@ -128,13 +186,17 @@ export async function GET(req: Request) {
                 createdAt: Date.now(),
                 duration: botData.duration_seconds || 0,
                 audioUrl: finalAudioUrl,
-                segments: [], // [HYBRID] Will be filled by Python Server
+                segments: meetingSegments, // [HYBRID] Will be filled by Python Server
                 speakers: speakerList,
                 summary: "",
                 status: MEETING_STATUS.TRANSCRIBED,
                 isDeleted: false,
+                meetingUrl: botData.meeting_url,
+                provider,
+                botId,
+                participants: participants.length ? participants : liveParticipants,
+                chatMessages,
                 // [NEW] Attach Diarization for Client to use
-                // @ts-ignore
                 diarization: diarizationData
             };
 
@@ -145,8 +207,17 @@ export async function GET(req: Request) {
             });
         }
 
-        // Return current status if not complete
-        return NextResponse.json({ status: status, saved: false });
+        // Return current status if not complete (kèm speaker + chat live)
+        return NextResponse.json({
+            status: status,
+            saved: false,
+            participants: participants.length ? participants : liveParticipants,
+            speakers: speakersRaw,
+            chatMessages,
+            chatCount: chatMessages.length,
+            meetingUrl: botData.meeting_url,
+            provider,
+        });
 
     } catch (error: any) {
         console.error("[Polling] Error:", error);

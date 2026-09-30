@@ -1,15 +1,16 @@
 "use client";
 import { useRef } from "react";
-import { UploadCloud, Mic, Sparkles } from "lucide-react";
+import { UploadCloud, Mic, Sparkles, NotebookPen } from "lucide-react";
 import HeroCard from "./HeroCard";
 
 interface StatsCardsProps {
   onFileSelected: (file: File) => void;
   onLiveClick: () => void;
+  onMeetingNotesClick: () => void;
 }
 
 export default function StatsCards({
-  onFileSelected, onLiveClick
+  onFileSelected, onLiveClick, onMeetingNotesClick
 }: StatsCardsProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -34,6 +35,11 @@ export default function StatsCards({
           label: "Ghi âm trực tiếp",
           icon: <Mic className="w-4 h-4" />,
           onClick: onLiveClick,
+        }}
+        tertiaryAction={{
+          label: "Ghi chú cuộc họp",
+          icon: <NotebookPen className="w-4 h-4" />,
+          onClick: onMeetingNotesClick,
         }}
       />
     </div>

@@ -23,6 +23,20 @@ export type Speaker = {
   color: string;
 };
 
+export type MeetingParticipant = {
+  id?: string | number;
+  name: string;
+  displayName?: string;
+};
+
+export type ChatMessage = {
+  id: string;
+  sender: string;
+  text: string;
+  /** epoch ms */
+  timestamp: number;
+};
+
 // ==========================================================
 // KHU VỰC COPY - PASTE DỮ LIỆU TỪ PYTHON
 // ==========================================================

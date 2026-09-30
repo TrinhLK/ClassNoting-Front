@@ -4,8 +4,8 @@ import {
   query, where, limit, onSnapshot,
   type QueryConstraint, type QueryDocumentSnapshot
 } from "firebase/firestore";
-import { Segment, Speaker, RAW_TRANSCRIPT_FILE, RAW_SUMMARY_FILE } from "../mockData";
-export type { Segment, Speaker };
+import { Segment, Speaker, ChatMessage, MeetingParticipant, RAW_TRANSCRIPT_FILE, RAW_SUMMARY_FILE } from "../mockData";
+export type { Segment, Speaker, ChatMessage, MeetingParticipant };
 import { parseTranscriptFile } from "../parser";
 import { MeetingTemplate } from "../templates";
 import { MEETING_STATUS, MeetingStatus, ActionItemStatus } from "../constants";
@@ -42,6 +42,14 @@ export interface Meeting {
   folderId?: string | null;
   shareToken?: string;
   objectives?: string;
+  // --- Meeting-bot (Ghi chú cuộc họp: Meet / Zoom / Teams) ---
+  meetingUrl?: string;
+  provider?: "meet" | "zoom" | "teams";
+  botId?: string;
+  participants?: MeetingParticipant[];
+  chatMessages?: ChatMessage[];
+  /** Raw diarization payload từ MeetingBaas (dùng cho hybrid transcribe pipeline) */
+  diarization?: unknown;
 }
 
 const COLLECTION_NAME = "meetings";

@@ -1,6 +1,6 @@
-
 import { NextResponse } from 'next/server';
 import { checkRateLimit } from '@/app/lib/rate-limit';
+import { buildBotName, detectProvider } from '@/app/lib/meeting-links';
 
 export async function POST(req: Request) {
     const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
@@ -10,13 +10,32 @@ export async function POST(req: Request) {
     }
 
     try {
-        const { meetingUrl, botName, botImage, userId } = await req.json();
+        const {
+            meetingUrl,
+            botName,
+            botImage,
+            userId,
+            userName,
+            userEmail,
+            language,
+            objectives,
+            title,
+            teamsCredentialId,
+        } = await req.json();
 
         if (!meetingUrl) {
             return NextResponse.json({ error: "Missing meetingUrl" }, { status: 400 });
         }
         if (!userId) {
             return NextResponse.json({ error: "Missing userId" }, { status: 400 });
+        }
+
+        const provider = detectProvider(meetingUrl);
+        if (!provider) {
+            return NextResponse.json(
+                { error: "Link không hợp lệ. Chỉ hỗ trợ Google Meet, Zoom hoặc MS Teams." },
+                { status: 400 }
+            );
         }
 
         const apiKey = process.env.MEETINGBAAS_API_KEY;
@@ -26,21 +45,61 @@ export async function POST(req: Request) {
 
         // Tự động nhận diện URL (Localhost vs Vercel vs Production)
         let appUrl = process.env.NEXT_PUBLIC_APP_URL;
-        // Nếu không có APP_URL thủ công, thử lấy từ biến môi trường Vercel (chưa bao gồm https://)
         if (!appUrl && process.env.VERCEL_URL) {
             appUrl = `https://${process.env.VERCEL_URL}`;
         }
-
-        // Nếu vẫn không có (chạy local chưa config), thử lấy từ Request Origin
         if (!appUrl) {
-            const host = req.headers.get("host"); // VD: localhost:3000
+            const host = req.headers.get("host");
             const protocol = host?.includes("localhost") ? "http" : "https";
             appUrl = host ? `${protocol}://${host}` : "http://localhost:3000";
         }
-
-        // const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
         const webhookUrl = `${appUrl}/api/webhooks/meetingbaas?userId=${userId}`;
 
+        // Tên bot: "Thư ký của {Tên}" — theo tài khoản đang đăng nhập
+        const finalBotName = (botName || "").trim() || buildBotName(userName, userEmail);
+
+        const body: Record<string, unknown> = {
+            meeting_url: meetingUrl,
+            bot_name: finalBotName,
+            bot_image: botImage || "https://png.pngtree.com/png-vector/20201224/ourmid/pngtree-future-intelligent-technology-robot-ai-png-image_2588803.jpg",
+            recording_mode: "speaker_view",
+            entry_message: `Xin chào, tôi là ${finalBotName}, tôi sẽ ghi chép cuộc họp này.`,
+            transcription_enabled: false,
+            transcription_config: {
+                provider: "gladia",
+            },
+            custom_params: {
+                language_config: {
+                    languages: [language === "en" ? "en" : "vi"],
+                    code_switching: true
+                }
+            },
+            timeout_config: {
+                waiting_room_timeout: 600,
+                no_one_joined_timeout: 600,
+                silence_timeout: 600
+            },
+            // Bật webhook để nhận chat realtime (bot.chat_message) + status change.
+            webhook_url: webhookUrl,
+            extra: {
+                userId,
+                provider,
+                language: language === "en" ? "en" : "vi",
+                objectives: objectives || "",
+                title: title || "",
+            },
+        };
+
+        // MS Teams: xác thực bằng tài khoản Microsoft đã liên kết (do user cung cấp),
+        // fallback về join ẩn danh khi chưa có credential (họp mở vẫn chạy).
+        if (provider === "teams") {
+            const credentialId = (teamsCredentialId || "").trim() || process.env.MEETINGBAAS_TEAMS_CREDENTIAL_ID?.trim();
+            const emailGroup = process.env.MEETINGBAAS_TEAMS_EMAIL_GROUP?.trim();
+            const teamsConfig: Record<string, unknown> = { fallback: "anonymous" };
+            if (credentialId) teamsConfig.credential_id = credentialId;
+            else if (emailGroup) teamsConfig.email_group = emailGroup;
+            body.teams_config = teamsConfig;
+        }
 
         const response = await fetch("https://api.meetingbaas.com/v2/bots", {
             method: "POST",
@@ -48,30 +107,7 @@ export async function POST(req: Request) {
                 "Content-Type": "application/json",
                 "x-meeting-baas-api-key": apiKey,
             },
-            body: JSON.stringify({
-                meeting_url: meetingUrl,
-                bot_name: botName || "DemoMeet Bot",
-                bot_image: botImage || "https://png.pngtree.com/png-vector/20201224/ourmid/pngtree-future-intelligent-technology-robot-ai-png-image_2588803.jpg", // Ảnh Bot mặc định
-                recording_mode: "speaker_view", // Hoặc "gallery_view"
-                entry_message: "Xin chào, tôi là Meeting AI Bot, tôi sẽ ghi âm cuộc họp này để tóm tắt lại cho bạn.",
-                transcription_enabled: false, // [Optional] Nếu API yêu cầu explicit
-                transcription_config: {
-                    provider: "gladia", // Chuyển sang Gladia để có Transcript
-                    // language: "vi", // Tự động nhận diện
-                },
-                custom_params: {
-                    language_config: {
-                        languages: ["vi"],
-                        code_switching: true
-                    }
-                },
-                timeout_config: {
-                    waiting_room_timeout: 600,
-                    no_one_joined_timeout: 600,
-                    silence_timeout: 600
-                },
-                // webhook_url: webhookUrl, // [DISABLED] User polls for data
-            }),
+            body: JSON.stringify(body),
         });
 
         if (!response.ok) {
@@ -92,7 +128,12 @@ export async function POST(req: Request) {
 
         const data = await response.json();
         // V2 Response structure: { success: true, data: { bot_id: "..." } }
-        return NextResponse.json({ success: true, botId: data.data.bot_id });
+        return NextResponse.json({
+            success: true,
+            botId: data.data.bot_id,
+            provider,
+            botName: finalBotName,
+        });
 
     } catch (error: any) {
         console.error("Internal Error:", error);

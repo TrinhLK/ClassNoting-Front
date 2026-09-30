@@ -421,6 +421,7 @@ export default function DashboardState({
                 setLiveLanguageState(liveLanguage);
                 setShowLiveSetupModal(true);
               }}
+              onMeetingNotesClick={onOpenBot}
             />
           )}
 

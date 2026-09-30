@@ -19,10 +19,15 @@ export function useExport(
 ) {
   const exportTxt = useCallback(() => {
     try {
-      const txt = meeting.segments
-        .map((s) => `[${formatTime(s.start)}] ${s.text}`)
-        .join("\n");
-      const blob = new Blob([txt], { type: "text/plain;charset=utf-8" });
+      const lines = meeting.segments.map((s) => `[${formatTime(s.start)}] ${s.text}`);
+      if (meeting.chatMessages && meeting.chatMessages.length > 0) {
+        lines.push("", "--- CHAT CUỘC HỌP ---");
+        for (const m of meeting.chatMessages) {
+          const t = new Date(m.timestamp).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
+          lines.push(`[Chat ${t}] ${m.sender}: ${m.text}`);
+        }
+      }
+      const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
       saveAs(blob, `${meeting.title}.txt`);
       toast.success("Đã xuất file .txt");
     } catch {

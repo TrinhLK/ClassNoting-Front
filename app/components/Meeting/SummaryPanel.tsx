@@ -12,10 +12,12 @@ import {
   Sparkles, FileText, AlignLeft, Edit3, Check
 } from "lucide-react";
 
+import type { MeetingTab } from "@/app/hooks/useMeetingDetail";
+
 interface SummaryPanelProps {
   meeting: Meeting;
   isReadOnly: boolean;
-  activeTab: "transcript" | "summary";
+  activeTab: MeetingTab;
   onEdit: () => void;
   onScrollToSegment: (time: number) => void;
 }

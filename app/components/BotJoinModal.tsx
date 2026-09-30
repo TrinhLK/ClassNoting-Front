@@ -1,40 +1,65 @@
 "use client";
 
-import { useState, useEffect } from 'react';
-import { Bot, Link as LinkIcon, Loader2, CheckCircle, Video } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { Bot, Link as LinkIcon, CheckCircle, Video, Users, MessageSquare, LogOut, Tag } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useGlobalUI } from '../context/GlobalUIProvider';
 import { storage } from "@/app/lib/firebase";
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
-import { saveMeeting, Meeting } from "@/app/lib/db";
+import { saveMeeting, Meeting, ChatMessage, MeetingParticipant } from "@/app/lib/db";
 import { MEETING_STATUS } from "../lib/constants";
+import { buildBotName, detectProvider, PROVIDER_LABELS, validateMeetingUrl } from "../lib/meeting-links";
 import Modal from "./ui/Modal";
 import Input from "./ui/Input";
 import Select from "./ui/Select";
 import Button from "./ui/Button";
 import Spinner from "./ui/Spinner";
 
+type BotStatus = "idle" | "joining" | "waiting" | "recording" | "processing" | "completed";
+
 export default function BotJoinModal({ isOpen, onClose, onUpdate }: { isOpen: boolean; onClose: () => void; onUpdate?: () => void }) {
     const { user } = useAuth();
     const { toast } = useGlobalUI();
     const [meetingUrl, setMeetingUrl] = useState("");
+    const [title, setTitle] = useState("");
     const [loading, setLoading] = useState(false);
+    const [leaving, setLeaving] = useState(false);
     const [botId, setBotId] = useState<string | null>(null);
-    const [status, setStatus] = useState<string>("idle"); // idle, joining, waiting, recording, processing, completed
+    const [status, setStatus] = useState<BotStatus>("idle"); // idle, joining, waiting, recording, processing, completed
     const [statusDetails, setStatusDetails] = useState<string>("Đang đợi kết nối...");
     const [language, setLanguage] = useState<"vi" | "en">("vi");
     const [objectives, setObjectives] = useState("");
+    const [teamsCredentialId, setTeamsCredentialId] = useState("");
+    const [participants, setParticipants] = useState<MeetingParticipant[]>([]);
+    const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
 
-    const validateMeetingUrl = (url: string): boolean => {
-        const googleMeetRegex = /^https:\/\/meet\.google\.com\/[a-z]{3}-[a-z]{4}-[a-z]{3}/i;
-        const zoomRegex = /^https:\/\/(?:[\w-]+\.)?zoom\.(?:us|com|gov)\/j\/[\w-]+/i;
-        return googleMeetRegex.test(url) || zoomRegex.test(url);
+    const provider = useMemo(() => detectProvider(meetingUrl.trim()), [meetingUrl]);
+    const botName = useMemo(
+        () => buildBotName(user?.displayName, user?.email),
+        [user]
+    );
+
+    const reset = () => {
+        setBotId(null);
+        setStatus("idle");
+        setStatusDetails("Đang đợi kết nối...");
+        setParticipants([]);
+        setChatMessages([]);
+        setLoading(false);
+        setLeaving(false);
+    };
+
+    const handleClose = () => {
+        // Đóng modal nhưng giữ bot chạy nền; reset khi mở lại từ đầu
+        if (status === "completed") reset();
+        onClose();
     };
 
     const handleJoin = async () => {
-        if (!meetingUrl) return toast.error("Vui lòng nhập link cuộc họp!");
+        const url = meetingUrl.trim();
+        if (!url) return toast.error("Vui lòng nhập link cuộc họp!");
         if (!user) return toast.error("Vui lòng đăng nhập!");
-        if (!validateMeetingUrl(meetingUrl)) return toast.error("Link không hợp lệ. Chỉ hỗ trợ Google Meet hoặc Zoom.");
+        if (!validateMeetingUrl(url)) return toast.error("Link không hợp lệ. Chỉ hỗ trợ Google Meet, Zoom hoặc MS Teams.");
 
         setLoading(true);
         setStatus("joining");
@@ -43,9 +68,14 @@ export default function BotJoinModal({ isOpen, onClose, onUpdate }: { isOpen: bo
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    meetingUrl,
+                    meetingUrl: url,
                     userId: user.uid,
-                    botName: "Thư Ký AI (Demo)"
+                    userName: user.displayName,
+                    userEmail: user.email,
+                    language,
+                    objectives: objectives.trim(),
+                    title: title.trim() || `Ghi chú họp ${new Date().toLocaleDateString("vi-VN")}`,
+                    teamsCredentialId: teamsCredentialId.trim() || undefined,
                 })
             });
 
@@ -64,6 +94,31 @@ export default function BotJoinModal({ isOpen, onClose, onUpdate }: { isOpen: bo
             toast.error("Lỗi kết nối server.");
             setLoading(false);
             setStatus("idle");
+        }
+    };
+
+    const handleLeave = async () => {
+        if (!botId) return;
+        setLeaving(true);
+        try {
+            const res = await fetch("/api/bots/leave", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ botId }),
+            });
+            if (res.ok) {
+                toast.info("Đã gửi lệnh rời phòng. Đang kết xuất biên bản...");
+                setStatus("processing");
+                setStatusDetails("Bot đang rời phòng và kết xuất...");
+            } else {
+                const data = await res.json().catch(() => ({}));
+                toast.error(`Không thể rời phòng: ${data.error || res.status}`);
+            }
+        } catch (e) {
+            console.error(e);
+            toast.error("Lỗi kết nối server.");
+        } finally {
+            setLeaving(false);
         }
     };
 
@@ -100,6 +155,10 @@ export default function BotJoinModal({ isOpen, onClose, onUpdate }: { isOpen: bo
                     return;
                 }
 
+                // Cập nhật speaker + chat live (chỉ đọc)
+                if (Array.isArray(data.participants)) setParticipants(data.participants);
+                if (Array.isArray(data.chatMessages)) setChatMessages(data.chatMessages);
+
                 if (data.status) {
                     // Update Status Text
                     if (data.status === 'call_ended' || data.status === 'completed') {
@@ -111,6 +170,9 @@ export default function BotJoinModal({ isOpen, onClose, onUpdate }: { isOpen: bo
                                 let finalMeetingData = { ...data.meetingData };
                                 if (objectives.trim()) {
                                     finalMeetingData.objectives = objectives.trim();
+                                }
+                                if (title.trim()) {
+                                    finalMeetingData.title = title.trim();
                                 }
 
                                 // [NEW] Upload Audio lên Firebase Storage (nếu có URL từ S3)
@@ -192,9 +254,10 @@ export default function BotJoinModal({ isOpen, onClose, onUpdate }: { isOpen: bo
                                 }
 
                                 setStatusDetails("Đang lưu biên bản...");
-                                await saveMeeting(finalMeetingData);
+                                await saveMeeting(finalMeetingData as Meeting);
                                 toast.success("Đã kết xuất biên bản thành công!");
                                 setTimeout(() => {
+                                    reset();
                                     onClose();
                                     if (onUpdate) onUpdate();
                                 }, 1500);
@@ -205,6 +268,7 @@ export default function BotJoinModal({ isOpen, onClose, onUpdate }: { isOpen: bo
                         } else if (data.saved) {
                             toast.success("Đã xong!");
                             setTimeout(() => {
+                                reset();
                                 onClose();
                                 if (onUpdate) onUpdate();
                             }, 1500);
@@ -243,59 +307,128 @@ export default function BotJoinModal({ isOpen, onClose, onUpdate }: { isOpen: bo
     return (
         <Modal
             isOpen={isOpen}
-            onClose={onClose}
-            title="Mời Bot Tham Gia"
-            description="Bot sẽ tự động ghi âm và phiên âm cuộc họp trên Google Meet / Zoom."
+            onClose={handleClose}
+            title="Ghi chú cuộc họp"
+            description="Bot sẽ tham gia cuộc họp trên Google Meet / Zoom / MS Teams, nhận diện người nói và lưu lại khung chat."
             icon={<Bot className="w-5 h-5" />}
-            size="md"
+            size="lg"
         >
             {botId ? (
-                <div className="text-center space-y-6 py-4">
-                    {status === 'completed' ? (
-                        <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto">
-                            <CheckCircle className="w-10 h-10" />
-                        </div>
-                    ) : (
-                        <div className="flex items-center justify-center">
-                            <Spinner size="xl" intent="primary" />
-                        </div>
-                    )}
+                <div className="space-y-5 py-2">
+                    <div className="text-center space-y-3">
+                        {status === 'completed' ? (
+                            <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto">
+                                <CheckCircle className="w-10 h-10" />
+                            </div>
+                        ) : (
+                            <div className="flex items-center justify-center">
+                                <Spinner size="xl" intent="primary" />
+                            </div>
+                        )}
 
-                    <div>
-                        <h3 className="text-xl font-bold text-slate-800">
-                            {status === 'completed' ? "Hoàn tất!" : "Bot đang làm việc"}
-                        </h3>
-                        <p className="text-slate-500 font-medium mt-2 animate-pulse">
-                            {statusDetails}
-                        </p>
-                        <p className="text-xs text-slate-400 mt-1 font-mono">ID: {botId.split('-')[0]}</p>
+                        <div>
+                            <h3 className="text-xl font-bold text-slate-800">
+                                {status === 'completed' ? "Hoàn tất!" : "Bot đang làm việc"}
+                            </h3>
+                            <p className="text-slate-500 font-medium mt-2 animate-pulse">
+                                {statusDetails}
+                            </p>
+                            <p className="text-xs text-slate-400 mt-1 font-mono">ID: {botId.split('-')[0]} · {botName}</p>
+                        </div>
+
+                        {status === 'recording' && (
+                            <div className="bg-red-50 text-red-600 px-4 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2">
+                                <div className="w-2 h-2 bg-red-600 rounded-full animate-ping" />
+                                Đang Ghi Âm
+                            </div>
+                        )}
                     </div>
 
-                    {status === 'recording' && (
-                        <div className="bg-red-50 text-red-600 px-4 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2">
-                            <div className="w-2 h-2 bg-red-600 rounded-full animate-ping" />
-                            Đang Ghi Âm
+                    {/* Live: người tham gia + chat (chỉ đọc) */}
+                    {(status === 'recording' || status === 'waiting') && (
+                        <div className="grid md:grid-cols-2 gap-3">
+                            <div className="border border-slate-200 rounded-xl p-3 bg-slate-50/50">
+                                <p className="text-xs font-bold uppercase text-slate-500 mb-2 flex items-center gap-1.5">
+                                    <Users className="w-3.5 h-3.5" /> Người đang trong phòng ({participants.length})
+                                </p>
+                                {participants.length === 0 ? (
+                                    <p className="text-xs text-slate-400 italic">Chưa thấy người tham gia...</p>
+                                ) : (
+                                    <ul className="space-y-1.5 max-h-40 overflow-y-auto">
+                                        {participants.map((p, i) => (
+                                            <li key={`${p.name}-${i}`} className="text-sm font-medium text-slate-700 flex items-center gap-2">
+                                                <span className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 text-[11px] font-bold flex items-center justify-center shrink-0">
+                                                    {p.name.charAt(0).toUpperCase()}
+                                                </span>
+                                                <span className="truncate">{p.displayName || p.name}</span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                )}
+                            </div>
+                            <div className="border border-slate-200 rounded-xl p-3 bg-slate-50/50">
+                                <p className="text-xs font-bold uppercase text-slate-500 mb-2 flex items-center gap-1.5">
+                                    <MessageSquare className="w-3.5 h-3.5" /> Chat cuộc họp · chỉ đọc ({chatMessages.length})
+                                </p>
+                                {chatMessages.length === 0 ? (
+                                    <p className="text-xs text-slate-400 italic">Chưa có tin nhắn nào. Tin nhắn do bạn/người khác gửi trong phòng sẽ hiện ở đây.</p>
+                                ) : (
+                                    <ul className="space-y-2 max-h-40 overflow-y-auto">
+                                        {chatMessages.slice(-30).map((m) => (
+                                            <li key={m.id} className="text-xs">
+                                                <span className="font-bold text-slate-700">{m.sender}</span>
+                                                <span className="text-slate-400"> · {new Date(m.timestamp).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}</span>
+                                                <p className="text-slate-600 mt-0.5 break-words">{m.text}</p>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                )}
+                            </div>
                         </div>
                     )}
 
-                    {status !== 'completed' && (
-                        <button
-                            onClick={onClose}
-                            className="text-slate-400 hover:text-slate-600 text-sm hover:underline"
-                        >
-                            Ẩn xuống nền (Bot vẫn chạy)
-                        </button>
-                    )}
+                    <div className="flex flex-col sm:flex-row gap-2">
+                        {status !== 'completed' && (status === 'recording' || status === 'waiting') && (
+                            <Button variant="danger" onClick={handleLeave} loading={leaving} className="flex-1" leftIcon={<LogOut className="w-4 h-4" />}>
+                                Rời phòng & kết xuất
+                            </Button>
+                        )}
+                        {status !== 'completed' && (
+                            <button
+                                onClick={handleClose}
+                                className="text-slate-400 hover:text-slate-600 text-sm hover:underline py-2"
+                            >
+                                Ẩn xuống nền (Bot vẫn chạy)
+                            </button>
+                        )}
+                    </div>
                 </div>
             ) : (
                 <div className="space-y-4">
                     <Input
-                        label="Link cuộc họp (Google Meet / Zoom)"
-                        placeholder="https://meet.google.com/..."
-                        value={meetingUrl}
-                        onChange={(e) => setMeetingUrl(e.target.value)}
-                        leftIcon={<LinkIcon className="w-4 h-4" />}
+                        label="Tiêu đề ghi chú"
+                        placeholder={`Ghi chú họp ${new Date().toLocaleDateString("vi-VN")}`}
+                        value={title}
+                        onChange={(e) => setTitle(e.target.value)}
+                        leftIcon={<Tag className="w-4 h-4" />}
                     />
+
+                    <div>
+                        <Input
+                            label="Link cuộc họp (Google Meet / Zoom / MS Teams)"
+                            placeholder="Dán link cuộc họp vào đây..."
+                            value={meetingUrl}
+                            onChange={(e) => setMeetingUrl(e.target.value)}
+                            leftIcon={<LinkIcon className="w-4 h-4" />}
+                        />
+                        {meetingUrl.trim() && (
+                            <p className={`text-xs mt-1.5 font-medium ${provider ? "text-emerald-600" : "text-red-500"}`}>
+                                {provider
+                                    ? `✓ Nhận diện: ${PROVIDER_LABELS[provider]} — Bot sẽ tham gia với tên “${botName}”`
+                                    : "✕ Link chưa đúng định dạng Meet / Zoom / Teams được hỗ trợ"}
+                            </p>
+                        )}
+                    </div>
 
                     <Select
                         label="Ngôn ngữ ghi âm"
@@ -318,15 +451,30 @@ export default function BotJoinModal({ isOpen, onClose, onUpdate }: { isOpen: bo
                         />
                     </div>
 
+                    {provider === "teams" && (
+                        <Input
+                            label="Teams credential ID (họp nội bộ — tùy chọn)"
+                            placeholder="Để trống = vào như khách; có credential = vào bằng tài khoản Microsoft đã liên kết"
+                            value={teamsCredentialId}
+                            onChange={(e) => setTeamsCredentialId(e.target.value)}
+                            leftIcon={<Users className="w-4 h-4" />}
+                        />
+                    )}
+
+                    <div className="text-xs text-slate-600 bg-indigo-50 p-3 rounded-xl border border-indigo-100 leading-relaxed">
+                        <span className="font-semibold text-indigo-700">Cách tham gia:</span> bot vào phòng với tên <span className="font-bold">“{botName}”</span> (theo tài khoản {user?.email || "đang đăng nhập"}).
+                        Với họp Teams nội bộ, hệ thống dùng tài khoản Microsoft đã liên kết; nếu chưa có sẽ tự vào như khách.
+                        Khung chat trong phòng <span className="font-semibold">chỉ đọc</span> — bạn nhắn trực tiếp trong ứng dụng họp, bot tự lưu lại.
+                    </div>
                     <p className="text-xs text-slate-500 italic">
-                        * Bot sẽ tự động rời phòng khi kết thúc.
+                        * Bot sẽ tự động rời phòng khi kết thúc. Nhớ báo host duyệt “{botName}” vào phòng.
                     </p>
                     <div className="text-[11px] sm:text-xs text-slate-600 bg-blue-50 p-3 rounded-xl border border-blue-100 leading-relaxed mt-2">
                         <span className="font-semibold text-blue-700">Lưu ý cho Google Workspace/Edu:</span> Nếu bot không thể tham gia, quản trị viên có thể cần cấp quyền. <a href="https://guide.fireflies.ai/articles/7581948912-how-to-invite-fireflies-to-google-meet-meetings" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 hover:underline font-medium">Xem hướng dẫn</a>
                     </div>
 
-                    <Button variant="primary" onClick={handleJoin} loading={loading} className="w-full" leftIcon={loading ? undefined : <Video className="w-4 h-4" />}>
-                        {loading ? "Đang kết nối..." : "Mời Bot vào ngay"}
+                    <Button variant="primary" onClick={handleJoin} loading={loading} disabled={meetingUrl.trim() !== "" && !provider} className="w-full" leftIcon={loading ? undefined : <Video className="w-4 h-4" />}>
+                        {loading ? "Đang kết nối..." : "Tham gia"}
                     </Button>
                 </div>
             )}

@@ -85,13 +85,64 @@ describe("POST /api/bots/join — validate input + MeetingBaas call (bug 3.5)", 
     const body = JSON.parse(calledOpts.body);
     expect(body.meeting_url).toBe("https://meet.google.com/abc-defg-hij");
     expect(body.bot_name).toBe("Custom Bot");
-    expect(body.entry_message).toContain("Meeting AI Bot");
+    expect(body.entry_message).toContain("Custom Bot");
+  });
+
+  it("đặt tên bot 'Thư ký của {Tên}' theo tài khoản đăng nhập khi không truyền botName", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ success: true, data: { bot_id: "bot_xyz" } }),
+    });
+
+    const req = makeRequest({
+      meetingUrl: "https://meet.google.com/abc-defg-hij",
+      userId: "user_123",
+      userName: "Nguyen Van A",
+      userEmail: "a@example.com",
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.botName).toBe("Thư ký của Nguyen Van A");
+    const [, calledOpts] = fetchMock.mock.calls[0];
+    expect(JSON.parse(calledOpts.body).bot_name).toBe("Thư ký của Nguyen Van A");
+  });
+
+  it("trả 400 khi link không thuộc Meet/Zoom/Teams", async () => {
+    const req = makeRequest({
+      meetingUrl: "https://example.com/room/123",
+      userId: "u1",
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+  });
+
+  it("chấp nhận link MS Teams và gửi teams_config fallback anonymous", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ success: true, data: { bot_id: "bot_teams" } }),
+    });
+
+    const req = makeRequest({
+      meetingUrl: "https://teams.microsoft.com/l/meetup-join/19%3Ameeting_abc@thread.v2/0?context=%7B%22Tid%22%3A%22123%22%7D",
+      userId: "user_123",
+      userName: "Tran Thi B",
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.provider).toBe("teams");
+    const [, calledOpts] = fetchMock.mock.calls[0];
+    const sent = JSON.parse(calledOpts.body);
+    expect(sent.teams_config.fallback).toBe("anonymous");
+    expect(sent.bot_name).toBe("Thư ký của Tran Thi B");
+    expect(sent.webhook_url).toContain("/api/webhooks/meetingbaas");
   });
 
   it("trả 429 khi vượt rate limit (10 req / 5 phút)", async () => {
     const makeRateLimitReq = () =>
       makeRequest(
-        { meetingUrl: "https://meet.google.com/x", userId: "u1" },
+        { meetingUrl: "https://meet.google.com/abc-defg-hij", userId: "u1" },
         { ip: "9.9.9.9" }
       );
     for (let i = 0; i < 10; i++) {
@@ -120,7 +171,7 @@ describe("POST /api/bots/join — validate input + MeetingBaas call (bug 3.5)", 
     });
 
     const req = makeRequest({
-      meetingUrl: "https://meet.google.com/y",
+      meetingUrl: "https://meet.google.com/abc-defg-hij",
       userId: "u2",
     });
     const res = await POST(req);

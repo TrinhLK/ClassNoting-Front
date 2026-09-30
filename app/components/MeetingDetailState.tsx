@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useCallback, useRef, useState } from "react";
-import { Sparkles, FileText as FileIcon, Share2 } from "lucide-react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
+import { Sparkles, FileText as FileIcon, Share2, AlignLeft, MessageSquare } from "lucide-react";
 import { Meeting } from "../lib/db";
-import type { Segment, Speaker } from "../lib/db";
+import type { Segment, Speaker, ChatMessage } from "../lib/db";
 import { useGlobalUI } from "../context/GlobalUIProvider";
 import { useMeetingDetail } from "../hooks/useMeetingDetail";
 import { useAudioPlayer } from "../hooks/useAudioPlayer";
@@ -13,6 +13,7 @@ import DocsFillModal from "./DocsFillModal";
 import TranscriptRow from "./TranscriptRow";
 import SummaryPanel from "./Meeting/SummaryPanel";
 import TabSwitcher from "./Meeting/TabSwitcher";
+import ChatPanel, { formatChatTime } from "./Meeting/ChatPanel";
 import SpeakerFilter from "./Meeting/SpeakerFilter";
 import MeetingHeader from "./Meeting/Header";
 import MeetingAudioPlayer from "./Meeting/AudioPlayer";
@@ -58,10 +59,29 @@ export default function MeetingDetailState({
 
   const segments = meeting.segments || [];
   const speakers = meeting.speakers || [];
+  const chatMessages = useMemo(() => meeting.chatMessages || [], [meeting.chatMessages]);
+  const hasChat = chatMessages.length > 0;
 
   const filteredSegments = filteredSpeakerId
     ? segments.filter((s: Segment) => s.speakerId === filteredSpeakerId)
     : segments;
+
+  // Timeline gộp: transcript + mốc chat theo thời gian (chat timestamp ms → giây)
+  type TimelineItem =
+    | { kind: "segment"; seg: Segment }
+    | { kind: "chat"; msg: ChatMessage };
+  const timeline: TimelineItem[] = useMemo(() => {
+    if (!hasChat) return filteredSegments.map((seg) => ({ kind: "segment" as const, seg }));
+    const items: TimelineItem[] = [
+      ...filteredSegments.map((seg) => ({ kind: "segment" as const, seg })),
+      ...chatMessages.map((msg) => ({ kind: "chat" as const, msg })),
+    ];
+    const timeOf = (it: TimelineItem) =>
+      it.kind === "segment" ? it.seg.start : it.msg.timestamp / 1000;
+    return items.sort((a, b) => timeOf(a) - timeOf(b));
+  }, [filteredSegments, chatMessages, hasChat]);
+
+  const showChatPanel = activeTab === "chat";
 
   const getActiveSpeakerId = (seg: Segment) => {
     const currentSpeaker = speakers.find((s: Speaker) => s.id === seg.speakerId) || speakers[0];
@@ -130,12 +150,28 @@ export default function MeetingDetailState({
         </div>
       )}
 
-      <TabSwitcher activeTab={activeTab} onTabChange={setActiveTab} />
+      <TabSwitcher activeTab={activeTab} onTabChange={setActiveTab} showChat={hasChat} />
 
       <div className="flex-1 flex overflow-hidden">
-        {/* Transcript Panel */}
-        <div className={`flex-1 flex flex-col overflow-hidden ${activeTab === "summary" ? "hidden md:flex" : ""}`}>
-          {speakers.length > 0 && (
+        {/* Transcript / Chat Panel */}
+        <div className={`flex-1 flex-col overflow-hidden ${activeTab === "summary" ? "hidden md:flex" : "flex"}`}>
+          {hasChat && (
+            <div className="hidden md:flex items-center gap-1 p-2 px-4 bg-white border-b border-slate-200 shrink-0">
+              <button
+                onClick={() => setActiveTab("transcript")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${!showChatPanel ? "bg-indigo-600 text-white" : "text-slate-500 hover:bg-slate-100"}`}
+              >
+                <AlignLeft className="w-3.5 h-3.5" /> Nội dung
+              </button>
+              <button
+                onClick={() => setActiveTab("chat")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${showChatPanel ? "bg-emerald-600 text-white" : "text-slate-500 hover:bg-slate-100"}`}
+              >
+                <MessageSquare className="w-3.5 h-3.5" /> Chat ({chatMessages.length})
+              </button>
+            </div>
+          )}
+          {speakers.length > 0 && !showChatPanel && (
             <SpeakerFilter
               speakers={speakers}
               filteredSpeakerId={filteredSpeakerId}
@@ -144,34 +180,49 @@ export default function MeetingDetailState({
           )}
 
           <div className="flex-1 overflow-y-auto pb-24">
-            <div className="p-4 md:p-8 space-y-2">
-              {filteredSegments.length === 0 && (
-                <p className="text-slate-400 text-center py-10">Chưa có nội dung transcript.</p>
-              )}
-              {filteredSegments.map((seg: Segment) => {
-                const currentSpeaker = getActiveSpeakerId(seg);
-                const isActive = currentTime >= seg.start && currentTime <= seg.end;
-                return (
-                  <TranscriptRow
-                    key={seg.id}
-                    segment={seg}
-                    speaker={currentSpeaker}
-                    allSpeakers={speakers}
-                    isActive={isActive}
-                    isAudioPlaying={isPlaying}
-                    activeWordIndex={getActiveWordIndex(seg)}
-                    onTogglePlay={togglePlay}
-                    onSeek={seekTo}
-                    onTextChange={() => {}}
-                    onSpeakerChange={() => {}}
-                    onSplit={() => {}}
-                    onMerge={() => {}}
-                    onAddRow={() => {}}
-                    onTimeChange={() => {}}
-                  />
-                );
-              })}
-            </div>
+            {showChatPanel ? (
+              <ChatPanel messages={chatMessages} />
+            ) : (
+              <div className="p-4 md:p-8 space-y-2">
+                {timeline.length === 0 && (
+                  <p className="text-slate-400 text-center py-10">Chưa có nội dung transcript.</p>
+                )}
+                {timeline.map((item) => {
+                  if (item.kind === "chat") {
+                    const m = item.msg;
+                    return (
+                      <div key={m.id} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-50 border border-emerald-100 text-xs">
+                        <MessageSquare className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <span className="font-bold text-emerald-800 shrink-0">💬 {formatChatTime(m.timestamp)} · {m.sender}:</span>
+                        <span className="text-slate-700 break-words min-w-0">{m.text}</span>
+                      </div>
+                    );
+                  }
+                  const seg = item.seg;
+                  const currentSpeaker = getActiveSpeakerId(seg);
+                  const isActive = currentTime >= seg.start && currentTime <= seg.end;
+                  return (
+                    <TranscriptRow
+                      key={seg.id}
+                      segment={seg}
+                      speaker={currentSpeaker}
+                      allSpeakers={speakers}
+                      isActive={isActive}
+                      isAudioPlaying={isPlaying}
+                      activeWordIndex={getActiveWordIndex(seg)}
+                      onTogglePlay={togglePlay}
+                      onSeek={seekTo}
+                      onTextChange={() => {}}
+                      onSpeakerChange={() => {}}
+                      onSplit={() => {}}
+                      onMerge={() => {}}
+                      onAddRow={() => {}}
+                      onTimeChange={() => {}}
+                    />
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
 

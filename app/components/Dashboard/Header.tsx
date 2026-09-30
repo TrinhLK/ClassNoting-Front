@@ -41,7 +41,7 @@ export default function Header({
           onClick={onOpenBot}
           className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:bg-blue-50 px-3 py-2 rounded-lg transition-colors flex items-center gap-2"
         >
-          <Bot className="w-4 h-4" /> Mời Bot
+          <Bot className="w-4 h-4" /> Ghi chú cuộc họp
         </button>
         <button
           onClick={onOpenDrive}

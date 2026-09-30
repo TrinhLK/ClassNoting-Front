@@ -1,5 +1,5 @@
 export type { Meeting, TaskItem } from './meetingDb';
-export type { Segment, Speaker } from '../mockData';
+export type { Segment, Speaker, ChatMessage, MeetingParticipant } from '../mockData';
 export { saveMeeting, getAllMeetings, getMeetingById, getMeetingByShareId, updateMeetingProcess, toggleTrashMeeting, deleteMeetingPermanent, updateMeetingTitle, updateMeetingFolder, generateMeetingShareToken, subscribeToActiveMeetings, getActiveTranscribingMeetings, seedInitialData, getMeetingsPaginated, PAGE_SIZE } from './meetingDb';
 export type { Member } from './memberDb';
 export { getMembers, saveMember, deleteMember, getExistingDepartments, getExistingTeams } from './memberDb';
