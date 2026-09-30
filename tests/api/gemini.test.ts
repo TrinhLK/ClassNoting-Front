@@ -16,7 +16,8 @@ const fetchMock = vi.fn();
 beforeEach(() => {
   fetchMock.mockReset();
   vi.stubGlobal("fetch", fetchMock);
-  process.env.OPEN_CODE_GO_API_KEY = "test-gemini-key";
+  // Route đọc GOOGLE_AI_API_KEY lúc import module — phải set trước import động
+  process.env.GOOGLE_AI_API_KEY = "test-gemini-key";
 });
 
 describe("POST /api/gemini — retry + validate (bug unknown, test logic mới)", () => {
@@ -77,13 +78,7 @@ describe("POST /api/gemini — retry + validate (bug unknown, test logic mới)"
         ok: false,
         status: 400,
         statusText: "Bad Request",
-        text: async () => "deepseek failed",
-      })
-      .mockResolvedValueOnce({
-        ok: false,
-        status: 400,
-        statusText: "Bad Request",
-        text: async () => "minimax failed",
+        text: async () => "primary model failed",
       })
       .mockResolvedValueOnce({
         ok: true,
@@ -94,11 +89,10 @@ describe("POST /api/gemini — retry + validate (bug unknown, test logic mới)"
     const res = await POST(req);
 
     expect(res.status).toBe(200);
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(fetchMock.mock.calls.map(([, opts]) => JSON.parse(opts.body).model)).toEqual([
-      "deepseek-v4-flash",
-      "minimax-m3",
-      "mimo-v2.5",
+      "gemini-3.7-flash",
+      "gemini-3.6-flash",
     ]);
     await expect(res.json()).resolves.toMatchObject({ summary: "Fallback OK" });
   });
@@ -114,8 +108,8 @@ describe("POST /api/gemini — retry + validate (bug unknown, test logic mới)"
 
     const [, opts] = fetchMock.mock.calls[0];
     const body = JSON.parse(opts.body);
-    expect(body.model).toBe("mimo-v2.5");
-    expect(body.max_tokens).toBe(16384);
+    expect(body.model).toBe("gemini-3.7-flash");
+    expect(body.max_tokens).toBe(32768);
     const headers = opts.headers;
     expect(headers.Authorization).toBe("Bearer test-gemini-key");
   });

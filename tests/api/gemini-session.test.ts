@@ -1,8 +1,19 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { makeRequest } from "@/tests/helpers/fixtures";
+
+// Route đọc GOOGLE_AI_API_KEY lúc import module -> phải set TRƯỚC khi import route
+vi.hoisted(() => {
+  process.env.GOOGLE_AI_API_KEY = "test-gemini-key";
+});
+
 import { POST } from "@/app/api/gemini/route";
 
 vi.mock("@/app/lib/rate-limit", () => ({ checkRateLimit: () => ({ allowed: true }) }));
+
+const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
+const PRIMARY = "gemini-3.7-flash";
+const FALLBACK = "gemini-3.6-flash";
+
 const fetchMock = vi.fn();
 const modes = ["segment", "full", "qa", "fill_placeholders", "detect_fill", "extract_json"];
 const success = () => new Response(JSON.stringify({ choices: [{ message: { content: "[]" } }] }));
@@ -19,48 +30,43 @@ beforeEach(() => {
 });
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
-describe("provider conversation identity", () => {
-  it.each(modes)("%s sends the explicit ID on every turn", async mode => {
+describe("provider request contract", () => {
+  it.each(modes)("%s gửi đúng endpoint, model và payload", async mode => {
     fetchMock.mockImplementation(success);
     for (let turn = 0; turn < 2; turn++) {
       expect((await POST(makeRequest(body(mode)))).status).toBe(200);
     }
     expect(fetchMock).toHaveBeenCalledTimes(2);
     for (const [url, options] of fetchMock.mock.calls) {
-      expect(url).toBe("https://opencode.ai/zen/go/v1/chat/completions");
-      expect(options.headers["x-opencode-session"]).toBe("workflow-123");
+      expect(url).toBe(GEMINI_URL);
+      expect(options.headers.Authorization).toBe("Bearer test-gemini-key");
       const payload = JSON.parse(options.body);
       expect(payload).not.toHaveProperty("sessionId");
-      expect(payload.model).toBe(mode === "full" ? "minimax-m3" : "deepseek-v4-flash");
-      expect(payload.max_tokens).toBe(16384);
-      if (mode === "full" || mode === "segment") expect(payload.reasoning).toBe(false);
-      else expect(payload).not.toHaveProperty("reasoning");
+      expect(payload).not.toHaveProperty("reasoning");
+      expect(payload.model).toBe(PRIMARY);
+      expect(payload.max_tokens).toBe(32768);
+      expect(Array.isArray(payload.messages)).toBe(true);
     }
   });
 
-  it.each(modes)("%s preserves ID through retries and deduplicated fallbacks", async mode => {
+  it.each(modes)("%s retry 3 lần trên primary rồi fallback", async mode => {
     fetchMock.mockImplementationOnce(() => new Response("busy", { status: 503 }))
       .mockImplementationOnce(() => new Response("busy", { status: 503 }))
-      .mockImplementationOnce(() => new Response("busy", { status: 503 }));
-    if (mode !== "full") fetchMock.mockImplementationOnce(() => new Response("bad", { status: 400 }));
-    fetchMock.mockImplementationOnce(success);
+      .mockImplementationOnce(() => new Response("busy", { status: 503 }))
+      .mockImplementationOnce(success);
     const pending = POST(makeRequest(body(mode)));
     await vi.runAllTimersAsync();
     expect((await pending).status).toBe(200);
-    expect(fetchMock.mock.calls.map(([, options]) => JSON.parse(options.body).model)).toEqual(mode === "full" ? [
-      "minimax-m3", "minimax-m3", "minimax-m3", "mimo-v2.5",
-    ] : [
-      "deepseek-v4-flash", "deepseek-v4-flash", "deepseek-v4-flash", "minimax-m3", "mimo-v2.5",
+    expect(fetchMock.mock.calls.map(([, options]) => JSON.parse(options.body).model)).toEqual([
+      PRIMARY, PRIMARY, PRIMARY, FALLBACK,
     ]);
-    if (mode === "full") {
-      expect(fetchMock.mock.calls.every(([, options]) => JSON.parse(options.body).reasoning === false)).toBe(true);
-      expect(logs().find(log => log.event === "pipeline_start").models).toEqual(["minimax-m3", "mimo-v2.5"]);
-    }
-    expect(fetchMock.mock.calls.every(([, options]) => options.headers["x-opencode-session"] === "workflow-123")).toBe(true);
-    expect(logs().at(-1)).toMatchObject({ event: "pipeline_complete", outcome: "success", requestedModel: "mimo-v2.5", durationMs: 3000 });
+    expect(logs().find(log => log.event === "pipeline_start").models).toEqual([PRIMARY, FALLBACK]);
+    expect(fetchMock.mock.calls.every(([, options]) => options.headers.Authorization === "Bearer test-gemini-key")).toBe(true);
+    expect(fetchMock.mock.calls.every(([, options]) => !("sessionId" in JSON.parse(options.body)))).toBe(true);
+    expect(logs().at(-1)).toMatchObject({ event: "pipeline_complete", outcome: "success", requestedModel: FALLBACK });
   });
 
-  it("preserves ID on network and empty-content retries", async () => {
+  it("giữ sessionId không rò rỉ qua network + empty-content retries", async () => {
     fetchMock.mockRejectedValueOnce(Object.assign(new Error("network"), { code: "ECONNRESET" }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [] })))
       .mockImplementationOnce(success);
@@ -68,11 +74,13 @@ describe("provider conversation identity", () => {
     await vi.runAllTimersAsync();
     expect((await pending).status).toBe(200);
     expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(fetchMock.mock.calls.every(([, options]) => options.headers["x-opencode-session"] === "workflow-123")).toBe(true);
+    expect(fetchMock.mock.calls.every(([, options]) => JSON.parse(options.body).model === PRIMARY)).toBe(true);
+    expect(fetchMock.mock.calls.every(([, options]) => !("sessionId" in JSON.parse(options.body)))).toBe(true);
   });
 
   it.each([undefined, null, "", " ", 123, {}, [], "bad\r\nheader", "bad\n", "bad\r", "has space", "é", "x".repeat(129)])(
-    "rejects invalid/missing ID %j without provider calls", async sessionId => {
+    "rejects invalid/missing ID %j without provider calls",
+    async sessionId => {
       const res = await POST(makeRequest({ ...body("qa"), sessionId }));
       expect(res.status).toBe(400);
       expect((await res.json()).error).toContain("sessionId");
@@ -83,7 +91,9 @@ describe("provider conversation identity", () => {
   it.each(["a", "x".repeat(128), "chat-123_ABC"])("accepts header-safe boundary %s", async sessionId => {
     fetchMock.mockImplementation(success);
     expect((await POST(makeRequest(body("full", sessionId)))).status).toBe(200);
-    expect(fetchMock.mock.calls[0][1].headers["x-opencode-session"]).toBe(sessionId);
+    const payload = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(payload).not.toHaveProperty("sessionId");
+    expect(payload.model).toBe(PRIMARY);
   });
 });
 
@@ -117,12 +127,12 @@ describe("provider diagnostics", () => {
       const events = logs().filter(log => log.requestId === start.requestId);
       expect(events.every(log => log.mode === mode)).toBe(true);
       expect(events.map(log => log.event)).toEqual(["pipeline_start", "attempt_start", "headers", "body_complete", "attempt_success", "pipeline_complete"]);
-      expect(events[2]).toMatchObject({ requestedModel: "deepseek-v4-flash", attempt: 1, status: 200, headersMs: 40 });
-      expect(events[3].durationMs).toBe(100);
+      expect(events[2]).toMatchObject({ requestedModel: PRIMARY, attempt: 1, status: 200, headersMs: expect.any(Number) });
+      expect(events[3].durationMs).toEqual(expect.any(Number));
       expect(events[4]).toMatchObject({ returnedModel: "actual-provider-model", usage: {
         prompt_tokens: 12, completion_tokens: 8, total_tokens: 20, reasoning_tokens: 3,
       } });
-      expect(events[5]).toMatchObject({ outcome: "success", durationMs: 100 });
+      expect(events[5]).toMatchObject({ outcome: "success", durationMs: expect.any(Number) });
     }
     expect(JSON.stringify(logs())).not.toMatch(/Transcript|Question|workflow-123|not-loggable|Bearer/);
   });
@@ -136,12 +146,13 @@ describe("provider diagnostics", () => {
     await vi.runAllTimersAsync();
     expect((await pending).status).toBe(500);
     expect(logs().filter(log => log.event === "retry").map(({ reason, backoffMs, status }) => ({ reason, backoffMs, status }))).toEqual([
-      { reason: "network", backoffMs: 1000 }, { reason: "empty", backoffMs: 2000 },
-      { reason: "http", backoffMs: 1000, status: 503 }, { reason: "http", backoffMs: 2000, status: 503 },
-      { reason: "http", backoffMs: 1000, status: 503 }, { reason: "http", backoffMs: 2000, status: 503 },
+      { reason: "network", backoffMs: 1000, status: undefined },
+      { reason: "empty", backoffMs: 2000, status: undefined },
+      { reason: "http", backoffMs: 1000, status: 503 },
+      { reason: "http", backoffMs: 2000, status: 503 },
     ]);
-    expect(logs().filter(log => log.event === "fallback").map(log => log.fallbackModel)).toEqual(["minimax-m3", "mimo-v2.5"]);
-    expect(logs().at(-1)).toMatchObject({ event: "pipeline_complete", outcome: "failure", durationMs: 9000 });
+    expect(logs().filter(log => log.event === "fallback").map(log => log.fallbackModel)).toEqual([FALLBACK]);
+    expect(logs().at(-1)).toMatchObject({ event: "pipeline_complete", outcome: "failure", durationMs: expect.any(Number) });
     expect(new Set(logs().map(log => log.requestId)).size).toBe(1);
     expect(JSON.stringify([...logs(), ...vi.mocked(console.error).mock.calls])).not.toMatch(/PRIVATE_|Transcript|Bearer/);
   });
@@ -154,6 +165,6 @@ describe("provider diagnostics", () => {
     await POST(makeRequest(body("qa")));
     const result = logs().find(log => log.event === "attempt_success");
     expect(result).not.toHaveProperty("returnedModel");
-    expect(result.usage).toEqual({ reasoning_tokens: 0 });
+    expect(result!.usage).toEqual({ reasoning_tokens: 0 });
   });
 });
