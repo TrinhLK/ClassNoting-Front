@@ -1,66 +1,19 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Word } from "../lib/mockData";
 import { formatTranscriptText, formatWords } from "../lib/utils";
+import {
+    downsampleBuffer,
+    SILENCE_BUFFER,
+    MAX_AUDIO_BUFFER_SIZE,
+    CONNECT_TIMEOUT_MS,
+    MAX_RECONNECT_ATTEMPTS,
+    buildRealtimeUrl,
+    parseServerMessage,
+    mergeFinalSegment,
+} from "../lib/realtime-protocol";
+import type { TranscriptSegment } from "../lib/realtime-protocol";
 
-// HÀM NỐI CHUỖI THÔNG MINH (CHỐNG LẶP)
-const mergeText = (prev: string, next: string) => {
-    const p = prev.trim();
-    const n = next.trim();
-    if (!p) return n;
-    if (!n) return p;
-    if (n.startsWith(p)) return n;
-    const overlapMax = Math.min(p.length, n.length, 20);
-    for (let i = overlapMax; i > 0; i--) {
-        const suffix = p.slice(-i);
-        const prefix = n.slice(0, i);
-        if (suffix === prefix) return p + n.slice(i);
-    }
-    if (/^[.,!?;:]/.test(n)) return p + n;
-    return p + " " + n;
-};
-
-// AUDIO HELPER: Downsample & Convert to Int16
-const downsampleBuffer = (buffer: Float32Array, inputSampleRate: number, outputSampleRate: number) => {
-    if (outputSampleRate === inputSampleRate) return convertFloat32ToInt16(buffer);
-    const sampleRateRatio = inputSampleRate / outputSampleRate;
-    const newLength = Math.round(buffer.length / sampleRateRatio);
-    const result = new Int16Array(newLength);
-    let offsetResult = 0, offsetBuffer = 0;
-    while (offsetResult < result.length) {
-        const nextOffsetBuffer = Math.round((offsetResult + 1) * sampleRateRatio);
-        let accum = 0, count = 0;
-        for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i++) {
-            accum += buffer[i];
-            count++;
-        }
-        result[offsetResult] = Math.max(-1, Math.min(1, count > 0 ? accum / count : 0)) * 32768;
-        offsetResult++;
-        offsetBuffer = nextOffsetBuffer;
-    }
-    return result;
-};
-const convertFloat32ToInt16 = (buffer: Float32Array) => {
-    let l = buffer.length;
-    const buf = new Int16Array(l);
-    while (l--) buf[l] = Math.max(-1, Math.min(1, buffer[l])) * 0x7FFF;
-    return buf;
-};
-
-// Silence buffer: 1 giây audio rỗng (16000 samples @ 16kHz) - dùng làm heartbeat
-const SILENCE_BUFFER = new Int16Array(16000);
-
-// Giới hạn buffer audio trong lúc mất kết nối (tối đa ~5 giây)
-const MAX_AUDIO_BUFFER_SIZE = 50;
-
-// Nếu WS không mở được sau thời gian này -> ép close để kích hoạt retry
-const CONNECT_TIMEOUT_MS = 8000;
-
-export type TranscriptSegment = {
-    speaker: number;
-    content: string;
-    isFinal: boolean;
-    words?: Word[];
-};
+// Giữ re-export để code ngoài hook (nếu có) vẫn import được type cũ.
+export type { TranscriptSegment };
 
 export default function useLocalTranscription(
     onFinal?: (data: any) => void,
@@ -87,7 +40,7 @@ export default function useLocalTranscription(
     // --- REFS CHO RECONNECTION ---
     const isReconnectingRef = useRef(false);
     const reconnectAttemptsRef = useRef(0);
-    const maxReconnectAttempts = 5;
+    const maxReconnectAttempts = MAX_RECONNECT_ATTEMPTS;
     const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const languageRef = useRef<string>("vi");
     const startTimeOffsetRef = useRef<number>(0);
@@ -109,78 +62,54 @@ export default function useLocalTranscription(
     }, [onPermanentError]);
 
     const handleServerResponse = useCallback((data: any) => {
-        // [FIX] Bỏ qua keepalive messages từ server
-        if (data.type === "keepalive") return;
+        const packet = parseServerMessage(data);
+        // null = keepalive / message rỗng / sai định dạng → bỏ qua.
+        if (!packet) return;
 
-        const isFinalPacket = data.is_final;
+        const transcript = formatTranscriptText(packet.rawTranscript);
 
-        if (data.channel && data.channel.alternatives?.[0]) {
-            const alt = data.channel.alternatives[0];
+        if (packet.kind === "interim") {
+            setInterimContent(transcript);
+            return;
+        }
 
-            const rawTranscript = alt.transcript;
-            if (!rawTranscript) return;
+        setInterimContent("");
 
-            const transcript = formatTranscriptText(rawTranscript);
-
-            if (!isFinalPacket) {
-                setInterimContent(transcript);
-                return;
+        const rawWords = packet.rawWords.map((w) => {
+            if (serverStartOffsetRef.current === null) {
+                if (w.start > 3600) {
+                    serverStartOffsetRef.current = w.start;
+                    console.warn(`⚠️ Server timestamp huge (${w.start}s). Normalizing to 0.`);
+                } else {
+                    serverStartOffsetRef.current = 0;
+                }
             }
 
-            setInterimContent("");
+            const normStart = Math.max(0, w.start - (serverStartOffsetRef.current || 0));
+            const normEnd = Math.max(0, w.end - (serverStartOffsetRef.current || 0));
 
-            let rawWords = (alt.words || []).map((w: any) => {
-                if (serverStartOffsetRef.current === null) {
-                    if (w.start > 3600) {
-                        serverStartOffsetRef.current = w.start;
-                        console.warn(`⚠️ Server timestamp huge (${w.start}s). Normalizing to 0.`);
-                    } else {
-                        serverStartOffsetRef.current = 0;
-                    }
-                }
+            return {
+                ...w,
+                start: normStart + offsetTimeRef.current,
+                end: normEnd + offsetTimeRef.current
+            };
+        });
 
-                const normStart = Math.max(0, w.start - (serverStartOffsetRef.current || 0));
-                const normEnd = Math.max(0, w.end - (serverStartOffsetRef.current || 0));
+        const words = formatWords(rawWords);
 
-                return {
-                    ...w,
-                    start: normStart + offsetTimeRef.current,
-                    end: normEnd + offsetTimeRef.current
-                };
-            });
+        if (onFinal) onFinal({ speaker: 0, content: transcript });
 
-            const words = formatWords(rawWords);
-
-            if (onFinal) onFinal({ speaker: 0, content: transcript });
-
-            setSegments(prev => {
-                const lastSegment = prev[prev.length - 1];
-                const currentStart = words.length > 0 ? words[0].start : (lastEndTimestampRef.current + 0.1);
-                const gap = currentStart - lastEndTimestampRef.current;
-                const serverSpeaker = alt.speaker ?? (words[0]?.speaker) ?? 0;
-                if (words.length > 0) {
-                    lastEndTimestampRef.current = words[words.length - 1].end;
-                }
-
-                if (lastSegment && lastSegment.speaker === serverSpeaker && gap < 1.0) {
-                    return [
-                        ...prev.slice(0, -1),
-                        {
-                            ...lastSegment,
-                            content: mergeText(lastSegment.content, transcript),
-                            words: (lastSegment.words || []).concat(words)
-                        }
-                    ];
-                }
-
-                return [...prev, {
-                    speaker: serverSpeaker,
-                    content: transcript,
-                    isFinal: true,
-                    words: words
-                }];
-            });
-        }
+        setSegments(prev => {
+            const result = mergeFinalSegment(
+                prev,
+                transcript,
+                words,
+                packet.serverSpeaker,
+                lastEndTimestampRef.current
+            );
+            lastEndTimestampRef.current = result.lastEnd;
+            return result.segments;
+        });
     }, [onFinal]);
 
     const setupWebSocket = useCallback((language: string) => {
@@ -195,7 +124,7 @@ export default function useLocalTranscription(
 
         if (connectTimeoutRef.current) clearTimeout(connectTimeoutRef.current);
 
-        const finalUrl = `${serverUrl}/?language=${language}`;
+        const finalUrl = buildRealtimeUrl(serverUrl, language);
         const ws = new WebSocket(finalUrl);
         socketRef.current = ws;
 
