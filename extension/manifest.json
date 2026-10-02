@@ -6,7 +6,12 @@
   "minimum_chrome_version": "116",
   "permissions": ["tabs", "tabCapture", "storage", "notifications", "alarms", "offscreen"],
   "host_permissions": [
-    "https://meet.google.com/*"
+    "https://meet.google.com/*",
+    "https://smart-noting.vercel.app/*",
+    "https://noting.io.vn/*",
+    "https://*.noting.io.vn/*",
+    "http://localhost:3000/*",
+    "https://asr-live.noting.io.vn/*"
   ],
   "background": {
     "service_worker": "src/background.js",

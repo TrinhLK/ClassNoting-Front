@@ -109,27 +109,37 @@ setInterval(() => {
 // ---- Đảm bảo session khi phát hiện phòng họp ----
 // opts.manual=true (nút "Bắt đầu tab này" trong popup): bỏ qua cờ autoStart,
 // nhưng vẫn yêu cầu consent một lần + đăng nhập.
-async function ensureSession(tabId, info, opts) {
+// tryEnsureSession trả { sessionId } hoặc { error, status } để popup chẩn đoán
+// chính xác (thay vì một message chung chung).
+async function tryEnsureSession(tabId, info, opts) {
   const { autoStart, consent } = await getSettings();
-  if (!consent) return null;
-  if (!opts?.manual && !autoStart) return null;
+  if (!consent) return { error: "no_consent" };
+  if (!opts?.manual && !autoStart) return { error: "auto_off" };
   const existing = tabs.get(tabId);
   if (existing?.sessionId) {
     existing.lastSeen = Date.now();
-    return existing.sessionId;
+    return { sessionId: existing.sessionId };
   }
   const auth = await getAuth();
   if (!auth) {
     notifyLoginRequired();
-    return null;
+    return { error: "no_auth" };
   }
   try {
     const res = await apiFetch("/api/extension/session", {
       meetingUrl: info.url,
       title: info.title,
     });
-    const data = await res.json();
-    if (!res.ok || !data.sessionId) return null;
+    let data = {};
+    try {
+      data = await res.json();
+    } catch (e) { /* body lỗi — xử lý theo status */ }
+    if (!res.ok || !data.sessionId) {
+      if (res.status === 400) return { error: "bad_link", status: res.status };
+      if (res.status === 429) return { error: "rate_limited", status: res.status };
+      if (res.status >= 500) return { error: "server_error", status: res.status };
+      return { error: "api_failed", status: res.status };
+    }
     tabs.set(tabId, {
       sessionId: data.sessionId,
       provider: data.provider || info.provider,
@@ -146,11 +156,21 @@ async function ensureSession(tabId, info, opts) {
       // báo user bấm popup để thử lại (có user gesture).
       setBadge(tabId, "!", "#d97706");
     });
-    return data.sessionId;
+    return { sessionId: data.sessionId };
   } catch (e) {
-    if (e.code === "NO_AUTH" || e.code === "UNAUTHORIZED") notifyLoginRequired();
-    return null;
+    if (e.code === "NO_AUTH" || e.code === "UNAUTHORIZED") {
+      notifyLoginRequired();
+      return { error: "token_expired" };
+    }
+    // TypeError: Failed to fetch — mạng đứt hoặc thiếu host_permissions
+    // (manifest) nên request bị chặn ngay từ extension.
+    return { error: "network" };
   }
+}
+
+async function ensureSession(tabId, info, opts) {
+  const r = await tryEnsureSession(tabId, info, opts);
+  return r.sessionId || null;
 }
 
 // ---- Audio tab → offscreen document ----
@@ -286,23 +306,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     (async () => {
       try {
         const tab = await chrome.tabs.get(msg.tabId);
-        const settings = await getSettings();
-        if (!settings.consent) {
-          sendResponse({ ok: false, reason: "no_consent" });
-          return;
-        }
-        const auth = await getAuth();
-        if (!auth) {
-          notifyLoginRequired();
-          sendResponse({ ok: false, reason: "no_auth" });
-          return;
-        }
-        const sid = await ensureSession(
+        const r = await tryEnsureSession(
           msg.tabId,
           { provider: msg.provider, url: tab.url, title: tab.title },
           { manual: true }
         );
-        sendResponse(sid ? { ok: true, sessionId: sid } : { ok: false, reason: "api_failed" });
+        if (r.sessionId) sendResponse({ ok: true, sessionId: r.sessionId });
+        else sendResponse({ ok: false, reason: r.error || "api_failed", status: r.status });
       } catch (e) {
         sendResponse({ ok: false, reason: "error" });
       }

@@ -52,7 +52,13 @@
   const REASONS = {
     no_consent: "Chưa đồng ý — bấm nút đồng ý ở trên trước.",
     no_auth: "Chưa đăng nhập — mở web app ClassNoting, đăng nhập, rồi F5 lại tab web.",
+    token_expired: "Token hết hạn — mở web app, F5 lại tab web để đẩy token mới, rồi thử lại.",
+    bad_link: "Tab này không phải link Google Meet được hỗ trợ.",
+    rate_limited: "Bấm quá nhanh — đợi 1 phút rồi thử lại.",
+    server_error: "Server lỗi — kiểm tra Vercel đã deploy bản mới nhất chưa.",
+    network: "Không gọi được web app — kiểm tra mạng, rồi Reload extension ở chrome://extensions để nhận quyền host mới.",
     api_failed: "Không tạo được phiên — kiểm tra mạng và địa chỉ web app.",
+    auto_off: "Chế độ tự động đang tắt.",
     error: "Lỗi không xác định — thử lại.",
   };
 
@@ -68,8 +74,12 @@
       const tab = tabs[0];
       if (!tab) return;
       chrome.runtime.sendMessage({ type: "CN_MANUAL_START", tabId: tab.id }, (res) => {
-        if (res && !res.ok) showActionMsg(REASONS[res.reason] || REASONS.error, true);
-        else if (res && res.ok) showActionMsg("Đã bắt đầu ghi phiên này.", false);
+        if (res && !res.ok) {
+          const extra = res.status ? ` (HTTP ${res.status})` : "";
+          showActionMsg((REASONS[res.reason] || REASONS.error) + extra, true);
+        } else if (res && res.ok) {
+          showActionMsg("Đã bắt đầu ghi phiên này.", false);
+        }
         refresh();
       });
     });
