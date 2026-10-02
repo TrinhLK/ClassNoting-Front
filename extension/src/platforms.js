@@ -71,12 +71,28 @@
         }
       };
       // Lớp 1: tile video (ổn định nhất khi không present).
+      // Diag thực tế: tile [data-participant-id] tồn tại nhưng overlay/aria-label
+      // trống — tên ("Trịnh Lê Khánh") nằm ở container cha, dưới video.
       try {
         const tiles = allMatches(["[data-participant-id]"]);
         for (const t of tiles) {
+          const pid = t.getAttribute("data-participant-id");
           const label = t.getAttribute("aria-label") || "";
           const overlay = t.querySelector("[data-self-name], [class*='name' i]");
-          push(overlay ? visibleText(overlay) : label, t.getAttribute("data-participant-id"));
+          let name = overlay ? visibleText(overlay) : label;
+          if (!name.trim() && t.parentElement) {
+            try {
+              const sib = t.parentElement.querySelector("[data-self-name], [class*='name' i]");
+              name = sib ? visibleText(sib) : "";
+            } catch (e2) { /* bỏ qua */ }
+          }
+          if (!name.trim() && t.parentElement) {
+            // Text gộp của container cha thường chỉ còn lại tên (đã qua blocklist);
+            // chặn text dài (chứa cả control) để khỏi thành rác.
+            const parentText = visibleText(t.parentElement);
+            if (parentText && parentText.length <= 60) name = parentText;
+          }
+          push(name, pid);
         }
       } catch (e) { /* DOM lạ */ }
       // Lớp 2: panel People (sống sót khi đang present / tile thu gọn).
@@ -99,12 +115,28 @@
       return names;
     },
     chatRoot() {
-      // Panel chat (label VI + EN).
-      return firstMatch([
+      // Panel chat (label VI + EN). QUAN TRỌNG: loại nút bấm — selector
+      // '[aria-label*="Chat"]' từng vớ nhầm nút mở panel (BUTTON.VYBDae...)
+      // khiến observer gắn vào cái nút và không bao giờ thấy tin nhắn.
+      const candidates = allMatches([
+        '[role="log"]',
         '[aria-label*="tin nhắn trong cuộc gọi" i]',
         '[aria-label*="in-call messages" i]',
         '[aria-label*="Chat" i]',
-      ]).el;
+      ]).filter((el) => {
+        try {
+          if (el.matches('button, [role="button"], [role="menuitem"]')) return false;
+          if (el.closest('button, [role="button"]')) return false;
+        } catch (e) { /* matches lỗi — giữ lại xét tiếp */ }
+        return true;
+      });
+      // Ưu tiên container đang chứa tin nhắn thật.
+      for (const el of candidates) {
+        try {
+          if (el.querySelector('[role="listitem"], li, [data-message-id]')) return el;
+        } catch (e) { /* bỏ qua */ }
+      }
+      return candidates[0] || null;
     },
     // Token UI của Meet — không bao giờ là nội dung tin nhắn.
     CHAT_UI_TOKENS: [

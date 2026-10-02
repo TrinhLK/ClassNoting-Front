@@ -77,13 +77,16 @@
     });
   }
 
-  function handleCaptionNode(node) {
-    let parsed = null;
-    try {
-      parsed = platform.parseCaptionNode(node);
-    } catch (e) { /* DOM lạ */ }
-    if (!parsed || !parsed.text) return;
-    const key = parsed.name + "\n" + parsed.text;
+  // Caption Meet chảy từng ký tự (characterData) — debounce: chỉ gửi khi câu
+  // đứng yên CAPTION_SETTLE_MS, nếu không mỗi ký tự thành 1 segment (flood).
+  const CAPTION_SETTLE_MS = 1500;
+  let pendingCaption = null;
+
+  function flushPendingCaption() {
+    const p = pendingCaption;
+    pendingCaption = null;
+    if (!p) return;
+    const key = p.name + "\n" + p.text;
     if (seenCaption.has(key)) return;
     seenCaption.add(key);
     if (seenCaption.size > 1000) {
@@ -94,13 +97,36 @@
     // Caption gửi dạng transcript phụ (uncertain=false khi có tên).
     queue("transcript", {
       id: "cap_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8),
-      speaker: parsed.name || "SPEAKER_00",
-      text: (parsed.name ? "" : "") + parsed.text,
-      start: now - 4,
+      speaker: p.name || "SPEAKER_00",
+      text: p.text,
+      start: now - Math.max(4, p.text.length / 15),
       end: now,
       caption: true,
-      uncertain: !parsed.name,
+      uncertain: !p.name,
     });
+  }
+
+  function handleCaptionNode(node) {
+    let parsed = null;
+    try {
+      parsed = platform.parseCaptionNode(node);
+    } catch (e) { /* DOM lạ */ }
+    if (!parsed || !parsed.text) return;
+    // Cùng người nói và text nối tiếp nhau → chờ câu đứng yên mới gửi.
+    if (
+      pendingCaption &&
+      pendingCaption.name === parsed.name &&
+      (parsed.text.startsWith(pendingCaption.text) || pendingCaption.text.startsWith(parsed.text))
+    ) {
+      clearTimeout(pendingCaption.timer);
+    } else {
+      flushPendingCaption();
+    }
+    pendingCaption = {
+      name: parsed.name,
+      text: parsed.text,
+      timer: setTimeout(flushPendingCaption, CAPTION_SETTLE_MS),
+    };
   }
 
   function observeSubtree(root, onAdd) {
@@ -111,6 +137,13 @@
     });
     const obs = new MutationObserver((mutations) => {
       for (const m of mutations) {
+        // Meet sửa text node tại chỗ khi caption chảy (không thêm node mới) —
+        // bắt buộc nghe characterData, nếu không transcript mãi rỗng.
+        if (m.type === "characterData") {
+          const el = m.target && m.target.nodeType === 3 ? m.target.parentElement : m.target;
+          if (el && el.nodeType === 1) onAdd(el);
+          continue;
+        }
         m.addedNodes.forEach((n) => {
           if (n.nodeType !== 1) return;
           if (n.children.length === 0) onAdd(n);
@@ -120,7 +153,7 @@
         });
       }
     });
-    obs.observe(root, { childList: true, subtree: true });
+    obs.observe(root, { childList: true, characterData: true, subtree: true });
     return obs;
   }
 
@@ -215,6 +248,7 @@
     if (msg?.type === "CN_SESSION") sessionId = msg.sessionId;
     if (msg?.type === "CN_STOP") {
       running = false;
+      flushPendingCaption();
       flush();
     }
     // Chẩn đoán DOM theo yêu cầu popup (đồng bộ — không cần return true).
@@ -235,6 +269,7 @@
   });
 
   window.addEventListener("beforeunload", () => {
+    flushPendingCaption();
     flush();
   });
 })();

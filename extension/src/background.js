@@ -226,21 +226,25 @@ async function startAudioCapture(tabId, sessionId, provider) {
   const { appOrigin } = await getSettings();
   const streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tabId });
   const auth = await getAuth();
-  chrome.runtime.sendMessage({
-    type: "CN_AUDIO_START",
-    tabId,
-    sessionId,
-    provider,
-    streamId,
-    wsBase: "wss://asr-live.noting.io.vn",
-    appOrigin,
-    idToken: auth?.idToken,
-  });
+  // Bắt buộc .catch: offscreen chưa chạy thì promise reject → lỗi
+  // "Could not establish connection" tràn trang Errors (đã thấy thực tế).
+  try {
+    await chrome.runtime.sendMessage({
+      type: "CN_AUDIO_START",
+      tabId,
+      sessionId,
+      provider,
+      streamId,
+      wsBase: "wss://asr-live.noting.io.vn",
+      appOrigin,
+      idToken: auth?.idToken,
+    });
+  } catch (e) { /* offscreen chưa sẵn sàng — roster/chat/caption vẫn chạy */ }
 }
 
 async function stopAudioCapture(tabId) {
   try {
-    chrome.runtime.sendMessage({ type: "CN_AUDIO_STOP", tabId });
+    await chrome.runtime.sendMessage({ type: "CN_AUDIO_STOP", tabId }).catch(() => {});
   } catch (e) { /* offscreen chưa chạy */ }
 }
 
