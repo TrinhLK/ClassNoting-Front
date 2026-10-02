@@ -56,11 +56,10 @@
       let name = String(raw).split("\n")[0].trim().replace(/\s*\((you|bạn)\)\s*$/i, "").trim();
       if (!name || name.length > 120) return "";
       if (/^\d+$/.test(name)) return "";
-      // Tên bị nhân đôi do gộp text ("Trình Lê Khánh Trình Lê Khánh") → rút về một.
-      const half = name.length % 2 === 0 ? name.length / 2 : -1;
-      if (half > 0 && name.slice(0, half).trim().toLowerCase() === name.slice(half).trim().toLowerCase()) {
-        name = name.slice(0, half).trim();
-      }
+      // Tên bị nhân đôi do gộp text ("Trình Lê Khánh Trình Lê Khánh", độ dài lẻ
+      // 2n+1 nên so nửa chuỗi không bao giờ khớp) → rút về một bằng regex.
+      const doubled = name.match(/^(.+?)\s+\1$/i);
+      if (doubled) name = doubled[1].trim();
       const low = name.toLowerCase();
       // "you" phải khớp nguyên từ (tránh loại tên chứa "you" như "Young").
       if (/\byou\b/.test(low)) return "";

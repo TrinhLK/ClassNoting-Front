@@ -29,14 +29,19 @@ function sanitizeEvents(raw: unknown): {
   for (const ev of raw.slice(0, MAX_BATCH) as IncomingEvent[]) {
     if (!ev || typeof ev !== "object" || !("kind" in ev)) continue;
     if (ev.kind === "participants" && Array.isArray(ev.participants)) {
+      // KHÔNG để key undefined: Firestore Admin SDK set() ném lỗi với
+      // undefined (đã gây HTTP 500 toàn bộ batch có roster — thấy thực tế).
       out.participants = ev.participants
         .filter((p) => p && String(p.displayName ?? p.name ?? "").trim() !== "")
         .slice(0, 200)
-        .map((p) => ({
-          id: p.id,
-          name: String(p.displayName ?? p.name ?? "").trim(),
-          displayName: p.displayName ? String(p.displayName) : undefined,
-        }));
+        .map((p) => {
+          const clean: MeetingParticipant = {
+            name: String(p.displayName ?? p.name ?? "").trim(),
+          };
+          if (p.id !== undefined && p.id !== null) clean.id = p.id;
+          if (p.displayName) clean.displayName = String(p.displayName);
+          return clean;
+        });
     } else if (ev.kind === "chat" && Array.isArray(ev.messages)) {
       out.chat = (out.chat ?? []).concat(
         ev.messages
@@ -54,14 +59,17 @@ function sanitizeEvents(raw: unknown): {
         ev.segments
           .filter((s) => s && String(s.text ?? "").trim() !== "")
           .slice(0, MAX_BATCH)
-          .map((s) => ({
-            id: String(s.id ?? `seg_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`),
-            speaker: String(s.speaker ?? "SPEAKER_00").trim() || "SPEAKER_00",
-            text: String(s.text).slice(0, 2000),
-            start: Number(s.start) || 0,
-            end: Math.max(Number(s.end) || 0, Number(s.start) || 0),
-            uncertain: s.uncertain === true ? true : undefined,
-          }))
+          .map((s) => {
+            const seg: ExtLiveSegment = {
+              id: String(s.id ?? `seg_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`),
+              speaker: String(s.speaker ?? "SPEAKER_00").trim() || "SPEAKER_00",
+              text: String(s.text).slice(0, 2000),
+              start: Number(s.start) || 0,
+              end: Math.max(Number(s.end) || 0, Number(s.start) || 0),
+            };
+            if (s.uncertain === true) seg.uncertain = true;
+            return seg;
+          })
       );
     }
   }
@@ -107,7 +115,8 @@ export async function POST(req: Request) {
       participantCount: updated?.participants.length ?? 0,
     });
   } catch (e) {
-    console.error("[ext/events] failed:", e);
+    // Log message cụ thể để tra Vercel Logs trong 1 phút (trước đây chỉ log object).
+    console.error("[ext/events] failed:", e instanceof Error ? e.message : e);
     return NextResponse.json({ error: "Internal Error" }, { status: 500 });
   }
 }

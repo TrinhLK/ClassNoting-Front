@@ -239,6 +239,27 @@ describe("POST /api/extension/events + /end", () => {
     expect(sessions).toHaveLength(1);
   });
 
+  it("participants thiếu field: strip undefined để Firestore không 500", async () => {
+    const sid = await newSession();
+    // Entry thiếu id/displayName (đúng payload extension gửi) — trước đây
+    // Admin SDK set() ném lỗi vì value undefined → HTTP 500 toàn batch.
+    const res = await eventsPOST(
+      authed({
+        sessionId: sid,
+        events: [{ kind: "participants", participants: [{ name: "Nguyen A" }] }],
+      })
+    );
+    expect(res.status).toBe(200);
+    const key = [...store.keys()].find((k) => k === `ext_sessions/${sid}`);
+    const saved = store.get(key!);
+    expect(saved.participants).toEqual([{ name: "Nguyen A" }]);
+    for (const p of saved.participants) {
+      for (const v of Object.values(p as Record<string, unknown>)) {
+        expect(v).not.toBeUndefined();
+      }
+    }
+  });
+
   it("end phiên rỗng: đóng session mà không tạo biên bản", async () => {
     const sid = await newSession();
     const res = await endPOST(authed({ sessionId: sid }));

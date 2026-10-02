@@ -193,6 +193,27 @@ export interface ExtSessionPatch {
 }
 
 /**
+ * Deep-clean object trước khi ghi Firestore: Admin SDK ném lỗi với value
+ * `undefined` (kể cả phần tử undefined trong mảng) → từng gây HTTP 500.
+ */
+function stripUndefinedDeep<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value
+      .filter((v) => v !== undefined)
+      .map((v) => stripUndefinedDeep(v)) as unknown as T;
+  }
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (v === undefined) continue;
+      out[k] = stripUndefinedDeep(v);
+    }
+    return out as T;
+  }
+  return value;
+}
+
+/**
  * Ghi đè participants (roster mới nhất), append chat/segments có dedupe theo id + cap.
  * Trả về session sau khi cập nhật.
  */
@@ -223,6 +244,6 @@ export async function patchExtSession(
   if (patch.status) next.status = patch.status;
   if (patch.meetingId) next.meetingId = patch.meetingId;
 
-  await ref.set(next);
+  await ref.set(stripUndefinedDeep(next));
   return next;
 }
