@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { checkRateLimit } from "@/app/lib/rate-limit";
 import { verifyExtensionAuth } from "@/app/lib/extension-auth";
-import { createExtSession, findLiveSession } from "@/app/lib/ext-sessions";
+import {
+  createExtSession,
+  listLiveSessions,
+  normalizeMeetingUrl,
+} from "@/app/lib/ext-sessions";
 import { detectProvider, PROVIDER_LABELS } from "@/app/lib/meeting-links";
 
 export const dynamic = "force-dynamic";
@@ -34,7 +38,10 @@ export async function POST(req: Request) {
   }
 
   // Chống tạo trùng khi tab reload / nhiều content script cùng bắn.
-  const existing = await findLiveSession(auth.uid, meetingUrl).catch(() => null);
+  // So khớp URL chuẩn hóa (tab Meet thường kèm ?authuser=... còn link dán thì không).
+  const canonical = normalizeMeetingUrl(meetingUrl);
+  const live = await listLiveSessions(auth.uid).catch(() => []);
+  const existing = live.find((s) => normalizeMeetingUrl(s.meetingUrl) === canonical);
   if (existing) {
     return NextResponse.json({
       sessionId: existing.id,

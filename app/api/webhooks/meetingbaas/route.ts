@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server';
 import { saveMeeting, updateMeetingProcess, Meeting, Speaker, Segment, ChatMessage } from '@/app/lib/db';
 import { getAdminDb, getAdminStorage } from '@/app/lib/firebase-admin';
 import { MEETING_STATUS } from '@/app/lib/constants';
+import { meetingIdFor } from '@/app/lib/ext-sessions';
+import { mergeMeetingDocs } from '@/app/lib/meeting-merge';
+import { computeChatStats } from '@/app/lib/chat-stats';
 
 export const dynamic = 'force-dynamic';
 
@@ -245,8 +248,11 @@ export async function POST(req: Request) {
 
             const meetingStatus = mappedSegments.length > 0 ? MEETING_STATUS.TRANSCRIBED : MEETING_STATUS.FAILED;
 
+            // Luồng kép: cùng user + link + ngày → cùng meetingId với biên bản
+            // extension (nếu có). Transcript bot (đầy đủ words) gộp với live segments.
+            const sharedId = meetingIdFor(userId, data.meeting_url || "", Date.now());
             const newMeeting: Meeting = {
-                id: bot_id,
+                id: sharedId,
                 userId: userId,
                 title: `Meeting Report ${new Date().toLocaleDateString('vi-VN')}`,
                 createdAt: Date.now(),
@@ -260,10 +266,20 @@ export async function POST(req: Request) {
                 botId: bot_id,
                 meetingUrl: data.meeting_url,
                 chatMessages,
+                chatStats: computeChatStats(chatMessages, []),
             };
 
             if (meetingStatus === MEETING_STATUS.TRANSCRIBED || mappedSegments.length > 0) {
-                await saveMeeting(newMeeting);
+                let finalMeeting = newMeeting;
+                try {
+                    const snap = await getAdminDb().collection("meetings").doc(sharedId).get();
+                    if (snap.exists) {
+                        finalMeeting = mergeMeetingDocs(snap.data() as Meeting, newMeeting);
+                    }
+                } catch (err) {
+                    console.error("[Webhook] Failed to merge with existing meeting:", err);
+                }
+                await saveMeeting(finalMeeting);
             }
         }
 

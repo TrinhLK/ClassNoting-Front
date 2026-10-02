@@ -4,6 +4,8 @@ import { getAdminDb } from '@/app/lib/firebase-admin';
 import { Meeting, Speaker, Segment, ChatMessage, MeetingParticipant } from '@/app/lib/db';
 import { MEETING_STATUS } from '@/app/lib/constants';
 import { detectProvider } from '@/app/lib/meeting-links';
+import { meetingIdFor } from '@/app/lib/ext-sessions';
+import { mergeMeetingDocs } from '@/app/lib/meeting-merge';
 
 // Force dynamic
 export const dynamic = 'force-dynamic';
@@ -178,9 +180,12 @@ export async function GET(req: Request) {
             // Ở đây giữ segments rỗng (HYBRID pipeline điền sau), nhưng đính kèm chatMessages.
             const meetingSegments: Segment[] = [];
 
+            // Luồng kép bot + extension: cùng user + link + ngày → cùng meetingId.
+            // Nếu extension đã kết xuất trước (live segments), gộp vào thay vì ghi đè.
             // Construct Meeting Object (BUT DO NOT SAVE)
-            const meetingData: Meeting = {
-                id: botId,
+            const sharedId = meetingIdFor(userId, botData.meeting_url || "", Date.now());
+            const incoming: Meeting = {
+                id: sharedId,
                 userId: userId,
                 title: `Meeting Report ${new Date().toLocaleDateString('vi-VN')}`,
                 createdAt: Date.now(),
@@ -199,6 +204,23 @@ export async function GET(req: Request) {
                 // [NEW] Attach Diarization for Client to use
                 diarization: diarizationData
             };
+
+            let meetingData = incoming;
+            try {
+                const snap = await getAdminDb().collection("meetings").doc(sharedId).get();
+                if (snap.exists) {
+                    meetingData = mergeMeetingDocs(snap.data() as Meeting, {
+                        ...incoming,
+                        // Giữ audio bot (bản ghi đầy đủ) — mergeMeetingDocs ưu tiên audio có sẵn,
+                        // nhưng transcript live của extension (segments) được giữ lại để đối soát.
+                        audioUrl: finalAudioUrl,
+                    });
+                    meetingData.audioUrl = finalAudioUrl;
+                    (meetingData as Meeting & { diarization?: unknown }).diarization = diarizationData;
+                }
+            } catch (e) {
+                console.warn("[Polling] Merge read failed, using bot data only:", e);
+            }
 
             return NextResponse.json({
                 status: 'completed',

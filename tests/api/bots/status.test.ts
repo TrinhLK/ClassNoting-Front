@@ -2,17 +2,21 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("@/app/lib/firebase-admin", () => ({
   getAdminDb: () => ({
-    collection: () => ({
+    // meeting_bots → live state; meetings → chưa có doc nào (test merge riêng ở meeting-merge.test.ts)
+    collection: (name: string) => ({
       doc: () => ({
-        get: async () => ({
-          exists: true,
-          data: () => ({
-            chatMessages: [
-              { id: "c1", sender: "Nguyen A", text: "Em đồng ý", timestamp: 1700000000000 },
-            ],
-            participants: [{ name: "Nguyen A" }],
-          }),
-        }),
+        get: async () =>
+          name === "meeting_bots"
+            ? {
+                exists: true,
+                data: () => ({
+                  chatMessages: [
+                    { id: "c1", sender: "Nguyen A", text: "Em đồng ý", timestamp: 1700000000000 },
+                  ],
+                  participants: [{ name: "Nguyen A" }],
+                }),
+              }
+            : { exists: false, data: () => undefined },
       }),
     }),
   }),

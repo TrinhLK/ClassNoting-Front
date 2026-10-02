@@ -33,6 +33,9 @@ export default function BotJoinModal({ isOpen, onClose, onUpdate }: { isOpen: bo
     const [googleCredentialId, setGoogleCredentialId] = useState("");
     const [participants, setParticipants] = useState<MeetingParticipant[]>([]);
     const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+    // Luồng kép: bấm "Tham gia" thì tự mở tab live extension (/ext/[id]) song song.
+    const [openLiveParallel, setOpenLiveParallel] = useState(true);
+    const [liveOpened, setLiveOpened] = useState(false);
 
     const provider = useMemo(() => detectProvider(meetingUrl.trim()), [meetingUrl]);
     const botName = useMemo(
@@ -48,7 +51,43 @@ export default function BotJoinModal({ isOpen, onClose, onUpdate }: { isOpen: bo
         setChatMessages([]);
         setLoading(false);
         setLeaving(false);
+        setLiveOpened(false);
     };
+
+    // Hỏi backend có phiên extension nào đang live cho link này không.
+    // Có → tự mở tab live song song (ai nói gì + chat trực tiếp).
+    // Không → chỉ có bot ghi, biên bản vẫn đầy đủ sau khi họp xong.
+    useEffect(() => {
+        if (!botId || !openLiveParallel || liveOpened || !user) return;
+        let cancelled = false;
+        const check = async () => {
+            try {
+                const token = await user.getIdToken().catch(() => null);
+                if (!token || cancelled) return;
+                const res = await fetch(
+                    `/api/extension/live?meetingUrl=${encodeURIComponent(meetingUrl.trim())}`,
+                    { headers: { Authorization: `Bearer ${token}` } }
+                );
+                if (cancelled) return;
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.ok && data.sessionId) {
+                        setLiveOpened(true);
+                        window.open(`/ext/${data.sessionId}`, "_blank", "noopener");
+                        toast.success("Đã mở tab ghi live song song.");
+                    }
+                }
+            } catch {
+                // Backend/ext chưa sẵn sàng — bỏ qua im lặng, bot vẫn ghi bình thường.
+            }
+        };
+        check();
+        const timer = setInterval(check, 10000);
+        return () => {
+            cancelled = true;
+            clearInterval(timer);
+        };
+    }, [botId, openLiveParallel, liveOpened, user, meetingUrl, toast]);
 
     const handleClose = () => {
         // Đóng modal nhưng giữ bot chạy nền; reset khi mở lại từ đầu
@@ -473,6 +512,22 @@ export default function BotJoinModal({ isOpen, onClose, onUpdate }: { isOpen: bo
                         Họp mở: để trống cả hai để bot vào như khách. Họp Workspace/Edu khóa guest:
                         điền email group hoặc credential của tài khoản Google đã liên kết (SAML SSO).
                     </p>
+
+                    <label className="flex items-start gap-2.5 p-3 rounded-xl border border-emerald-200 bg-emerald-50 cursor-pointer">
+                        <input
+                            type="checkbox"
+                            checked={openLiveParallel}
+                            onChange={(e) => setOpenLiveParallel(e.target.checked)}
+                            className="mt-0.5 w-4 h-4 accent-emerald-600"
+                        />
+                        <span className="text-xs text-slate-700 leading-relaxed">
+                            <span className="font-bold text-emerald-800">Mở ghi live song song</span> — nếu bạn
+                            đang ở trong phòng này trên Chrome (extension đã đăng nhập), hệ thống tự mở
+                            tab live (ai nói gì + chat trực tiếp) ngay khi bấm Tham gia.
+                            <span className="text-slate-500"> Không ở trong phòng / extension chưa đăng nhập
+                            thì chỉ có bot ghi — biên bản vẫn đầy đủ sau khi họp xong.</span>
+                        </span>
+                    </label>
 
                     <div className="text-xs text-slate-600 bg-indigo-50 p-3 rounded-xl border border-indigo-100 leading-relaxed">
                         <span className="font-semibold text-indigo-700">Cách tham gia:</span> bot vào phòng với tên <span className="font-bold">“{botName}”</span> (theo tài khoản {user?.email || "đang đăng nhập"}).

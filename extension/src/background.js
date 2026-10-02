@@ -107,9 +107,12 @@ setInterval(() => {
 }, FLUSH_MS);
 
 // ---- Đảm bảo session khi phát hiện phòng họp ----
-async function ensureSession(tabId, info) {
+// opts.manual=true (nút "Bắt đầu tab này" trong popup): bỏ qua cờ autoStart,
+// nhưng vẫn yêu cầu consent một lần + đăng nhập.
+async function ensureSession(tabId, info, opts) {
   const { autoStart, consent } = await getSettings();
-  if (!consent || !autoStart) return null;
+  if (!consent) return null;
+  if (!opts?.manual && !autoStart) return null;
   const existing = tabs.get(tabId);
   if (existing?.sessionId) {
     existing.lastSeen = Date.now();
@@ -129,7 +132,7 @@ async function ensureSession(tabId, info) {
     if (!res.ok || !data.sessionId) return null;
     tabs.set(tabId, {
       sessionId: data.sessionId,
-      provider: info.provider,
+      provider: data.provider || info.provider,
       url: info.url,
       lastSeen: Date.now(),
       queue: [],
@@ -280,10 +283,30 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return;
   }
   if (msg?.type === "CN_MANUAL_START" && msg.tabId) {
-    chrome.tabs.get(msg.tabId).then((tab) => {
-      ensureSession(msg.tabId, { provider: msg.provider, url: tab.url, title: tab.title });
-    }).catch(() => {});
-    sendResponse({ ok: true });
+    (async () => {
+      try {
+        const tab = await chrome.tabs.get(msg.tabId);
+        const settings = await getSettings();
+        if (!settings.consent) {
+          sendResponse({ ok: false, reason: "no_consent" });
+          return;
+        }
+        const auth = await getAuth();
+        if (!auth) {
+          notifyLoginRequired();
+          sendResponse({ ok: false, reason: "no_auth" });
+          return;
+        }
+        const sid = await ensureSession(
+          msg.tabId,
+          { provider: msg.provider, url: tab.url, title: tab.title },
+          { manual: true }
+        );
+        sendResponse(sid ? { ok: true, sessionId: sid } : { ok: false, reason: "api_failed" });
+      } catch (e) {
+        sendResponse({ ok: false, reason: "error" });
+      }
+    })();
     return true;
   }
   if (msg?.type === "CN_MANUAL_END" && msg.tabId) {
@@ -313,6 +336,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     chrome.storage.sync.set(patch).then(() => sendResponse({ ok: true }));
     return true;
   }
+  if (msg?.type === "CN_PING") {
+    sendResponse({ ok: true, pong: true, time: Date.now() });
+    return;
+  }
+  // Chẩn đoán: trả lời mọi message lạ để console không treo pending
+  // (trước đây message không khớp type nào thì promise treo vĩnh viễn).
+  try {
+    sendResponse({ ok: false, error: "unknown_message", type: msg?.type });
+  } catch (e) { /* sender đã đóng kênh */ }
 });
 
 // Rời phòng: tab đóng → end; heartbeat quá hạn → end.

@@ -49,11 +49,29 @@
     );
   });
 
+  const REASONS = {
+    no_consent: "Chưa đồng ý — bấm nút đồng ý ở trên trước.",
+    no_auth: "Chưa đăng nhập — mở web app ClassNoting, đăng nhập, rồi F5 lại tab web.",
+    api_failed: "Không tạo được phiên — kiểm tra mạng và địa chỉ web app.",
+    error: "Lỗi không xác định — thử lại.",
+  };
+
+  function showActionMsg(text, isError) {
+    const el = $("actionMsg");
+    el.textContent = text;
+    el.style.display = "block";
+    el.style.color = isError ? "#dc2626" : "#059669";
+  }
+
   $("startBtn").addEventListener("click", () => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       const tab = tabs[0];
       if (!tab) return;
-      chrome.runtime.sendMessage({ type: "CN_MANUAL_START", tabId: tab.id }, () => refresh());
+      chrome.runtime.sendMessage({ type: "CN_MANUAL_START", tabId: tab.id }, (res) => {
+        if (res && !res.ok) showActionMsg(REASONS[res.reason] || REASONS.error, true);
+        else if (res && res.ok) showActionMsg("Đã bắt đầu ghi phiên này.", false);
+        refresh();
+      });
     });
   });
 

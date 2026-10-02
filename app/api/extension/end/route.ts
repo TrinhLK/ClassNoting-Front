@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { checkRateLimit } from "@/app/lib/rate-limit";
 import { verifyExtensionAuth } from "@/app/lib/extension-auth";
-import { getExtSession, patchExtSession } from "@/app/lib/ext-sessions";
+import { getExtSession, meetingIdFor, patchExtSession } from "@/app/lib/ext-sessions";
 import { getAdminDb } from "@/app/lib/firebase-admin";
 import { MEETING_STATUS } from "@/app/lib/constants";
 import { computeChatStats } from "@/app/lib/chat-stats";
+import { mergeMeetingDocs } from "@/app/lib/meeting-merge";
 import type { Meeting, Segment, Speaker } from "@/app/lib/db";
 
 export const dynamic = "force-dynamic";
@@ -65,8 +66,11 @@ export async function POST(req: Request) {
       text: s.text,
     }));
 
-    const meetingId = session.meetingId || `ext_${session.id}`;
-    const meeting: Meeting = {
+    // Luồng kép bot + extension: cùng user + link + ngày → cùng meetingId,
+    // gộp vào doc sẵn có (nếu bot đã kết xuất trước) thay vì tạo biên bản thứ hai.
+    const meetingId =
+      session.meetingId || meetingIdFor(auth.uid, session.meetingUrl, session.startedAt);
+    const incoming: Meeting = {
       id: meetingId,
       userId: auth.uid,
       title: session.title,
@@ -85,10 +89,21 @@ export async function POST(req: Request) {
       chatStats: computeChatStats(session.chatMessages, session.participants),
     };
 
+    const meetingsCol = getAdminDb().collection("meetings");
+    let finalMeeting = incoming;
+    try {
+      const snap = await meetingsCol.doc(meetingId).get();
+      if (snap.exists) {
+        finalMeeting = mergeMeetingDocs(snap.data() as Meeting, incoming);
+      }
+    } catch (e) {
+      console.warn("[ext/end] merge read failed, overwriting:", e);
+    }
+
     const clean = Object.fromEntries(
-      Object.entries(structuredClone(meeting)).filter(([, v]) => v !== undefined)
+      Object.entries(structuredClone(finalMeeting)).filter(([, v]) => v !== undefined)
     );
-    await getAdminDb().collection("meetings").doc(meetingId).set(clean);
+    await meetingsCol.doc(meetingId).set(clean);
     await patchExtSession(session.id, { status: "ended", meetingId });
 
     return NextResponse.json({ ok: true, meetingId });

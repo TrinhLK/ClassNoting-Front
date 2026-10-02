@@ -47,9 +47,15 @@ export default function ExtensionBridge() {
     push();
     // Refresh định kỳ (ID token hạn ~1h) để extension luôn có token sống.
     const timer = setInterval(push, 50 * 60 * 1000);
+    // Đẩy lại khi tab focus / có mạng: vá khoảng trống khi extension được
+    // cài-reload sau khi web đã load (lần push lúc mount đã rơi vào khoảng không).
+    window.addEventListener("focus", push);
+    window.addEventListener("online", push);
     return () => {
       cancelled = true;
       clearInterval(timer);
+      window.removeEventListener("focus", push);
+      window.removeEventListener("online", push);
     };
   }, [user]);
 

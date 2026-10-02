@@ -35,6 +35,50 @@ const COLLECTION = "ext_sessions";
 export const EXT_MAX_CHAT = 500;
 export const EXT_MAX_SEGMENTS = 2000;
 
+/**
+ * Chuẩn hóa URL họp để so khớp/gộp phiên.
+ * Chỉ strip query/hash/trailing-slash (an toàn cho Google Meet;
+ * KHÔNG dùng cho link cần query như Zoom — ngoài phạm vi sản phẩm).
+ */
+export function normalizeMeetingUrl(rawUrl: string): string {
+  return rawUrl
+    .trim()
+    .split("#")[0]
+    .split("?")[0]
+    .replace(/\/+$/, "")
+    .toLowerCase();
+}
+
+/** Khóa ngày local (YYYY-MM-DD) — bot + extension cùng ngày họp thì gộp chung biên bản. */
+export function dayKey(ts: number): string {
+  const d = new Date(ts);
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+function hash36(s: string): string {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) {
+    h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
+  }
+  return h.toString(36);
+}
+
+/**
+ * ID biên bản chung cho luồng kép bot + extension:
+ * cùng user + cùng link Meet + cùng ngày → cùng ID, hai luồng gộp vào 1 doc
+ * thay vì tạo 2 biên bản rời rạc.
+ * Lưu ý: link Meet tái dùng vào ngày khác nhau → biên bản khác nhau (đúng ý).
+ */
+export function meetingIdFor(
+  ownerUid: string,
+  meetingUrl: string,
+  at: number = Date.now()
+): string {
+  return `m_${hash36(`${ownerUid}|${normalizeMeetingUrl(meetingUrl)}|${dayKey(at)}`)}`;
+}
+
 const db = () => getAdminDb();
 
 export async function createExtSession(
