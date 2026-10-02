@@ -56,8 +56,15 @@
       let name = String(raw).split("\n")[0].trim().replace(/\s*\((you|bạn)\)\s*$/i, "").trim();
       if (!name || name.length > 120) return "";
       if (/^\d+$/.test(name)) return "";
+      // Tên bị nhân đôi do gộp text ("Trình Lê Khánh Trình Lê Khánh") → rút về một.
+      const half = name.length % 2 === 0 ? name.length / 2 : -1;
+      if (half > 0 && name.slice(0, half).trim().toLowerCase() === name.slice(half).trim().toLowerCase()) {
+        name = name.slice(0, half).trim();
+      }
       const low = name.toLowerCase();
-      if (meet.ROSTER_BLOCKLIST.some((b) => low.includes(b))) return "";
+      // "you" phải khớp nguyên từ (tránh loại tên chứa "you" như "Young").
+      if (/\byou\b/.test(low)) return "";
+      if (meet.ROSTER_BLOCKLIST.some((b) => b !== "you" && low.includes(b))) return "";
       return name;
     },
     scrapeRoster() {
@@ -96,16 +103,26 @@
         }
       } catch (e) { /* DOM lạ */ }
       // Lớp 2: panel People (sống sót khi đang present / tile thu gọn).
+      // Diag thực tế: selector vớ nhầm ô search input — bỏ qua input/button.
       try {
         const panels = allMatches([
           '[aria-label*="People" i]',
           '[aria-label*="Mọi người" i]',
           '[data-panel-id*="people" i]',
           '[data-tab-id*="people" i]',
-        ]);
+        ]).filter((el) => {
+          try {
+            return !el.matches('input, button, [role="button"]');
+          } catch (e) { return true; }
+        });
         for (const panel of panels) {
           const items = panel.querySelectorAll('[role="listitem"], li, [data-participant-id]');
-          items.forEach((it) => push(visibleText(it)));
+          items.forEach((it) => {
+            try {
+              if (it.matches('input, button, [role="button"], [role="menuitem"]')) return;
+            } catch (e) { /* tiếp tục */ }
+            push(visibleText(it));
+          });
           if (items.length === 0) {
             // Panel dạng flat text — tách theo dòng, lọc qua blocklist.
             visibleText(panel).split("\n").forEach((line) => push(line));

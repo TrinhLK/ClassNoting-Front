@@ -46,6 +46,17 @@
     if (mine && mine.unhealthy) {
       showActionMsg("Không đọc được dữ liệu phòng họp — thử mở panel People/Chat trong Meet và bật phụ đề (CC).", true);
     }
+    // Trạng thái lần đẩy cuối: hết cảnh "số 0 bí ẩn" — lỗi nào hiện mặt chữ đó.
+    if (mine && mine.lastFlush && mine.lastFlush.status !== "ok") {
+      const at = mine.lastFlush.at ? new Date(mine.lastFlush.at).toLocaleTimeString("vi-VN") : "?";
+      const FLUSH_MSGS = {
+        unauthorized: `Đẩy dữ liệu thất bại lúc ${at}: token hết hạn — mở web app, F5 lại tab web để đẩy token mới.`,
+        network: `Đẩy dữ liệu thất bại lúc ${at}: không gọi được server — kiểm tra mạng/Vercel.`,
+      };
+      const raw = mine.lastFlush.status || "";
+      const msg = FLUSH_MSGS[raw] || `Đẩy dữ liệu thất bại lúc ${at} (mã ${raw}).`;
+      showActionMsg(msg, true);
+    }
   }
 
   $("consentBtn").addEventListener("click", () => {

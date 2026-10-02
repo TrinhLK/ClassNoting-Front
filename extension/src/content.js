@@ -26,7 +26,14 @@
 
   function send(msg) {
     try {
-      chrome.runtime.sendMessage(msg, () => void chrome.runtime.lastError);
+      chrome.runtime.sendMessage(msg, (res) => {
+        void chrome.runtime.lastError;
+        // Dự phòng: background trả sessionId qua response khi tab gắn lại
+        // session cũ (F5) mà message CN_SESSION không tới kịp.
+        if (msg && msg.type === "CN_MEETING_STATE" && res && res.sessionId && !sessionId) {
+          sessionId = res.sessionId;
+        }
+      });
     } catch (e) { /* background chưa sẵn sàng */ }
   }
 

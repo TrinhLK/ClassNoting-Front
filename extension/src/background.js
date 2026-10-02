@@ -114,9 +114,18 @@ async function flushTab(tabId) {
     return { kind, segments: items };
   });
   try {
-    await apiFetch("/api/extension/events", { sessionId: t.sessionId, events });
+    const res = await apiFetch("/api/extension/events", { sessionId: t.sessionId, events });
+    if (!res.ok) {
+      // Lỗi HTTP không-phải-401 (409 ended, 429, 5xx): ghi nhận để popup hiện,
+      // batch coi như đã xử lý phía server (409) hoặc sẽ gửi lại vòng sau.
+      t.lastFlush = { at: Date.now(), status: `http_${res.status}`, count: batch.length };
+      return;
+    }
+    t.lastFlush = { at: Date.now(), status: "ok", count: batch.length };
   } catch (e) {
     if (e.code === "NO_AUTH" || e.code === "UNAUTHORIZED") {
+      t.lastFlush = { at: Date.now(), status: "unauthorized", count: batch.length };
+      t.authFailCount = (t.authFailCount || 0) + 1;
       if (!notifiedNoAuth.has(t.sessionId)) {
         notifiedNoAuth.add(t.sessionId);
         notifyLoginRequired();
@@ -125,6 +134,10 @@ async function flushTab(tabId) {
       t.queue.unshift(...batch.flatMap((ev) =>
         ev.kind === "participants" ? [ev] : ev.payload?.map?.((p) => ({ kind: ev.kind, payload: p })) || [ev]
       ).slice(0, 100));
+    } else {
+      // Mạng đứt / CORS / server sập: batch mất theo vòng flush này nhưng
+      // content vẫn giữ polling (roster) nên dữ liệu mới tiếp tục sinh.
+      t.lastFlush = { at: Date.now(), status: "network", count: batch.length };
     }
   }
 }
@@ -144,6 +157,10 @@ async function tryEnsureSession(tabId, info, opts) {
   const existing = tabs.get(tabId);
   if (existing?.sessionId) {
     existing.lastSeen = Date.now();
+    // BẮT BUỘC gửi CN_SESSION (không chỉ trả sendResponse — content không đọc
+    // response của CN_MEETING_STATE). Thiếu dòng này, tab F5 lại là mồ côi
+    // session vĩnh viễn dù session live vẫn tồn tại (đã thấy thực tế).
+    chrome.tabs.sendMessage(tabId, { type: "CN_SESSION", sessionId: existing.sessionId }).catch(() => {});
     return { sessionId: existing.sessionId };
   }
   const auth = await getAuth();
@@ -511,6 +528,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           provider: t.provider,
           // Cảnh báo selector cho popup: không đọc được gì quá lâu.
           unhealthy: (t.emptyStreak || 0) >= EMPTY_HEARTBEAT_LIMIT,
+          // Trạng thái lần đẩy cuối để popup hiện thay vì im lặng.
+          lastFlush: t.lastFlush || null,
         })),
       });
     });
