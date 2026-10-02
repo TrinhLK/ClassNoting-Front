@@ -87,16 +87,34 @@
     el.style.color = isError ? "#dc2626" : "#059669";
   }
 
+  // Khóa nút lúc request đang chạy — chống nháy đúp tạo trùng phiên.
+  function setBusy(btn, busy, label) {
+    btn.disabled = busy;
+    btn.style.opacity = busy ? "0.6" : "";
+    if (busy) btn.dataset.label = btn.textContent;
+    btn.textContent = busy ? label : btn.dataset.label || btn.textContent;
+  }
+
+  function formatCounts(c) {
+    if (!c) return "";
+    return ` (${c.segments || 0} câu · ${c.chat || 0} chat · ${c.participants || 0} người)`;
+  }
+
   $("startBtn").addEventListener("click", () => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       const tab = tabs[0];
       if (!tab) return;
+      setBusy($("startBtn"), true, "Đang tạo...");
       chrome.runtime.sendMessage({ type: "CN_MANUAL_START", tabId: tab.id }, (res) => {
+        setBusy($("startBtn"), false);
         if (res && !res.ok) {
           const extra = res.status ? ` (HTTP ${res.status})` : "";
           showActionMsg((REASONS[res.reason] || REASONS.error) + extra, true);
         } else if (res && res.ok) {
-          showActionMsg("Đã bắt đầu ghi phiên này.", false);
+          showActionMsg(
+            res.reused ? "Phiên đã tồn tại — tiếp tục ghi." : "Đã bắt đầu ghi phiên này.",
+            false
+          );
         }
         refresh();
       });
@@ -112,15 +130,25 @@
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       const tab = tabs[0];
       if (!tab) return;
+      setBusy($("endBtn"), true, "Đang kết xuất...");
       showActionMsg("Đang kết thúc và kết xuất...", false);
       chrome.runtime.sendMessage({ type: "CN_MANUAL_END", tabId: tab.id }, (res) => {
+        setBusy($("endBtn"), false);
         if (res && res.ok) {
-          showActionMsg(
-            res.meetingId
-              ? `Đã kết thúc. Biên bản: /meeting/${res.meetingId} (mở từ dashboard).`
-              : "Đã kết thúc phiên ghi.",
-            false
-          );
+          if (res.empty) {
+            showActionMsg(
+              "Đã kết thúc nhưng phiên không thu được dữ liệu nào nên không tạo biên bản." +
+                " Hãy F5 lại tab Meet rồi ghi lại.",
+              true
+            );
+          } else {
+            showActionMsg(
+              (res.meetingId
+                ? `Đã kết thúc. Biên bản: /meeting/${res.meetingId} (mở từ dashboard).`
+                : "Đã kết thúc phiên ghi.") + formatCounts(res.counts),
+              false
+            );
+          }
         } else {
           showActionMsg((res && END_REASONS[res.reason]) || END_REASONS.error, true);
         }
@@ -129,5 +157,104 @@
     });
   });
 
+  // Liệt kê mọi phiên live trên server (kể cả phiên mồ côi) + kết thúc từng cái.
+  function renderServerSessions(list) {
+    const box = $("serverSessions");
+    box.innerHTML = "";
+    if (!list || list.length === 0) {
+      box.style.display = "none";
+      return;
+    }
+    box.style.display = "block";
+    const title = document.createElement("div");
+    title.className = "muted";
+    title.textContent = `Phiên live trên server (${list.length}) — kể cả phiên mồ côi:`;
+    box.appendChild(title);
+    list.forEach((s) => {
+      const row = document.createElement("div");
+      row.className = "row";
+      const name = document.createElement("span");
+      name.className = "muted";
+      name.style.overflow = "hidden";
+      name.style.textOverflow = "ellipsis";
+      name.style.whiteSpace = "nowrap";
+      name.style.maxWidth = "180px";
+      name.textContent = `${s.title || s.sessionId} (${s.segmentCount || 0} câu)`;
+      name.title = s.sessionId;
+      const btn = document.createElement("button");
+      btn.className = "ghost";
+      btn.textContent = "Kết thúc";
+      btn.addEventListener("click", () => {
+        btn.disabled = true;
+        chrome.runtime.sendMessage({ type: "CN_END_SESSION", sessionId: s.sessionId }, (res) => {
+          if (res && res.ok) {
+            showActionMsg(
+              res.empty
+                ? `Đã đóng phiên rỗng (${s.sessionId.slice(0, 8)}...).`
+                : `Đã kết thúc${res.meetingId ? `, biên bản /meeting/${res.meetingId}` : ""}${formatCounts(res.counts)}.`,
+              false
+            );
+          } else {
+            showActionMsg((res && END_REASONS[res.reason]) || END_REASONS.error, true);
+          }
+          refreshServerSessions();
+          refresh();
+        });
+      });
+      row.appendChild(name);
+      row.appendChild(btn);
+      box.appendChild(row);
+    });
+  }
+
+  function refreshServerSessions() {
+    chrome.runtime.sendMessage({ type: "CN_LIST_SESSIONS" }, (res) => {
+      if (res && res.ok) renderServerSessions(res.sessions);
+    });
+  }
+
+  // Chẩn đoán DOM tab Meet hiện tại — copy kết quả gửi dev để viết selector khớp.
+  $("diagBtn").addEventListener("click", () => {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const tab = tabs[0];
+      if (!tab) return;
+      const area = $("diagOut");
+      area.style.display = "block";
+      area.value = "Đang thu thập DOM...";
+      chrome.runtime.sendMessage({ type: "CN_DIAG_REQUEST", tabId: tab.id }, (res) => {
+        if (res && res.ok && res.diag) {
+          const d = res.diag;
+          const lines = [
+            `url: ${d.url}`,
+            `title: ${d.title}`,
+            `sessionId: ${d.sessionId || "(chưa có)"} | queuePending: ${d.queuePending || 0}`,
+            `roster: ${(d.rosterNames || []).join(" | ") || "(rỗng)"}`,
+            "--- checks ---",
+          ];
+          (d.checks || []).forEach((c) => {
+            const detail =
+              c.count !== undefined
+                ? `count=${c.count}`
+                : c.matched !== undefined
+                  ? `matched=${c.matched}`
+                  : c.length !== undefined
+                    ? `length=${c.length}`
+                    : c.error
+                      ? `ERROR=${c.error}`
+                      : "";
+            lines.push(`[${c.label}] ${detail}`);
+            if (c.sample) lines.push(`  sample: ${c.sample}`);
+          });
+          area.value = lines.join("\n");
+        } else {
+          area.value =
+            "Không lấy được DOM (content script chưa gắn vào tab — hãy F5 lại tab Meet). " +
+            `reason=${(res && res.reason) || "?"}`;
+        }
+      });
+    });
+  });
+
   refresh();
+  refreshServerSessions();
 })();

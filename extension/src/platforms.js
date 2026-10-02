@@ -182,6 +182,66 @@
       }
       return "";
     },
+    // Chẩn đoán DOM: báo từng selector trúng/trượt + snippet thực tế để viết
+    // selector khớp 100% thay vì đoán. Không thu nội dung nhạy cảm (cắt 300 ký tự).
+    describe() {
+      const out = {
+        url: (typeof location !== "undefined" && location.href) || "",
+        title: (typeof document !== "undefined" && document.title) || "",
+        rosterNames: [],
+        checks: [],
+      };
+      const snip = (el) => {
+        if (!el || !el.outerHTML) return "";
+        return el.outerHTML.slice(0, 300);
+      };
+      const probe = (label, fn) => {
+        try {
+          out.checks.push(Object.assign({ label }, fn()));
+        } catch (e) {
+          out.checks.push({ label, error: String((e && e.message) || e) });
+        }
+      };
+      probe("tiles[data-participant-id]", () => {
+        const els = allMatches(["[data-participant-id]"]);
+        return { count: els.length, sample: snip(els[0]) };
+      });
+      probe("roster:scrapeRoster", () => {
+        const names = meet.scrapeRoster() || [];
+        out.rosterNames = names.map((r) => r.name);
+        return { count: names.length };
+      });
+      probe("roster:people-panel", () => {
+        const panels = allMatches([
+          '[aria-label*="People" i]',
+          '[aria-label*="Mọi người" i]',
+          '[data-panel-id*="people" i]',
+          '[data-tab-id*="people" i]',
+        ]);
+        return { count: panels.length, sample: snip(panels[0]) };
+      });
+      probe("chat:root", () => {
+        const root = meet.chatRoot();
+        return { matched: !!root, sample: root ? root.tagName + "#" + (root.id || "") + "." + (root.className || "").toString().slice(0, 80) : "" };
+      });
+      probe("chat:listitems", () => {
+        const root = meet.chatRoot();
+        if (!root) return { count: 0 };
+        const items = root.querySelectorAll('[role="listitem"], li, [data-message-id]');
+        const last = items[items.length - 1];
+        return { count: items.length, sample: snip(last) };
+      });
+      probe("caption:root", () => {
+        const root = meet.captionRoot();
+        return { matched: !!root, sample: root ? root.tagName + "#" + (root.id || "") + "." + (root.className || "").toString().slice(0, 80) : "" };
+      });
+      probe("caption:text", () => {
+        const root = meet.captionRoot();
+        const text = root ? visibleText(root).slice(0, 200) : "";
+        return { length: text.length, sample: text };
+      });
+      return out;
+    },
   };
 
   global.ClassNotingPlatforms = { meet };

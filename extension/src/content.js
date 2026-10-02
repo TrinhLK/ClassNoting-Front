@@ -211,11 +211,26 @@
     title: document.title,
   });
 
-  chrome.runtime.onMessage.addListener((msg) => {
+  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg?.type === "CN_SESSION") sessionId = msg.sessionId;
     if (msg?.type === "CN_STOP") {
       running = false;
       flush();
+    }
+    // Chẩn đoán DOM theo yêu cầu popup (đồng bộ — không cần return true).
+    if (msg?.type === "CN_DIAG") {
+      try {
+        const diag = platform.describe
+          ? platform.describe()
+          : { url: location.href, title: document.title, checks: [] };
+        diag.sessionId = sessionId;
+        diag.queuePending = eventQueue.length;
+        sendResponse({ ok: true, diag });
+      } catch (e) {
+        try {
+          sendResponse({ ok: false, error: String((e && e.message) || e) });
+        } catch (ignored) { /* kênh đóng */ }
+      }
     }
   });
 

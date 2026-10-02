@@ -12,6 +12,14 @@ const fakeDb = {
         set: async (data: Record<string, unknown>) => {
           store.set(`${name}/${docId}`, data);
         },
+        create: async (data: Record<string, unknown>) => {
+          if (store.has(`${name}/${docId}`)) {
+            const err = new Error("ALREADY_EXISTS") as Error & { code: number };
+            err.code = 6;
+            throw err;
+          }
+          store.set(`${name}/${docId}`, data);
+        },
         get: async () => {
           const d = store.get(`${name}/${docId}`);
           return { exists: !!d, data: () => d };

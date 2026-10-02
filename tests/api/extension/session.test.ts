@@ -14,6 +14,15 @@ const fakeDb = {
         set: async (data: any) => {
           store.set(`${name}/${docId}`, data);
         },
+        // Tạo-nếu-chưa-có: trùng id thì ném ALREADY_EXISTS (code 6) như Admin SDK.
+        create: async (data: Record<string, unknown>) => {
+          if (store.has(`${name}/${docId}`)) {
+            const err = new Error("ALREADY_EXISTS") as Error & { code: number };
+            err.code = 6;
+            throw err;
+          }
+          store.set(`${name}/${docId}`, data);
+        },
         get: async () => {
           const d = store.get(`${name}/${docId}`);
           return { exists: !!d, data: () => d };
@@ -216,5 +225,27 @@ describe("POST /api/extension/events + /end", () => {
     // Session ended → events trả 409.
     const r3 = await eventsPOST(authed({ sessionId: sid, events: [] }));
     expect(r3.status).toBe(409);
+  });
+
+  it("nháy đúp nút Bắt đầu: 2 request đua nhau chỉ tạo 1 session", async () => {
+    const payload = { meetingUrl: "https://meet.google.com/abc-defg-hij" };
+    const [r1, r2] = await Promise.all([sessionPOST(authed(payload)), sessionPOST(authed(payload))]);
+    const b1 = await r1.json();
+    const b2 = await r2.json();
+    expect(b1.sessionId).toBe(b2.sessionId);
+    const reusedFlags = [b1.reused, b2.reused].sort();
+    expect(reusedFlags).toEqual([false, true]);
+    const sessions = [...store.keys()].filter((k) => k.startsWith("ext_sessions/"));
+    expect(sessions).toHaveLength(1);
+  });
+
+  it("end phiên rỗng: đóng session mà không tạo biên bản", async () => {
+    const sid = await newSession();
+    const res = await endPOST(authed({ sessionId: sid }));
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body).toMatchObject({ ok: true, meetingId: null, empty: true });
+    const meetings = [...store.keys()].filter((k) => k.startsWith("meetings/"));
+    expect(meetings).toHaveLength(0);
   });
 });

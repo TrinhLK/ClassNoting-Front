@@ -35,12 +35,15 @@
     </div>
     <div id="loginHint" class="muted" style="display:none">Chưa nhận token — hãy mở web app ClassNoting và đăng nhập, rồi mở lại popup.</div>
     <div id="actionMsg" class="muted" style="display:none"></div>
+    <div id="serverSessions" style="display:none"></div>
   </div>
   <div class="card">
     <div class="row"><label class="switch"><input type="checkbox" id="autoStart" /> Tự động khi mở phòng họp</label></div>
     <div class="muted">Địa chỉ web app</div>
     <div class="row"><input type="text" id="appOrigin" placeholder="https://smart-noting.vercel.app" /></div>
     <div class="row"><button id="saveBtn" class="ghost">Lưu cài đặt</button></div>
+    <div class="row"><button id="diagBtn" class="ghost" style="flex:1">Chẩn đoán tab Meet này</button></div>
+    <div class="row"><textarea id="diagOut" style="display:none;width:100%;box-sizing:border-box;height:120px;font-size:11px;font-family:monospace;" readonly placeholder="Kết quả chẩn đoán DOM..."></textarea></div>
   </div>
 </div>
 <script src="./popup.js"></script>

@@ -57,12 +57,16 @@ export function dayKey(ts: number): string {
   return `${d.getFullYear()}-${m}-${day}`;
 }
 
-function hash36(s: string): string {
+export function shortHash(s: string): string {
   let h = 5381;
   for (let i = 0; i < s.length; i++) {
     h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
   }
   return h.toString(36);
+}
+
+function hash36(s: string): string {
+  return shortHash(s);
 }
 
 /**
@@ -105,6 +109,51 @@ export async function getExtSession(id: string): Promise<ExtSession | null> {
   const snap = await db().collection(COLLECTION).doc(id).get();
   if (!snap.exists) return null;
   return snap.data() as ExtSession;
+}
+
+/**
+ * Tạo session với ID xác định theo (user, link chuẩn hóa, ngày).
+ * Hai request đua nhau (nháy đúp nút Bắt đầu) thì một thắng qua `create()`,
+ * bên thua bắt ALREADY_EXISTS và nhận lại session cũ — hết phiên trùng vĩnh viễn.
+ * Link đã end trước đó trong ngày → tạo id hậu tố mới để phiên mới không đè phiên cũ.
+ */
+export async function getOrCreateLiveSession(
+  data: Pick<ExtSession, "ownerUid" | "meetingUrl" | "provider" | "title">
+): Promise<{ session: ExtSession; reused: boolean }> {
+  const now = Date.now();
+  const base = {
+    ...data,
+    status: "live" as ExtSessionStatus,
+    startedAt: now,
+    updatedAt: now,
+    participants: [],
+    chatMessages: [],
+    liveSegments: [],
+    audioManifest: [],
+  };
+  const canonicalId = `ext_${shortHash(
+    `${data.ownerUid}|${normalizeMeetingUrl(data.meetingUrl)}|${dayKey(now)}`
+  )}`;
+  const col = db().collection(COLLECTION);
+  const fresh: ExtSession = { ...base, id: canonicalId };
+  try {
+    await col.doc(canonicalId).create(fresh);
+    return { session: fresh, reused: false };
+  } catch (e: unknown) {
+    const code = (e as { code?: number }).code;
+    const msg = e instanceof Error ? e.message : String(e);
+    if (code !== 6 && !/already[-\s]?exists/i.test(msg)) throw e;
+    const snap = await col.doc(canonicalId).get();
+    if (snap.exists) {
+      const s = snap.data() as ExtSession;
+      if (s.status === "live") return { session: s, reused: true };
+    }
+    // Doc cũ đã ended trong ngày → phiên mới dùng id hậu tố.
+    const ref = col.doc();
+    const session: ExtSession = { ...base, id: ref.id };
+    await ref.set(session);
+    return { session, reused: false };
+  }
 }
 
 /** Tìm session live trùng (cùng user + cùng meetingUrl) để tránh tạo trùng khi auto-start. */

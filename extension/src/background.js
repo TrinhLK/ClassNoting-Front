@@ -25,7 +25,7 @@ async function getAuth() {
   return s.idToken ? s : null;
 }
 
-async function apiFetch(path, body) {
+async function apiFetch(path, body, method) {
   const { appOrigin } = await getSettings();
   const auth = await getAuth();
   if (!auth) {
@@ -33,13 +33,14 @@ async function apiFetch(path, body) {
     err.code = "NO_AUTH";
     throw err;
   }
+  const m = method || "POST";
   const res = await fetch(`${appOrigin}${path}`, {
-    method: "POST",
+    method: m,
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${auth.idToken}`,
     },
-    body: JSON.stringify(body),
+    ...(m === "GET" ? {} : { body: JSON.stringify(body) }),
   });
   if (res.status === 401) {
     await chrome.storage.session.clear();
@@ -48,6 +49,31 @@ async function apiFetch(path, body) {
     throw err;
   }
   return res;
+}
+
+// Kết thúc 1 session theo id (không cần tab — dọn được cả phiên mồ côi).
+// Trả { meetingId, empty, counts } hoặc { error }.
+async function endSessionById(sessionId, reason) {
+  for (const [tabId, t] of tabs.entries()) {
+    if (t.sessionId === sessionId) {
+      tabs.delete(tabId);
+      try {
+        chrome.tabs.sendMessage(tabId, { type: "CN_STOP" }).catch(() => {});
+      } catch (e) { /* tab đã đóng */ }
+      await stopAudioCapture(tabId);
+      setBadge(tabId, "", undefined);
+    }
+  }
+  persistTabs();
+  try {
+    const res = await apiFetch("/api/extension/end", { sessionId });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.ok) return data;
+    return { error: "api_failed", status: res.status };
+  } catch (e) {
+    if (e.code === "NO_AUTH" || e.code === "UNAUTHORIZED") return { error: "token_expired" };
+    return { error: "network" };
+  }
 }
 
 function notifyLoginRequired() {
@@ -158,7 +184,7 @@ async function tryEnsureSession(tabId, info, opts) {
       // báo user bấm popup để thử lại (có user gesture).
       setBadge(tabId, "!", "#d97706");
     });
-    return { sessionId: data.sessionId };
+    return { sessionId: data.sessionId, reused: !!data.reused };
   } catch (e) {
     if (e.code === "NO_AUTH" || e.code === "UNAUTHORIZED") {
       notifyLoginRequired();
@@ -218,35 +244,32 @@ async function stopAudioCapture(tabId) {
   } catch (e) { /* offscreen chưa chạy */ }
 }
 
-// ---- Kết thúc phiên (trả meetingId để popup xác nhận với user) ----
+// ---- Kết thúc phiên của 1 tab ----
+// Thứ tự bắt buộc: flush batch cuối TRƯỚC khi xóa khỏi map,
+// vì flushTab thoát ngay khi không còn entry (mất batch cuối nếu xóa trước).
+// Trả { meetingId, empty, counts } hoặc null khi không có gì để end.
 async function endSession(tabId, reason) {
   const t = tabs.get(tabId);
   if (!t) return null;
-  tabs.delete(tabId);
-  persistTabs();
-  try {
-    chrome.tabs.sendMessage(tabId, { type: "CN_STOP" }).catch(() => {});
-  } catch (e) { /* tab đã đóng */ }
-  await stopAudioCapture(tabId);
-  setBadge(tabId, "", undefined);
+  // Flush batch cuối TRƯỚC khi xóa entry (flushTab cần entry mới gửi được).
   await flushTab(tabId).catch(() => {});
-  if (t.sessionId) {
-    try {
-      const res = await apiFetch("/api/extension/end", { sessionId: t.sessionId });
-      const data = await res.json().catch(() => ({}));
-      if (data.meetingId) {
-        const { appOrigin } = await getSettings();
-        chrome.notifications.create(`cn-done-${t.sessionId}`, {
-          type: "basic",
-          iconUrl: "icons/icon128.png",
-          title: "Đã kết xuất biên bản",
-          message: `Mở ${appOrigin}/meeting/${data.meetingId} để xem. (${reason})`,
-        }).catch(() => {});
-        return data.meetingId;
-      }
-    } catch (e) { /* mạng lỗi — phiên vẫn ended ở lần heartbeat sau */ }
+  if (!t.sessionId) {
+    tabs.delete(tabId);
+    persistTabs();
+    return { empty: true, counts: { segments: 0, chat: 0, participants: 0 } };
   }
-  return null;
+  const r = await endSessionById(t.sessionId, reason);
+  if (r && r.error) return null;
+  if (r && r.meetingId) {
+    const { appOrigin } = await getSettings();
+    chrome.notifications.create(`cn-done-${t.sessionId}`, {
+      type: "basic",
+      iconUrl: "icons/icon128.png",
+      title: "Đã kết xuất biên bản",
+      message: `Mở ${appOrigin}/meeting/${r.meetingId} để xem. (${reason})`,
+    }).catch(() => {});
+  }
+  return r;
 }
 
 // ---- Map tab→session chỉ sống trong RAM của service worker (MV3 kill SW lúc
@@ -425,7 +448,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           { provider: msg.provider, url: tab.url, title: tab.title },
           { manual: true }
         );
-        if (r.sessionId) sendResponse({ ok: true, sessionId: r.sessionId });
+        if (r.sessionId) sendResponse({ ok: true, sessionId: r.sessionId, reused: !!r.reused });
         else sendResponse({ ok: false, reason: r.error || "api_failed", status: r.status });
       } catch (e) {
         sendResponse({ ok: false, reason: "error" });
@@ -434,14 +457,40 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg?.type === "CN_MANUAL_END" && msg.tabId) {
-    endSession(msg.tabId, "bấm tay").then((meetingId) => {
-      if (meetingId) sendResponse({ ok: true, meetingId });
+    endSession(msg.tabId, "bấm tay").then((r) => {
+      if (r && !r.error) sendResponse({ ok: true, ...r });
       else {
         // Không có phiên nào cho tab này (vd SW restart mà chưa kịp gắn lại,
         // hoặc phiên đã end trước đó).
         sendResponse({ ok: false, reason: "no_session" });
       }
     });
+    return true;
+  }
+  // Kết thúc 1 session theo id (dọn được cả phiên mồ côi trong popup "kết thúc tất cả").
+  if (msg?.type === "CN_END_SESSION" && msg.sessionId) {
+    endSessionById(msg.sessionId, "bấm tay").then((r) => {
+      if (r && !r.error) sendResponse({ ok: true, ...r });
+      else sendResponse({ ok: false, reason: (r && r.error) || "api_failed", status: r && r.status });
+    });
+    return true;
+  }
+  // Liệt kê phiên live của user (popup "kết thúc tất cả").
+  if (msg?.type === "CN_LIST_SESSIONS") {
+    (async () => {
+      try {
+        const res = await apiFetch("/api/extension/sessions", undefined, "GET");
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.ok) sendResponse({ ok: true, sessions: data.sessions || [] });
+        else sendResponse({ ok: false, reason: "api_failed", status: res.status });
+      } catch (e) {
+        if (e.code === "NO_AUTH" || e.code === "UNAUTHORIZED") {
+          sendResponse({ ok: false, reason: "no_auth" });
+        } else {
+          sendResponse({ ok: false, reason: "network" });
+        }
+      }
+    })();
     return true;
   }
   if (msg?.type === "CN_GET_STATE") {
@@ -476,6 +525,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.type === "CN_PING") {
     sendResponse({ ok: true, pong: true, time: Date.now() });
     return;
+  }
+  // Chuyển tiếp yêu cầu chẩn đoán DOM tới tab Meet (bất đồng bộ).
+  if (msg?.type === "CN_DIAG_REQUEST" && msg.tabId) {
+    chrome.tabs.sendMessage(msg.tabId, { type: "CN_DIAG" }).then(
+      (res) => sendResponse(res || { ok: false, reason: "no_response" }),
+      () => sendResponse({ ok: false, reason: "no_content_script" })
+    );
+    return true;
   }
   // Chẩn đoán: trả lời mọi message lạ để console không treo pending
   // (trước đây message không khớp type nào thì promise treo vĩnh viễn).

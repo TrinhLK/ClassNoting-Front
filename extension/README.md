@@ -55,6 +55,10 @@ Họp mở: để trống để bot vào như khách.
 
 ## 5. Xử lý sự cố nhanh (troubleshooting)
 
+- Đổi manifest mà Reload không nhận (site access cũ): gỡ Remove rồi Load unpacked
+  lại — Chrome đôi khi không áp quyền host mới khi chỉ Reload.
+- Nút Bắt đầu bị khóa 1 lúc là bình thường (chống nháy đúp tạo trùng phiên).
+
 - Popup báo lỗi kèm HTTP status: `401` → token hết hạn (mở web app, F5 tab web);
   `400` → tab không phải link Meet; `429` → đợi 1 phút; `5xx` → kiểm tra Vercel deploy;
   `network` → kiểm tra mạng + Reload extension ở `chrome://extensions` (nhận host_permissions).

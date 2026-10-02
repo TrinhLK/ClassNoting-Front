@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { checkRateLimit } from "@/app/lib/rate-limit";
 import { verifyExtensionAuth } from "@/app/lib/extension-auth";
 import { listLiveSessions, normalizeMeetingUrl } from "@/app/lib/ext-sessions";
+import { endStaleSessions } from "@/app/lib/ext-finalize";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +24,7 @@ export async function GET(req: Request) {
   if (!meetingUrl) return NextResponse.json({ error: "Missing meetingUrl" }, { status: 400 });
 
   try {
+    await endStaleSessions(auth.uid).catch(() => {});
     const live = await listLiveSessions(auth.uid);
     const canonical = normalizeMeetingUrl(meetingUrl);
     const match = live.find((s) => normalizeMeetingUrl(s.meetingUrl) === canonical);

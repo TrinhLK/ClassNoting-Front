@@ -1,11 +1,8 @@
 import { NextResponse } from "next/server";
 import { checkRateLimit } from "@/app/lib/rate-limit";
 import { verifyExtensionAuth } from "@/app/lib/extension-auth";
-import {
-  createExtSession,
-  listLiveSessions,
-  normalizeMeetingUrl,
-} from "@/app/lib/ext-sessions";
+import { getOrCreateLiveSession } from "@/app/lib/ext-sessions";
+import { endStaleSessions } from "@/app/lib/ext-finalize";
 import { detectProvider, PROVIDER_LABELS } from "@/app/lib/meeting-links";
 
 export const dynamic = "force-dynamic";
@@ -37,31 +34,24 @@ export async function POST(req: Request) {
     );
   }
 
-  // Chống tạo trùng khi tab reload / nhiều content script cùng bắn.
-  // So khớp URL chuẩn hóa (tab Meet thường kèm ?authuser=... còn link dán thì không).
-  const canonical = normalizeMeetingUrl(meetingUrl);
-  const live = await listLiveSessions(auth.uid).catch(() => []);
-  const existing = live.find((s) => normalizeMeetingUrl(s.meetingUrl) === canonical);
-  if (existing) {
-    return NextResponse.json({
-      sessionId: existing.id,
-      provider: existing.provider,
-      reused: true,
-    });
-  }
+  // Dọn phiên thiu (>10 phút không heartbeat) mỗi khi có request mới —
+  // banner treo tự biến mất ở lần poll tiếp theo mà không cần cron.
+  endStaleSessions(auth.uid).catch(() => {});
 
   const title =
     (body.title || "").trim() ||
     `Ghi chú họp (${PROVIDER_LABELS[provider]}) ${new Date().toLocaleDateString("vi-VN")}`;
 
   try {
-    const session = await createExtSession({
+    // ID xác định theo (user, link, ngày) + create-if-absent: hai request đua
+    // nhau (nháy đúp nút) thì một thắng, một nhận lại session cũ — hết trùng.
+    const { session, reused } = await getOrCreateLiveSession({
       ownerUid: auth.uid,
       meetingUrl,
       provider,
       title,
     });
-    return NextResponse.json({ sessionId: session.id, provider, reused: false });
+    return NextResponse.json({ sessionId: session.id, provider, reused });
   } catch (e) {
     console.error("[ext/session] create failed:", e);
     return NextResponse.json({ error: "Internal Error" }, { status: 500 });

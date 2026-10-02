@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { checkRateLimit } from "@/app/lib/rate-limit";
 import { verifyExtensionAuth } from "@/app/lib/extension-auth";
 import { getExtSession, patchExtSession } from "@/app/lib/ext-sessions";
+import { endStaleSessions } from "@/app/lib/ext-finalize";
 import type { ChatMessage, MeetingParticipant } from "@/app/lib/db";
 import type { ExtLiveSegment } from "@/app/lib/ext-sessions";
 
@@ -71,6 +72,7 @@ function sanitizeEvents(raw: unknown): {
 export async function POST(req: Request) {
   const auth = await verifyExtensionAuth(req);
   if (auth instanceof NextResponse) return auth;
+  endStaleSessions(auth.uid).catch(() => {});
 
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
   const { allowed } = checkRateLimit(`ext:events:${auth.uid}:${ip}`, 120, 60 * 1000);
