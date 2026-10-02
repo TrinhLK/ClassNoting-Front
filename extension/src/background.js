@@ -148,7 +148,9 @@ async function tryEnsureSession(tabId, info, opts) {
       queue: [],
       spans: [],
       captions: [],
+      emptyStreak: 0,
     });
+    persistTabs();
     setBadge(tabId, "REC", "#dc2626");
     chrome.tabs.sendMessage(tabId, { type: "CN_SESSION", sessionId: data.sessionId }).catch(() => {});
     startAudioCapture(tabId, data.sessionId, info.provider).catch(() => {
@@ -216,11 +218,12 @@ async function stopAudioCapture(tabId) {
   } catch (e) { /* offscreen chưa chạy */ }
 }
 
-// ---- Kết thúc phiên ----
+// ---- Kết thúc phiên (trả meetingId để popup xác nhận với user) ----
 async function endSession(tabId, reason) {
   const t = tabs.get(tabId);
-  if (!t) return;
+  if (!t) return null;
   tabs.delete(tabId);
+  persistTabs();
   try {
     chrome.tabs.sendMessage(tabId, { type: "CN_STOP" }).catch(() => {});
   } catch (e) { /* tab đã đóng */ }
@@ -239,8 +242,98 @@ async function endSession(tabId, reason) {
           title: "Đã kết xuất biên bản",
           message: `Mở ${appOrigin}/meeting/${data.meetingId} để xem. (${reason})`,
         }).catch(() => {});
+        return data.meetingId;
       }
     } catch (e) { /* mạng lỗi — phiên vẫn ended ở lần heartbeat sau */ }
+  }
+  return null;
+}
+
+// ---- Map tab→session chỉ sống trong RAM của service worker (MV3 kill SW lúc
+// rảnh là mất). Persist + nạp lại để popup/bấm Kết thúc vẫn đúng sau restart.
+async function persistTabs() {
+  try {
+    const dump = [...tabs.entries()].map(([tabId, t]) => ({
+      tabId,
+      sessionId: t.sessionId,
+      provider: t.provider,
+      url: t.url,
+    }));
+    await chrome.storage.session.set({ liveTabs: dump });
+  } catch (e) { /* storage chưa sẵn — bỏ qua */ }
+}
+
+async function rehydrateTabs() {
+  try {
+    const s = await chrome.storage.session.get(["liveTabs"]);
+    const dump = Array.isArray(s.liveTabs) ? s.liveTabs : [];
+    const now = Date.now();
+    for (const d of dump) {
+      if (!d || !d.tabId || !d.sessionId) continue;
+      // Cho heartbeat từ content script (15s) cơ hội gắn lại trước khi sweep xét.
+      tabs.set(d.tabId, {
+        sessionId: d.sessionId,
+        provider: d.provider,
+        url: d.url,
+        lastSeen: now,
+        queue: [],
+        spans: [],
+        captions: [],
+        emptyStreak: 0,
+        recovered: true,
+      });
+    }
+  } catch (e) { /* bỏ qua */ }
+}
+rehydrateTabs();
+
+// Số heartbeat trống liên tiếp thì coi như selector hỏng (không đọc được gì
+// dù tab Meet vẫn mở). 12 lần ≈ 3 phút.
+const EMPTY_HEARTBEAT_LIMIT = 12;
+
+function noteHeartbeat(tabId, t, msg) {
+  t.lastSeen = Date.now();
+  const empty = (msg.rosterCount || 0) === 0 && !msg.chatPanel && !msg.captionPanel;
+  t.emptyStreak = empty ? (t.emptyStreak || 0) + 1 : 0;
+  if ((t.emptyStreak || 0) >= EMPTY_HEARTBEAT_LIMIT) {
+    chrome.action.setBadgeText({ text: "?", tabId }).catch(() => {});
+    chrome.action.setBadgeBackgroundColor({ color: "#d97706", tabId }).catch(() => {});
+  }
+  return t.emptyStreak || 0;
+}
+
+// Heartbeat từ tab lạ (SW vừa restart, map trống): tự gắn lại session qua API
+// (server dedupe theo URL nên trả đúng sessionId cũ), không cần user bấm gì.
+async function recoverFromHeartbeat(tabId, msg) {
+  if (!msg.url) return false;
+  const { consent } = await getSettings();
+  if (!consent) return false;
+  const auth = await getAuth();
+  if (!auth) return false;
+  try {
+    const res = await apiFetch("/api/extension/session", {
+      meetingUrl: msg.url,
+      title: msg.title,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.sessionId) return false;
+    tabs.set(tabId, {
+      sessionId: data.sessionId,
+      provider: data.provider || msg.provider,
+      url: msg.url,
+      lastSeen: Date.now(),
+      queue: [],
+      spans: [],
+      captions: [],
+      emptyStreak: 0,
+      recovered: true,
+    });
+    persistTabs();
+    setBadge(tabId, "REC", "#dc2626");
+    chrome.tabs.sendMessage(tabId, { type: "CN_SESSION", sessionId: data.sessionId }).catch(() => {});
+    return true;
+  } catch (e) {
+    return false;
   }
 }
 
@@ -254,16 +347,29 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.type === "CN_EVENTS" && tabId && tabs.has(tabId)) {
     const t = tabs.get(tabId);
     t.lastSeen = Date.now();
+    let gotData = false;
     for (const ev of msg.events || []) {
-      if (ev.kind === "participants") t.queue.push({ kind: "participants", payload: ev.participants });
-      else if (ev.kind === "chat") for (const m of ev.messages || []) t.queue.push({ kind: "chat", payload: m });
-      else if (ev.kind === "transcript") for (const s of ev.segments || []) {
-        t.queue.push({ kind: "transcript", payload: s });
-        if (s.caption === true) {
-          t.captions.push({ name: s.speaker, text: s.text, start: s.start, end: s.end });
-          if (t.captions.length > 200) t.captions.splice(0, t.captions.length - 200);
+      if (ev.kind === "participants") {
+        t.queue.push({ kind: "participants", payload: ev.participants });
+        if ((ev.participants || []).length > 0) gotData = true;
+      } else if (ev.kind === "chat") {
+        for (const m of ev.messages || []) t.queue.push({ kind: "chat", payload: m });
+        if ((ev.messages || []).length > 0) gotData = true;
+      } else if (ev.kind === "transcript") {
+        for (const s of ev.segments || []) {
+          t.queue.push({ kind: "transcript", payload: s });
+          if (s.caption === true) {
+            t.captions.push({ name: s.speaker, text: s.text, start: s.start, end: s.end });
+            if (t.captions.length > 200) t.captions.splice(0, t.captions.length - 200);
+          }
         }
+        if ((ev.segments || []).length > 0) gotData = true;
       }
+    }
+    // Có dữ liệu thật chảy về → reset cảnh báo selector + badge REC.
+    if (gotData) {
+      t.emptyStreak = 0;
+      setBadge(tabId, "REC", "#dc2626");
     }
     if (t.queue.length >= 100) flushTab(tabId);
     sendResponse({ ok: true });
@@ -273,8 +379,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     tabs.get(tabId).spans = (msg.spans || []).slice(-200);
     return;
   }
-  if (msg?.type === "CN_HEARTBEAT" && tabId && tabs.has(tabId)) {
-    tabs.get(tabId).lastSeen = Date.now();
+  if (msg?.type === "CN_HEARTBEAT" && tabId) {
+    const t = tabs.get(tabId);
+    if (t) {
+      noteHeartbeat(tabId, t, msg);
+      return;
+    }
+    // Tab lạ (SW vừa restart): tự gắn lại session cũ, không cần user bấm gì.
+    recoverFromHeartbeat(tabId, msg).then((ok) => {
+      if (ok) sendResponse({ recovered: true });
+    });
     return;
   }
   if (msg?.type === "CN_GET_SPANS" && msg.tabId && tabs.has(msg.tabId)) {
@@ -320,7 +434,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg?.type === "CN_MANUAL_END" && msg.tabId) {
-    endSession(msg.tabId, "bấm tay").then(() => sendResponse({ ok: true }));
+    endSession(msg.tabId, "bấm tay").then((meetingId) => {
+      if (meetingId) sendResponse({ ok: true, meetingId });
+      else {
+        // Không có phiên nào cho tab này (vd SW restart mà chưa kịp gắn lại,
+        // hoặc phiên đã end trước đó).
+        sendResponse({ ok: false, reason: "no_session" });
+      }
+    });
     return true;
   }
   if (msg?.type === "CN_GET_STATE") {
@@ -331,7 +452,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         appOrigin: settings.appOrigin,
         authed: !!auth,
         email: auth?.email,
-        liveTabs: [...tabs.entries()].map(([id, t]) => ({ tabId: id, sessionId: t.sessionId, provider: t.provider })),
+        liveTabs: [...tabs.entries()].map(([id, t]) => ({
+          tabId: id,
+          sessionId: t.sessionId,
+          provider: t.provider,
+          // Cảnh báo selector cho popup: không đọc được gì quá lâu.
+          unhealthy: (t.emptyStreak || 0) >= EMPTY_HEARTBEAT_LIMIT,
+        })),
       });
     });
     return true;

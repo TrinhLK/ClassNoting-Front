@@ -195,6 +195,8 @@
     send({
       type: "CN_HEARTBEAT",
       provider,
+      url: location.href,
+      title: document.title,
       rosterCount,
       chatPanel: !!platform.chatRoot(),
       captionPanel: !!platform.captionRoot(),
