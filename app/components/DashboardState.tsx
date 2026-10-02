@@ -17,6 +17,7 @@ import { useGlobalUI } from "../context/GlobalUIProvider";
 import { useAuth } from "../context/AuthContext";
 import RecordSetupModal from "./Dashboard/RecordSetupModal";
 import Header from "./Dashboard/Header";
+import ExtLiveBanner from "./Dashboard/ExtLiveBanner";
 import StatsCards from "./Dashboard/StatsCards";
 import MeetingListView from "./Dashboard/MeetingListView";
 import { MEETING_STATUS } from "../lib/constants";
@@ -407,6 +408,7 @@ export default function DashboardState({
 
       {/* SCROLLABLE AREA */}
       <div className="flex-1 overflow-y-auto p-4 md:p-8 pb-24 md:pb-8">
+        {currentTab === "all" && <ExtLiveBanner />}
         {currentTab === "all" && (
             <StatsCards
               onFileSelected={(file) => {

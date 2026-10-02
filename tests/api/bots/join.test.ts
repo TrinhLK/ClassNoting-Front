@@ -22,6 +22,18 @@ vi.mock("nodemailer", () => ({
 
 const fetchMock = vi.fn();
 
+// Mỗi request một IP riêng để không dồn rate-limit `bots:join:unknown`
+// (rate-limit tính theo IP, 10 req / 5 phút).
+let ipCounter = 0;
+const uniqRequest = (
+  body: unknown,
+  options: { headers?: Record<string, string>; ip?: string } = {}
+) =>
+  makeRequest(body, {
+    headers: options.headers,
+    ip: options.ip ?? `10.8.8.${++ipCounter}`,
+  });
+
 beforeEach(() => {
   fetchMock.mockReset();
   vi.stubGlobal("fetch", fetchMock);
@@ -38,7 +50,7 @@ describe("POST /api/bots/join — validate input + MeetingBaas call (bug 3.5)", 
   });
 
   it("trả 400 khi thiếu meetingUrl", async () => {
-    const req = makeRequest({ userId: "u1" });
+    const req = uniqRequest({ userId: "u1" });
     const res = await POST(req);
     expect(res.status).toBe(400);
     const body = await res.json();
@@ -46,7 +58,7 @@ describe("POST /api/bots/join — validate input + MeetingBaas call (bug 3.5)", 
   });
 
   it("trả 400 khi thiếu userId", async () => {
-    const req = makeRequest({ meetingUrl: "https://meet.google.com/abc-defg-hij" });
+    const req = uniqRequest({ meetingUrl: "https://meet.google.com/abc-defg-hij" });
     const res = await POST(req);
     expect(res.status).toBe(400);
     const body = await res.json();
@@ -56,7 +68,7 @@ describe("POST /api/bots/join — validate input + MeetingBaas call (bug 3.5)", 
   it("trả 500 khi thiếu MEETINGBAAS_API_KEY", async () => {
     const original = process.env.MEETINGBAAS_API_KEY;
     delete process.env.MEETINGBAAS_API_KEY;
-    const req = makeRequest({
+    const req = uniqRequest({
       meetingUrl: "https://meet.google.com/abc-defg-hij",
       userId: "u1",
     });
@@ -71,7 +83,7 @@ describe("POST /api/bots/join — validate input + MeetingBaas call (bug 3.5)", 
       json: async () => ({ success: true, data: { bot_id: "bot_xyz" } }),
     });
 
-    const req = makeRequest({
+    const req = uniqRequest({
       meetingUrl: "https://meet.google.com/abc-defg-hij",
       botName: "Custom Bot",
       userId: "user_123",
@@ -94,7 +106,7 @@ describe("POST /api/bots/join — validate input + MeetingBaas call (bug 3.5)", 
       json: async () => ({ success: true, data: { bot_id: "bot_xyz" } }),
     });
 
-    const req = makeRequest({
+    const req = uniqRequest({
       meetingUrl: "https://meet.google.com/abc-defg-hij",
       userId: "user_123",
       userName: "Nguyen Van A",
@@ -108,40 +120,68 @@ describe("POST /api/bots/join — validate input + MeetingBaas call (bug 3.5)", 
     expect(JSON.parse(calledOpts.body).bot_name).toBe("Thư ký của Nguyen Van A");
   });
 
-  it("trả 400 khi link không thuộc Meet/Zoom/Teams", async () => {
-    const req = makeRequest({
-      meetingUrl: "https://example.com/room/123",
-      userId: "u1",
-    });
-    const res = await POST(req);
-    expect(res.status).toBe(400);
+  it("trả 400 khi link không phải Google Meet", async () => {
+    for (const meetingUrl of [
+      "https://example.com/room/123",
+      "https://us02web.zoom.us/j/123456789",
+      "https://teams.microsoft.com/l/meetup-join/abc/0?context=x",
+    ]) {
+      fetchMock.mockReset();
+      const req = uniqRequest({ meetingUrl, userId: "u1" });
+      const res = await POST(req);
+      expect(res.status).toBe(400);
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("chấp nhận link MS Teams và gửi teams_config fallback anonymous", async () => {
+  it("không gửi meet_config khi họp mở (vào như khách)", async () => {
     fetchMock.mockResolvedValueOnce({
       ok: true,
-      json: async () => ({ success: true, data: { bot_id: "bot_teams" } }),
+      json: async () => ({ success: true, data: { bot_id: "bot_meet" } }),
     });
 
-    const req = makeRequest({
-      meetingUrl: "https://teams.microsoft.com/l/meetup-join/19%3Ameeting_abc@thread.v2/0?context=%7B%22Tid%22%3A%22123%22%7D",
+    const req = uniqRequest({
+      meetingUrl: "https://meet.google.com/abc-defg-hij",
       userId: "user_123",
       userName: "Tran Thi B",
     });
     const res = await POST(req);
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.provider).toBe("teams");
+    expect(body.provider).toBe("meet");
     const [, calledOpts] = fetchMock.mock.calls[0];
     const sent = JSON.parse(calledOpts.body);
-    expect(sent.teams_config.fallback).toBe("anonymous");
+    expect(sent.meet_config).toBeUndefined();
     expect(sent.bot_name).toBe("Thư ký của Tran Thi B");
     expect(sent.webhook_url).toContain("/api/webhooks/meetingbaas");
   });
 
+  it("gửi meet_config với email_group ưu tiên cho họp Workspace khóa", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ success: true, data: { bot_id: "bot_locked" } }),
+    });
+
+    const req = uniqRequest({
+      meetingUrl: "https://meet.google.com/abc-defg-hij",
+      userId: "user_123",
+      googleEmailGroup: "bots@congty.com",
+      googleCredentialId: "cred_123",
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    const [, calledOpts] = fetchMock.mock.calls[0];
+    const sent = JSON.parse(calledOpts.body);
+    expect(sent.meet_config).toMatchObject({
+      email_group: "bots@congty.com",
+      fallback: "anonymous",
+    });
+    expect(sent.meet_config.credential_id).toBeUndefined();
+  });
+
   it("trả 429 khi vượt rate limit (10 req / 5 phút)", async () => {
     const makeRateLimitReq = () =>
-      makeRequest(
+      uniqRequest(
         { meetingUrl: "https://meet.google.com/abc-defg-hij", userId: "u1" },
         { ip: "9.9.9.9" }
       );
@@ -170,7 +210,7 @@ describe("POST /api/bots/join — validate input + MeetingBaas call (bug 3.5)", 
       text: async () => "MeetingBaas down",
     });
 
-    const req = makeRequest({
+    const req = uniqRequest({
       meetingUrl: "https://meet.google.com/abc-defg-hij",
       userId: "u2",
     });

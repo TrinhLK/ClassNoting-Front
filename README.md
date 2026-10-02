@@ -27,7 +27,7 @@ A smart web application built with **Next.js 16** + **React 19** to record, tran
 ### 🎙️ Ghi âm & Phiên âm
 - **Live Recording**: Ghi âm trực tiếp trong trình duyệt, transcript realtime
 - **Upload audio**: Upload file có sẵn (mp3, wav, m4a, webm) → chuyển lên Firebase Storage
-- **Hybrid pipeline**: Tích hợp MeetingBaaS bot cho phòng họp Zoom/Meet/Teams
+- **Hybrid pipeline**: Tích hợp MeetingBaaS bot cho phòng họp Google Meet (kể cả phòng Workspace khóa, qua SAML SSO)
 
 ### 📝 Chỉnh sửa Transcript
 - **Karaoke highlighting**: Highlight từ theo thời gian thực khi phát audio

@@ -181,7 +181,7 @@ export default function MeetingDetailState({
 
           <div className="flex-1 overflow-y-auto pb-24">
             {showChatPanel ? (
-              <ChatPanel messages={chatMessages} />
+              <ChatPanel messages={chatMessages} stats={meeting.chatStats} />
             ) : (
               <div className="p-4 md:p-8 space-y-2">
                 {timeline.length === 0 && (

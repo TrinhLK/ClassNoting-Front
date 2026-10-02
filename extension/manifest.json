@@ -1,0 +1,39 @@
+{
+  "manifest_version": 3,
+  "name": "ClassNoting — Ghi chú cuộc họp tự động",
+  "version": "0.1.0",
+  "description": "Tự phát hiện phòng họp Google Meet đang mở, ghi chú người tham gia + chat + transcript live về ClassNoting.",
+  "minimum_chrome_version": "116",
+  "permissions": ["tabs", "tabCapture", "storage", "notifications", "alarms", "offscreen"],
+  "host_permissions": [
+    "https://meet.google.com/*"
+  ],
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://meet.google.com/*"],
+      "js": ["src/shared.js", "src/platforms.js", "src/content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "src/popup.html",
+    "default_title": "ClassNoting ghi chú họp"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "externally_connectable": {
+    "matches": [
+      "http://localhost:3000/*",
+      "https://smart-noting.vercel.app/*",
+      "https://noting.io.vn/*",
+      "https://*.noting.io.vn/*"
+    ]
+  }
+}

@@ -20,7 +20,8 @@ export async function POST(req: Request) {
             language,
             objectives,
             title,
-            teamsCredentialId,
+            googleCredentialId,
+            googleEmailGroup,
         } = await req.json();
 
         if (!meetingUrl) {
@@ -30,10 +31,11 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: "Missing userId" }, { status: 400 });
         }
 
+        // PHẠM VI: chỉ Google Meet.
         const provider = detectProvider(meetingUrl);
         if (!provider) {
             return NextResponse.json(
-                { error: "Link không hợp lệ. Chỉ hỗ trợ Google Meet, Zoom hoặc MS Teams." },
+                { error: "Link không hợp lệ. Chỉ hỗ trợ Google Meet." },
                 { status: 400 }
             );
         }
@@ -90,15 +92,19 @@ export async function POST(req: Request) {
             },
         };
 
-        // MS Teams: xác thực bằng tài khoản Microsoft đã liên kết (do user cung cấp),
-        // fallback về join ẩn danh khi chưa có credential (họp mở vẫn chạy).
-        if (provider === "teams") {
-            const credentialId = (teamsCredentialId || "").trim() || process.env.MEETINGBAAS_TEAMS_CREDENTIAL_ID?.trim();
-            const emailGroup = process.env.MEETINGBAAS_TEAMS_EMAIL_GROUP?.trim();
-            const teamsConfig: Record<string, unknown> = { fallback: "anonymous" };
-            if (credentialId) teamsConfig.credential_id = credentialId;
-            else if (emailGroup) teamsConfig.email_group = emailGroup;
-            body.teams_config = teamsConfig;
+        // Google Meet họp khóa (Workspace/Edu): xác thực bằng login Google Workspace
+        // đã liên kết (SAML SSO). email_group ưu tiên hơn credential_id (theo docs
+        // MeetingBaaS). Không có credential → join ẩn danh như khách (họp mở vẫn chạy).
+        // Bỏ qua meet_config khi không có credential để giữ hành vi ẩn danh hiện tại.
+        const googleCredentialIdFinal =
+            (googleCredentialId || "").trim() || process.env.MEETINGBAAS_GOOGLE_CREDENTIAL_ID?.trim();
+        const googleEmailGroupFinal =
+            (googleEmailGroup || "").trim() || process.env.MEETINGBAAS_MEET_EMAIL_GROUP?.trim();
+        if (googleEmailGroupFinal || googleCredentialIdFinal) {
+            const meetConfig: Record<string, unknown> = { fallback: "anonymous" };
+            if (googleEmailGroupFinal) meetConfig.email_group = googleEmailGroupFinal;
+            else if (googleCredentialIdFinal) meetConfig.credential_id = googleCredentialIdFinal;
+            body.meet_config = meetConfig;
         }
 
         const response = await fetch("https://api.meetingbaas.com/v2/bots", {

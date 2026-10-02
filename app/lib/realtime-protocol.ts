@@ -209,7 +209,7 @@ export function mergeFinalSegment(
 }
 
 // ---------------------------------------------------------------------------
-// Gán tên người nói từ hệ thống họp (Meet / Zoom / Teams) — pure, testable
+// Gán tên người nói từ Google Meet — pure, testable
 // ---------------------------------------------------------------------------
 
 /** Khoảng thời gian một cái tên đang "giữ mic" (từ chỉ báo active-speaker DOM). */
@@ -219,7 +219,7 @@ export interface ActiveSpan {
   end: number;
 }
 
-/** Dòng caption live kèm tên (Meet/Teams/Zoom CC). */
+/** Dòng caption live kèm tên (Google Meet CC). */
 export interface CaptionLine {
   name: string;
   text: string;

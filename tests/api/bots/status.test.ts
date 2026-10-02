@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { makeRequest } from "@/tests/helpers/fixtures";
 
 vi.mock("@/app/lib/firebase-admin", () => ({
   getAdminDb: () => ({
@@ -81,7 +80,7 @@ describe("GET /api/bots/status — speaker + chat live", () => {
       json: async () => ({
         data: {
           status: "completed",
-          meeting_url: "https://teams.microsoft.com/l/meetup-join/abc/0?context=x",
+          meeting_url: "https://meet.google.com/abc-defg-hij",
           mp3: "https://s3.example/audio.mp3",
           duration_seconds: 60,
           speakers: [{ name: "Nguyen A" }],
@@ -93,7 +92,7 @@ describe("GET /api/bots/status — speaker + chat live", () => {
     const body = await res.json();
     expect(body.status).toBe("completed");
     expect(body.shouldSave).toBe(true);
-    expect(body.meetingData.provider).toBe("teams");
+    expect(body.meetingData.provider).toBe("meet");
     expect(body.meetingData.botId).toBe("bot_2");
     expect(body.meetingData.chatMessages).toHaveLength(1);
     expect(body.meetingData.speakers[0].name).toBe("Nguyen A");

@@ -28,6 +28,23 @@ async function verifySignature(rawBody: string, signature: string | null): Promi
   return mismatch === 0;
 }
 
+/**
+ * Đọc userId từ payload webhook khi URL tĩnh không kèm query param.
+ * MeetingBaaS gửi kèm `extra` (đã nhúng lúc join) ở root hoặc trong `data`.
+ */
+function readExtraUserId(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return null;
+  const root = payload as { extra?: { userId?: unknown }; data?: unknown };
+  if (root.extra && typeof root.extra.userId === "string" && root.extra.userId) {
+    return root.extra.userId;
+  }
+  if (root.data && typeof root.data === "object") {
+    const extra = (root.data as { extra?: { userId?: unknown } }).extra;
+    if (extra && typeof extra.userId === "string" && extra.userId) return extra.userId;
+  }
+  return null;
+}
+
 function toChatMessage(raw: any): ChatMessage | null {
   const text = String(raw?.text ?? raw?.message ?? "").trim();
   if (!text) return null;
@@ -61,15 +78,28 @@ export async function POST(req: Request) {
         }
 
         const { searchParams } = new URL(req.url);
-        const userId = searchParams.get('userId');
+        let rawJson: unknown;
+        try {
+            rawJson = JSON.parse(rawBody);
+        } catch {
+            return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+        }
+
+        // userId: ưu tiên query param (webhook theo từng bot lúc join);
+        // fallback sang extra.userId trong payload (webhook cấu hình ở dashboard,
+        // URL tĩnh không kèm userId — MeetingBaaS gửi kèm `extra` đã nhúng lúc join).
+        const userId: string | null =
+            searchParams.get('userId') || readExtraUserId(rawJson);
 
         if (!userId) {
-            console.error("[Webhook] Missing userId in query params");
+            console.error("[Webhook] Missing userId (query params và payload.extra đều không có)");
             return NextResponse.json({ error: "Missing userId" }, { status: 400 });
         }
 
-        const body = JSON.parse(rawBody);
-        const { event, data } = body;
+        // Payload webhook không có schema cố định (event shape khác nhau),
+        // phần còn lại của handler đọc field phòng thủ (optional chaining + fallback).
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { event, data }: { event: string; data: any } = rawJson as any;
 
         // --- Chat realtime: chỉ đọc, không gửi. Lưu vào meeting_bots để client poll/subscribe. ---
         if (event === 'bot.chat_message' && data) {

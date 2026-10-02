@@ -8,7 +8,7 @@ import { storage } from "@/app/lib/firebase";
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { saveMeeting, Meeting, ChatMessage, MeetingParticipant } from "@/app/lib/db";
 import { MEETING_STATUS } from "../lib/constants";
-import { buildBotName, detectProvider, PROVIDER_LABELS, validateMeetingUrl } from "../lib/meeting-links";
+import { buildBotName, detectProvider, validateMeetingUrl } from "../lib/meeting-links";
 import Modal from "./ui/Modal";
 import Input from "./ui/Input";
 import Select from "./ui/Select";
@@ -29,7 +29,8 @@ export default function BotJoinModal({ isOpen, onClose, onUpdate }: { isOpen: bo
     const [statusDetails, setStatusDetails] = useState<string>("Đang đợi kết nối...");
     const [language, setLanguage] = useState<"vi" | "en">("vi");
     const [objectives, setObjectives] = useState("");
-    const [teamsCredentialId, setTeamsCredentialId] = useState("");
+    const [googleEmailGroup, setGoogleEmailGroup] = useState("");
+    const [googleCredentialId, setGoogleCredentialId] = useState("");
     const [participants, setParticipants] = useState<MeetingParticipant[]>([]);
     const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
 
@@ -59,7 +60,7 @@ export default function BotJoinModal({ isOpen, onClose, onUpdate }: { isOpen: bo
         const url = meetingUrl.trim();
         if (!url) return toast.error("Vui lòng nhập link cuộc họp!");
         if (!user) return toast.error("Vui lòng đăng nhập!");
-        if (!validateMeetingUrl(url)) return toast.error("Link không hợp lệ. Chỉ hỗ trợ Google Meet, Zoom hoặc MS Teams.");
+        if (!validateMeetingUrl(url)) return toast.error("Link không hợp lệ. Chỉ hỗ trợ Google Meet.");
 
         setLoading(true);
         setStatus("joining");
@@ -75,7 +76,8 @@ export default function BotJoinModal({ isOpen, onClose, onUpdate }: { isOpen: bo
                     language,
                     objectives: objectives.trim(),
                     title: title.trim() || `Ghi chú họp ${new Date().toLocaleDateString("vi-VN")}`,
-                    teamsCredentialId: teamsCredentialId.trim() || undefined,
+                    googleEmailGroup: googleEmailGroup.trim() || undefined,
+                    googleCredentialId: googleCredentialId.trim() || undefined,
                 })
             });
 
@@ -309,7 +311,7 @@ export default function BotJoinModal({ isOpen, onClose, onUpdate }: { isOpen: bo
             isOpen={isOpen}
             onClose={handleClose}
             title="Ghi chú cuộc họp"
-            description="Bot sẽ tham gia cuộc họp trên Google Meet / Zoom / MS Teams, nhận diện người nói và lưu lại khung chat."
+            description="Bot sẽ tham gia cuộc họp trên Google Meet, nhận diện người nói và lưu lại khung chat."
             icon={<Bot className="w-5 h-5" />}
             size="lg"
         >
@@ -415,8 +417,8 @@ export default function BotJoinModal({ isOpen, onClose, onUpdate }: { isOpen: bo
 
                     <div>
                         <Input
-                            label="Link cuộc họp (Google Meet / Zoom / MS Teams)"
-                            placeholder="Dán link cuộc họp vào đây..."
+                            label="Link cuộc họp (Google Meet)"
+                            placeholder="https://meet.google.com/..."
                             value={meetingUrl}
                             onChange={(e) => setMeetingUrl(e.target.value)}
                             leftIcon={<LinkIcon className="w-4 h-4" />}
@@ -424,8 +426,8 @@ export default function BotJoinModal({ isOpen, onClose, onUpdate }: { isOpen: bo
                         {meetingUrl.trim() && (
                             <p className={`text-xs mt-1.5 font-medium ${provider ? "text-emerald-600" : "text-red-500"}`}>
                                 {provider
-                                    ? `✓ Nhận diện: ${PROVIDER_LABELS[provider]} — Bot sẽ tham gia với tên “${botName}”`
-                                    : "✕ Link chưa đúng định dạng Meet / Zoom / Teams được hỗ trợ"}
+                                    ? `✓ Nhận diện: Google Meet — Bot sẽ tham gia với tên “${botName}”`
+                                    : "✕ Link chưa đúng định dạng Google Meet"}
                             </p>
                         )}
                     </div>
@@ -451,20 +453,30 @@ export default function BotJoinModal({ isOpen, onClose, onUpdate }: { isOpen: bo
                         />
                     </div>
 
-                    {provider === "teams" && (
+                    <div className="grid sm:grid-cols-2 gap-3">
                         <Input
-                            label="Teams credential ID (họp nội bộ — tùy chọn)"
-                            placeholder="Để trống = vào như khách; có credential = vào bằng tài khoản Microsoft đã liên kết"
-                            value={teamsCredentialId}
-                            onChange={(e) => setTeamsCredentialId(e.target.value)}
+                            label="Email group Google (họp nội bộ — ưu tiên)"
+                            placeholder="vd: bots@congty.com"
+                            value={googleEmailGroup}
+                            onChange={(e) => setGoogleEmailGroup(e.target.value)}
                             leftIcon={<Users className="w-4 h-4" />}
                         />
-                    )}
+                        <Input
+                            label="Credential ID (hoặc để trống)"
+                            placeholder="Pin 1 tài khoản bot cụ thể"
+                            value={googleCredentialId}
+                            onChange={(e) => setGoogleCredentialId(e.target.value)}
+                            leftIcon={<Users className="w-4 h-4" />}
+                        />
+                    </div>
+                    <p className="text-[11px] text-slate-500 -mt-2">
+                        Họp mở: để trống cả hai để bot vào như khách. Họp Workspace/Edu khóa guest:
+                        điền email group hoặc credential của tài khoản Google đã liên kết (SAML SSO).
+                    </p>
 
                     <div className="text-xs text-slate-600 bg-indigo-50 p-3 rounded-xl border border-indigo-100 leading-relaxed">
                         <span className="font-semibold text-indigo-700">Cách tham gia:</span> bot vào phòng với tên <span className="font-bold">“{botName}”</span> (theo tài khoản {user?.email || "đang đăng nhập"}).
-                        Với họp Teams nội bộ, hệ thống dùng tài khoản Microsoft đã liên kết; nếu chưa có sẽ tự vào như khách.
-                        Khung chat trong phòng <span className="font-semibold">chỉ đọc</span> — bạn nhắn trực tiếp trong ứng dụng họp, bot tự lưu lại.
+                        Khung chat trong phòng <span className="font-semibold">chỉ đọc</span> — bạn nhắn trực tiếp trong Google Meet, bot tự lưu lại.
                     </div>
                     <p className="text-xs text-slate-500 italic">
                         * Bot sẽ tự động rời phòng khi kết thúc. Nhớ báo host duyệt “{botName}” vào phòng.

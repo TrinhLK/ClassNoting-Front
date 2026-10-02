@@ -6,6 +6,7 @@ import {
 } from "firebase/firestore";
 import { Segment, Speaker, ChatMessage, MeetingParticipant, RAW_TRANSCRIPT_FILE, RAW_SUMMARY_FILE } from "../mockData";
 export type { Segment, Speaker, ChatMessage, MeetingParticipant };
+import type { ChatStats } from "../chat-stats";
 import { parseTranscriptFile } from "../parser";
 import { MeetingTemplate } from "../templates";
 import { MEETING_STATUS, MeetingStatus, ActionItemStatus } from "../constants";
@@ -42,14 +43,18 @@ export interface Meeting {
   folderId?: string | null;
   shareToken?: string;
   objectives?: string;
-  // --- Meeting-bot (Ghi chú cuộc họp: Meet / Zoom / Teams) ---
+  // --- Meeting-bot (Ghi chú cuộc họp Google Meet) ---
   meetingUrl?: string;
-  provider?: "meet" | "zoom" | "teams";
+  provider?: "meet";
   botId?: string;
   participants?: MeetingParticipant[];
   chatMessages?: ChatMessage[];
   /** Raw diarization payload từ MeetingBaas (dùng cho hybrid transcribe pipeline) */
   diarization?: unknown;
+  /** Nguồn tạo biên bản: bot / extension / upload / live. */
+  source?: "bot" | "extension" | "upload" | "live";
+  /** Thống kê tương tác khung chat (extension/bot). */
+  chatStats?: ChatStats;
 }
 
 const COLLECTION_NAME = "meetings";
