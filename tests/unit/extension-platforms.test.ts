@@ -1,0 +1,187 @@
+import { describe, it, expect, beforeAll } from "vitest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const EXT = path.resolve(__dirname, "../../extension/src");
+
+function loadPlatforms() {
+  const shared = readFileSync(path.join(EXT, "shared.js"), "utf-8");
+  const platforms = readFileSync(path.join(EXT, "platforms.js"), "utf-8");
+  // Chạy trong global scope để IIFE gắn vào globalThis (giống content script).
+  (0, eval)(shared);
+  (0, eval)(platforms);
+  const g = globalThis as unknown as {
+    ClassNotingPlatforms: { meet: Record<string, (...a: never[]) => unknown> };
+  };
+  return g.ClassNotingPlatforms.meet;
+}
+
+let meet: ReturnType<typeof loadPlatforms>;
+
+beforeAll(() => {
+  meet = loadPlatforms();
+});
+
+const setBody = (html: string) => {
+  document.body.innerHTML = html;
+};
+
+describe("extension platforms.js — roster (Meet)", () => {
+  it("cleanRosterName rút tên nhân đôi, bỏ hậu tố, chặn header", () => {
+    const clean = meet.cleanRosterName as (s: string) => string;
+    expect(clean("Trình Lê Khánh Trình Lê Khánh")).toBe("Trình Lê Khánh");
+    expect(clean("Trịnh Lê Khánh (You)")).toBe("Trịnh Lê Khánh");
+    expect(clean("Contributors")).toBe("");
+    expect(clean("Waiting to be admitted")).toBe("");
+    expect(clean("123")).toBe("");
+    expect(clean("Nguyễn Văn A")).toBe("Nguyễn Văn A");
+  });
+
+  it("scrapeRoster: tile có overlay tên (ca chuẩn)", () => {
+    setBody(`
+      <div data-participant-id="spaces/x/devices/1">
+        <div data-self-name>Trịnh Lê Khánh</div>
+      </div>`);
+    const names = meet.scrapeRoster() as { name: string }[];
+    expect(names.map((r) => r.name)).toEqual(["Trịnh Lê Khánh"]);
+  });
+
+  it("scrapeRoster: tile không tên, tên nằm ở container cha (ca diag thật)", () => {
+    setBody(`
+      <div class="tile-wrap">
+        <div data-participant-id="spaces/x/devices/2" aria-label=""></div>
+        <div class="name-row">Trịnh Lê Khánh</div>
+      </div>`);
+    const names = meet.scrapeRoster() as { name: string }[];
+    expect(names.map((r) => r.name)).toEqual(["Trịnh Lê Khánh"]);
+  });
+
+  it("scrapeRoster: bỏ qua ô search trong people-panel", () => {
+    setBody(`
+      <div aria-label="People panel">
+        <input aria-label="Search for people" placeholder="Search for people" />
+        <div role="listitem">Trịnh Lê Khánh\nMeeting host</div>
+      </div>`);
+    const names = meet.scrapeRoster() as { name: string }[];
+    expect(names.map((r) => r.name)).toEqual(["Trịnh Lê Khánh"]);
+  });
+
+  it("scrapeRoster: item gộp tên+role không khoảng trắng vẫn tách được", () => {
+    setBody(`
+      <div aria-label="People panel">
+        <div role="listitem"><span>Trịnh Lê Khánh</span><span>Meeting host</span></div>
+      </div>`);
+    const names = meet.scrapeRoster() as { name: string }[];
+    expect(names.map((r) => r.name)).toEqual(["Trịnh Lê Khánh"]);
+  });
+});
+
+describe("extension platforms.js — chat (Meet)", () => {
+  it("chatRoot: bỏ qua nút mở panel, ưu tiên container có tin nhắn", () => {
+    setBody(`
+      <button aria-label="Chat with everyone">Chat</button>
+      <div role="log" aria-label="In-call messages">
+        <div role="listitem"><span data-sender-name>Nguyen A</span><span data-message-text>Xin chào</span></div>
+      </div>`);
+    const root = meet.chatRoot() as HTMLElement | null;
+    expect(root).not.toBeNull();
+    expect(root!.tagName).not.toBe("BUTTON");
+    expect(root!.getAttribute("role")).toBe("log");
+  });
+
+  it("parseChatNode: loại rác UI, giữ tin nhắn thật", () => {
+    const parse = meet.parseChatNode as (n: Element) => { text: string; sender: string } | null;
+    setBody(`
+      <button aria-label="Chat">chat_bubble</button>
+      <div id="m1"><span data-sender-name>Nguyen A</span><span data-message-text>giờ thì chat đây</span></div>`);
+    const btn = document.querySelector("button")!;
+    expect(parse(btn)).toBeNull();
+    const msg = document.querySelector("#m1")!;
+    expect(parse(msg)).toEqual({ text: "giờ thì chat đây", sender: "Nguyen A" });
+  });
+
+  it("parseChatNode: text dạng snake_case không sender thì loại", () => {
+    const parse = meet.parseChatNode as (n: Element) => unknown;
+    setBody(`<div id="x">chat_bubble_outline</div>`);
+    expect(parse(document.querySelector("#x")!)).toBeNull();
+  });
+});
+
+describe("extension platforms.js — caption (Meet)", () => {
+  it("parseCaptionNode: loại status, bóc Tên: nội dung", () => {
+    const parse = meet.parseCaptionNode as (
+      n: Element,
+      roster?: string[]
+    ) => { name: string; text: string } | null;
+    setBody(`
+      <div id="st">closed_caption_off</div>
+      <div id="cap">You: Giữ lại nha bắt cc này</div>
+      <div id="short">Ok</div>`);
+    expect(parse(document.querySelector("#st")!)).toBeNull();
+    expect(parse(document.querySelector("#cap")!)).toEqual({
+      name: "You",
+      text: "Giữ lại nha bắt cc này",
+    });
+    expect(parse(document.querySelector("#short")!)).toBeNull();
+  });
+
+  it("parseCaptionNode: không dấu hai chấm thì khớp tiền tố tên roster (ca diag thật)", () => {
+    const parse = meet.parseCaptionNode as (
+      n: Element,
+      roster?: string[]
+    ) => { name: string; text: string } | null;
+    setBody(`<div id="cap2">You Giữ lại nha bắt cc này</div>`);
+    expect(parse(document.querySelector("#cap2")!, ["You", "Trịnh Lê Khánh"])).toEqual({
+      name: "You",
+      text: "Giữ lại nha bắt cc này",
+    });
+    // Không roster → giữ nguyên text, tên rỗng (uncertain)
+    expect(parse(document.querySelector("#cap2")!)).toEqual({
+      name: "",
+      text: "You Giữ lại nha bắt cc này",
+    });
+  });
+
+  it("captionRoot: khớp container aria-live", () => {
+    setBody(`<div aria-live="polite" class="vNKgIf">You Alo 1 2 3</div>`);
+    const root = meet.captionRoot() as HTMLElement | null;
+    expect(root).not.toBeNull();
+    expect(root!.className).toContain("vNKgIf");
+  });
+});
+
+describe("extension platforms.js — describe() (chẩn đoán)", () => {
+  it("chat:anchor-chain leo từ ô Send a message khi root trượt", () => {
+    setBody(`
+      <div class="meet-chat-panel xyz">
+        <div class="msg-list abc">
+          <div class="msg">tutewt</div>
+        </div>
+        <div class="composer">
+          <div role="textbox" aria-label="Send a message"></div>
+        </div>
+      </div>`);
+    const describe = meet.describe as () => {
+      checks: { label: string; found?: boolean; chain?: string }[];
+    };
+    const d = describe();
+    const anchor = d.checks.find((c) => c.label === "chat:anchor-chain")!;
+    expect(anchor.found).toBe(true);
+    // Chuỗi leo từ textbox lên: composer → panel → body (đủ để viết selector
+    // tới panel rồi query tin nhắn bên trong, không cần nhánh sibling msg-list).
+    expect(anchor.chain).toContain("composer");
+    expect(anchor.chain).toContain("meet-chat-panel");
+  });
+
+  it("chat:anchor-chain found=false khi không có ô chat", () => {
+    setBody(`<div><p>Không có gì</p></div>`);
+    const describe = meet.describe as () => {
+      checks: { label: string; found?: boolean }[];
+    };
+    const d = describe();
+    const anchor = d.checks.find((c) => c.label === "chat:anchor-chain")!;
+    expect(anchor.found).toBe(false);
+  });
+});

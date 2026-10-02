@@ -331,6 +331,27 @@ async function rehydrateTabs() {
 }
 rehydrateTabs();
 
+// Dựng entry nhẹ từ sessionId mà tab gửi kèm — dùng khi map RAM mất entry
+// sau service worker restart. Trước đây CN_EVENTS rớt im lặng ở kiểm tra
+// tabs.has, dữ liệu bốc hơi mà hai đầu đều tưởng ổn (thấy thực tế).
+function attachLight(tabId, sessionId, extra) {
+  if (!tabId || !sessionId) return null;
+  const t = {
+    sessionId,
+    provider: (extra && extra.provider) || undefined,
+    url: (extra && extra.url) || undefined,
+    lastSeen: Date.now(),
+    queue: [],
+    spans: [],
+    captions: [],
+    emptyStreak: 0,
+    reattached: true,
+  };
+  tabs.set(tabId, t);
+  persistTabs();
+  return t;
+}
+
 // Số heartbeat trống liên tiếp thì coi như selector hỏng (không đọc được gì
 // dù tab Meet vẫn mở). 12 lần ≈ 3 phút.
 const EMPTY_HEARTBEAT_LIMIT = 12;
@@ -388,8 +409,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     ensureSession(sender.tab.id, msg).then((sid) => sendResponse({ sessionId: sid }));
     return true;
   }
-  if (msg?.type === "CN_EVENTS" && tabId && tabs.has(tabId)) {
-    const t = tabs.get(tabId);
+  if (msg?.type === "CN_EVENTS" && tabId) {
+    let t = tabs.get(tabId);
+    if (!t && msg.sessionId) t = attachLight(tabId, msg.sessionId, msg);
+    if (!t) return;
     t.lastSeen = Date.now();
     let gotData = false;
     for (const ev of msg.events || []) {
@@ -419,12 +442,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     sendResponse({ ok: true });
     return;
   }
-  if (msg?.type === "CN_SPANS" && tabId && tabs.has(tabId)) {
-    tabs.get(tabId).spans = (msg.spans || []).slice(-200);
+  if (msg?.type === "CN_SPANS" && tabId) {
+    let t = tabs.get(tabId);
+    if (!t && msg.sessionId) t = attachLight(tabId, msg.sessionId, msg);
+    if (!t) return;
+    t.spans = (msg.spans || []).slice(-200);
     return;
   }
   if (msg?.type === "CN_HEARTBEAT" && tabId) {
-    const t = tabs.get(tabId);
+    let t = tabs.get(tabId);
+    if (!t && msg.sessionId) {
+      // Tab biết sessionId của mình → gắn lại trực tiếp, khỏi gọi API.
+      t = attachLight(tabId, msg.sessionId, msg);
+      noteHeartbeat(tabId, t, msg);
+      return;
+    }
     if (t) {
       noteHeartbeat(tabId, t, msg);
       return;
@@ -440,9 +472,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     sendResponse({ spans: t.spans.slice(-50), captions: t.captions.slice(-50) });
     return;
   }
-  if (msg?.type === "CN_ASR_FINAL" && msg.tabId && tabs.has(msg.tabId)) {
+  if (msg?.type === "CN_ASR_FINAL" && msg.tabId) {
     // Segment ASR đã fusion tên ở offscreen → đẩy vào queue transcript.
-    const t = tabs.get(msg.tabId);
+    let t = tabs.get(msg.tabId);
+    if (!t && msg.sessionId) t = attachLight(msg.tabId, msg.sessionId, msg);
+    if (!t) return;
     t.lastSeen = Date.now();
     t.queue.push({
       kind: "transcript",

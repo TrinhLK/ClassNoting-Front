@@ -20,6 +20,9 @@
   const seenChat = new Set();
   const seenCaption = new Set();
   let lastRosterKey = "";
+  // Tên roster mới nhất — dùng để bóc "Tên nội dung" trong caption
+  // (Meet mới không render dấu hai chấm).
+  let lastRosterNames = [];
   let lastActive = { name: "", ts: 0 };
   const activeSpans = [];
   let eventQueue = [];
@@ -50,7 +53,9 @@
       if (kind === "chat") return { kind, messages: items };
       return { kind, segments: items };
     });
-    send({ type: "CN_EVENTS", events });
+    // Gửi kèm sessionId để background nhận diện phiên ngay cả khi map RAM
+    // mất entry sau service worker restart (trước đây rớt im lặng ở tabs.has).
+    send({ type: "CN_EVENTS", events, sessionId: sessionId || undefined });
   }
   setInterval(flush, 2000);
 
@@ -116,7 +121,7 @@
   function handleCaptionNode(node) {
     let parsed = null;
     try {
-      parsed = platform.parseCaptionNode(node);
+      parsed = platform.parseCaptionNode(node, lastRosterNames);
     } catch (e) { /* DOM lạ */ }
     if (!parsed || !parsed.text) return;
     // Cùng người nói và text nối tiếp nhau → chờ câu đứng yên mới gửi.
@@ -164,21 +169,43 @@
     return obs;
   }
 
+  // Meet SPA render lại container (node cũ detached) → observer treo mà không
+  // bao giờ bắn nữa (đã thấy thực tế với caption). Mỗi vòng kiểm tra root đang
+  // watch còn sống và đúng root hiện tại không, khác thì gắn lại.
+  let chatWatched = null;
+  let captionWatched = null;
   let chatObs = null;
   let captionObs = null;
+
+  function watchedAlive(obs, watched) {
+    if (!obs || !watched) return false;
+    try {
+      return watched.isConnected;
+    } catch (e) {
+      return false;
+    }
+  }
 
   function attachPanels() {
     if (!running) return;
     try {
-      if (!chatObs) {
-        const root = platform.chatRoot();
-        if (root) chatObs = observeSubtree(root, handleChatNode);
+      const root = platform.chatRoot();
+      if (root && (root !== chatWatched || !watchedAlive(chatObs, chatWatched))) {
+        if (chatObs) { try { chatObs.disconnect(); } catch (e) { /* bỏ qua */ } }
+        chatObs = observeSubtree(root, handleChatNode);
+        chatWatched = root;
+      } else if (!root) {
+        chatWatched = null;
       }
     } catch (e) { /* thử lại vòng sau */ }
     try {
-      if (!captionObs) {
-        const root = platform.captionRoot();
-        if (root) captionObs = observeSubtree(root, handleCaptionNode);
+      const root = platform.captionRoot();
+      if (root && (root !== captionWatched || !watchedAlive(captionObs, captionWatched))) {
+        if (captionObs) { try { captionObs.disconnect(); } catch (e) { /* bỏ qua */ } }
+        captionObs = observeSubtree(root, handleCaptionNode);
+        captionWatched = root;
+      } else if (!root) {
+        captionWatched = null;
       }
     } catch (e) { /* thử lại vòng sau */ }
   }
@@ -187,6 +214,17 @@
   attachPanels();
   setInterval(attachPanels, 5000);
 
+  // Lưới an toàn cho caption: đọc thẳng text root hiện tại mỗi 5s, kể cả khi
+  // observer trượt. Debounce gộp câu trong handleCaptionNode lo phần còn lại.
+  function pollCaption() {
+    if (!running) return;
+    try {
+      const root = platform.captionRoot();
+      if (root) handleCaptionNode(root);
+    } catch (e) { /* DOM lạ */ }
+  }
+  setInterval(pollCaption, 5000);
+
   // Roster: quét mỗi 5s, chỉ gửi khi thay đổi.
   function pollRoster() {
     if (!running) return;
@@ -194,6 +232,7 @@
     try {
       roster = platform.scrapeRoster() || [];
     } catch (e) { /* DOM lạ */ }
+    lastRosterNames = roster.map((r) => r.name).filter(Boolean);
     const key = JSON.stringify(roster.map((r) => r.name));
     if (key !== lastRosterKey) {
       lastRosterKey = key;
@@ -222,7 +261,7 @@
       }
     }
     // Gửi spans mới về background để fusion với ASR.
-    send({ type: "CN_SPANS", spans: activeSpans.slice(-50) });
+    send({ type: "CN_SPANS", spans: activeSpans.slice(-50), sessionId: sessionId || undefined });
   }, 500);
 
   // Heartbeat + self-check selector.
@@ -240,6 +279,7 @@
       rosterCount,
       chatPanel: !!platform.chatRoot(),
       captionPanel: !!platform.captionRoot(),
+      sessionId: sessionId || undefined,
     });
   }, 15000);
 
@@ -266,6 +306,8 @@
           : { url: location.href, title: document.title, checks: [] };
         diag.sessionId = sessionId;
         diag.queuePending = eventQueue.length;
+        diag.chatObserved = watchedAlive(chatObs, chatWatched);
+        diag.captionObserved = watchedAlive(captionObs, captionWatched);
         sendResponse({ ok: true, diag });
       } catch (e) {
         try {

@@ -92,7 +92,8 @@
     const sendSeg = (id, speaker, text, s, e, uncertain) => {
       try {
         chrome.runtime.sendMessage({
-          type: "CN_ASR_FINAL", tabId: cap.tabId, id, speaker, text,
+          type: "CN_ASR_FINAL", tabId: cap.tabId, sessionId: cap.sessionId,
+          id, speaker, text,
           start: s, end: e, uncertain: uncertain || undefined,
         });
       } catch (err) { /* background restart */ }

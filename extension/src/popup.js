@@ -240,6 +240,7 @@
             `title: ${d.title}`,
             `sessionId: ${d.sessionId || "(chưa có)"} | queuePending: ${d.queuePending || 0}`,
             `roster: ${(d.rosterNames || []).join(" | ") || "(rỗng)"}`,
+            `observed: chat=${d.chatObserved ? "sống" : "CHẾT"} | caption=${d.captionObserved ? "sống" : "CHẾT"}`,
             "--- checks ---",
           ];
           (d.checks || []).forEach((c) => {
@@ -250,11 +251,14 @@
                   ? `matched=${c.matched}`
                   : c.length !== undefined
                     ? `length=${c.length}`
-                    : c.error
-                      ? `ERROR=${c.error}`
-                      : "";
+                    : c.found !== undefined
+                      ? `found=${c.found}`
+                      : c.error
+                        ? `ERROR=${c.error}`
+                        : "";
             lines.push(`[${c.label}] ${detail}`);
             if (c.sample) lines.push(`  sample: ${c.sample}`);
+            if (c.chain) lines.push(`  chain: ${c.chain}`);
           });
           area.value = lines.join("\n");
         } else {

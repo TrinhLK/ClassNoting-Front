@@ -66,6 +66,29 @@
       if (meet.ROSTER_BLOCKLIST.some((b) => b !== "you" && low.includes(b))) return "";
       return name;
     },
+    // Bóc tên từ node item: duyệt từng con theo thứ tự, con nào sạch thì lấy.
+    // (textContent gộp "Tên"+"Role" thành một chuỗi không tách được — test bắt được.)
+    firstNameIn(el) {
+      if (!el || el.nodeType !== 1) return "";
+      const kids = el.childNodes;
+      for (let i = 0; i < kids.length; i++) {
+        const k = kids[i];
+        if (k.nodeType === 3) {
+          const lines = String(k.textContent || "").split("\n");
+          for (const line of lines) {
+            const c = meet.cleanRosterName(line);
+            if (c) return c;
+          }
+        } else if (k.nodeType === 1) {
+          try {
+            if (k.matches('input, button, [role="button"], svg, img, video')) continue;
+          } catch (e) { /* tiếp tục */ }
+          const c = meet.cleanRosterName(k.textContent || "");
+          if (c) return c;
+        }
+      }
+      return "";
+    },
     scrapeRoster() {
       const names = [];
       const seen = new Set();
@@ -120,7 +143,7 @@
             try {
               if (it.matches('input, button, [role="button"], [role="menuitem"]')) return;
             } catch (e) { /* tiếp tục */ }
-            push(visibleText(it));
+            push(meet.firstNameIn(it) || visibleText(it));
           });
           if (items.length === 0) {
             // Panel dạng flat text — tách theo dòng, lọc qua blocklist.
@@ -198,7 +221,7 @@
       /live captions?/i,
       /turn (on|off) captions?/i,
     ],
-    parseCaptionNode(node) {
+    parseCaptionNode(node, rosterNames) {
       if (!node || node.nodeType !== 1) return null;
       try {
         if (node.closest('button, [role="button"], [role="menu"], [aria-hidden="true"]')) return null;
@@ -213,6 +236,22 @@
         // Tên chứa từ hệ thống → vẫn là status, bỏ.
         if (meet.CAPTION_STATUS_PATTERNS.some((re) => re.test(name))) return null;
         return { name, text: m[2].trim() };
+      }
+      // Meet mới render "Tên nội dung" KHÔNG dấu hai chấm (thấy thực tế:
+      // "You Giữ lại nha..."). Khớp tiền tố tên trong roster (lấy khớp dài nhất).
+      if (Array.isArray(rosterNames)) {
+        const low = text.toLowerCase();
+        let best = "";
+        for (const n of rosterNames) {
+          const nn = String(n || "").trim();
+          if (!nn) continue;
+          const nl = nn.toLowerCase();
+          if ((low === nl || low.startsWith(nl + " ")) && nn.length > best.length) best = nn;
+        }
+        if (best) {
+          const rest = text.slice(best.length).trim();
+          if (rest) return { name: best, text: rest };
+        }
       }
       // Không bóc được tên mà text lại nhắc tới caption → status, bỏ.
       if (/caption/i.test(text)) return null;
@@ -278,6 +317,35 @@
         const items = root.querySelectorAll('[role="listitem"], li, [data-message-id]');
         const last = items[items.length - 1];
         return { count: items.length, sample: snip(last) };
+      });
+      probe("chat:anchor-chain", () => {
+        // Root không thấy mà panel đang mở: leo từ ô "Send a message" lên 5 tầng
+        // (chỉ tag#id.class, không HTML đầy) để viết selector tới đúng node tin nhắn.
+        let anchor = null;
+        try {
+          const all = document.querySelectorAll("*");
+          for (const el of all) {
+            const label = el.getAttribute && el.getAttribute("aria-label");
+            if (label && /send a message|gửi tin nhắn/i.test(label)) {
+              anchor = el;
+              break;
+            }
+          }
+        } catch (e) { /* bỏ qua */ }
+        if (!anchor) return { found: false };
+        const chain = [];
+        let el = anchor;
+        for (let i = 0; i < 6 && el && el.tagName; i++) {
+          chain.push(
+            el.tagName +
+              (el.id ? "#" + el.id : "") +
+              (el.className && typeof el.className === "string"
+                ? "." + el.className.trim().split(/\s+/).slice(0, 4).join(".")
+                : "")
+          );
+          el = el.parentElement;
+        }
+        return { found: true, chain: chain.join(" < ") };
       });
       probe("caption:root", () => {
         const root = meet.captionRoot();
