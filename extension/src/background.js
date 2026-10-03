@@ -145,6 +145,19 @@ setInterval(() => {
   tabs.forEach((_, tabId) => flushTab(tabId));
 }, FLUSH_MS);
 
+// Gửi sessionId (+ tên hiển thị chủ phiên để map "You"/"Bạn" trong caption)
+// xuống tab Meet. Fire-and-forget có bắt lỗi để khỏi tràn trang Errors.
+async function pushSession(tabId, sessionId) {
+  try {
+    const auth = await getAuth();
+    await chrome.tabs.sendMessage(tabId, {
+      type: "CN_SESSION",
+      sessionId,
+      ownerDisplayName: auth?.displayName || auth?.email || "",
+    });
+  } catch (e) { /* tab đóng hoặc chưa gắn content script */ }
+}
+
 // ---- Đảm bảo session khi phát hiện phòng họp ----
 // opts.manual=true (nút "Bắt đầu tab này" trong popup): bỏ qua cờ autoStart,
 // nhưng vẫn yêu cầu consent một lần + đăng nhập.
@@ -160,7 +173,7 @@ async function tryEnsureSession(tabId, info, opts) {
     // BẮT BUỘC gửi CN_SESSION (không chỉ trả sendResponse — content không đọc
     // response của CN_MEETING_STATE). Thiếu dòng này, tab F5 lại là mồ côi
     // session vĩnh viễn dù session live vẫn tồn tại (đã thấy thực tế).
-    chrome.tabs.sendMessage(tabId, { type: "CN_SESSION", sessionId: existing.sessionId }).catch(() => {});
+    pushSession(tabId, existing.sessionId);
     return { sessionId: existing.sessionId };
   }
   const auth = await getAuth();
@@ -195,7 +208,7 @@ async function tryEnsureSession(tabId, info, opts) {
     });
     persistTabs();
     setBadge(tabId, "REC", "#dc2626");
-    chrome.tabs.sendMessage(tabId, { type: "CN_SESSION", sessionId: data.sessionId }).catch(() => {});
+    pushSession(tabId, data.sessionId);
     startAudioCapture(tabId, data.sessionId, info.provider).catch(() => {
       // Thu audio thất bại (quyền/tab chưa audible) → vẫn giữ roster/chat/captions,
       // báo user bấm popup để thử lại (có user gesture).
@@ -395,7 +408,7 @@ async function recoverFromHeartbeat(tabId, msg) {
     });
     persistTabs();
     setBadge(tabId, "REC", "#dc2626");
-    chrome.tabs.sendMessage(tabId, { type: "CN_SESSION", sessionId: data.sessionId }).catch(() => {});
+    pushSession(tabId, data.sessionId);
     return true;
   } catch (e) {
     return false;

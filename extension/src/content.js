@@ -68,10 +68,10 @@
     return sender + "\n" + text;
   }
 
-  function handleChatNode(node) {
+  function handleChatNode(node, root) {
     let parsed = null;
     try {
-      parsed = platform.parseChatNode(node);
+      parsed = platform.parseChatNode(node, root || null, lastRosterNames);
     } catch (e) { /* DOM lạ */ }
     if (!parsed || !parsed.text) return;
     const key = chatKey(parsed.sender, parsed.text);
@@ -118,34 +118,59 @@
     });
   }
 
+  // Tên tài khoản thật (background gửi kèm CN_SESSION) để map "You"/"Bạn"
+  // mà Meet dùng gọi chính mình.
+  let selfName = "";
+  function normalizeSelfName(name) {
+    const n = String(name || "").trim();
+    if (!n) return "";
+    if (/^(you|bạn)$/i.test(n) && selfName) return selfName;
+    return n;
+  }
+
+  // Thân câu để so gộp (logic nằm ở platform.captionMergeKey để test được).
+  function captionBody(text) {
+    return platform.captionMergeKey(String(text || ""), lastRosterNames);
+  }
+
   function handleCaptionNode(node) {
     let parsed = null;
     try {
       parsed = platform.parseCaptionNode(node, lastRosterNames);
     } catch (e) { /* DOM lạ */ }
     if (!parsed || !parsed.text) return;
-    // Cùng người nói và text nối tiếp nhau → chờ câu đứng yên mới gửi.
+    const speaker = normalizeSelfName(parsed.name);
+    const body = captionBody(parsed.text);
+    if (!body) return;
     if (
       pendingCaption &&
-      pendingCaption.name === parsed.name &&
-      (parsed.text.startsWith(pendingCaption.text) || pendingCaption.text.startsWith(parsed.text))
+      platform.shouldMergeCaption({ body: captionBody(pendingCaption.text) }, { body })
     ) {
       clearTimeout(pendingCaption.timer);
+      // Giữ bản dài hơn (câu đang lớn dần), tên non-empty mới nhất.
+      if (body.length >= captionBody(pendingCaption.text).length) {
+        pendingCaption.text = body;
+      }
+      if (speaker) pendingCaption.name = speaker;
     } else {
       flushPendingCaption();
+      pendingCaption = {
+        name: speaker,
+        text: body,
+        timer: setTimeout(flushPendingCaption, CAPTION_SETTLE_MS),
+      };
+      return;
     }
-    pendingCaption = {
-      name: parsed.name,
-      text: parsed.text,
-      timer: setTimeout(flushPendingCaption, CAPTION_SETTLE_MS),
-    };
+    pendingCaption.timer = setTimeout(flushPendingCaption, CAPTION_SETTLE_MS);
   }
 
   function observeSubtree(root, onAdd) {
     if (!root) return null;
+    // Handler biết root để parse cấp block (chat): bóc đúng sender/body.
+    const handle = (n) => onAdd(n, root);
     // Quét sẵn nội dung hiện có.
     root.querySelectorAll("*").forEach((n) => {
-      if (n.children.length === 0) onAdd(n);
+      if (n.children.length === 0) handle(n);
     });
     const obs = new MutationObserver((mutations) => {
       for (const m of mutations) {
@@ -153,14 +178,14 @@
         // bắt buộc nghe characterData, nếu không transcript mãi rỗng.
         if (m.type === "characterData") {
           const el = m.target && m.target.nodeType === 3 ? m.target.parentElement : m.target;
-          if (el && el.nodeType === 1) onAdd(el);
+          if (el && el.nodeType === 1) handle(el);
           continue;
         }
         m.addedNodes.forEach((n) => {
           if (n.nodeType !== 1) return;
-          if (n.children.length === 0) onAdd(n);
+          if (n.children.length === 0) handle(n);
           else n.querySelectorAll("*").forEach((c) => {
-            if (c.children.length === 0) onAdd(c);
+            if (c.children.length === 0) handle(c);
           });
         });
       }
@@ -292,7 +317,10 @@
   });
 
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-    if (msg?.type === "CN_SESSION") sessionId = msg.sessionId;
+    if (msg?.type === "CN_SESSION") {
+      sessionId = msg.sessionId;
+      if (msg.ownerDisplayName) selfName = String(msg.ownerDisplayName);
+    }
     if (msg?.type === "CN_STOP") {
       running = false;
       flushPendingCaption();

@@ -175,36 +175,123 @@
           if (el.querySelector('[role="listitem"], li, [data-message-id]')) return el;
         } catch (e) { /* bỏ qua */ }
       }
-      return candidates[0] || null;
+      if (candidates[0]) return candidates[0];
+      // Tuyến cuối: tìm panel từ ô nhập tin nhắn (neo aria-label ổn định).
+      // Ca diag thật: panel "In-call messages" mở mà mọi selector trên đều trượt.
+      return meet.chatRootFromAnchor();
     },
     // Token UI của Meet — không bao giờ là nội dung tin nhắn.
     CHAT_UI_TOKENS: [
       "chat", "chat_bubble", "chat_bubble_outline", "chat_off",
       "send", "close", "chat_options", "more", "reply", "react",
     ],
-    parseChatNode(node) {
+    // Tìm root panel chat từ ô nhập tin nhắn (neo aria-label ổn định hơn class
+    // sinh tự động của Meet). Leo từ textbox lên, chọn ancestor thấp nhất vừa
+    // chứa nhánh composer vừa chứa nhánh text đáng kể (khu vực list tin nhắn).
+    // Có cache + validate isConnected. Pure theo DOM — test được.
+    chatRootFromAnchor() {
+      try {
+        if (meet._anchor && !meet._anchor.isConnected) meet._anchor = null;
+        if (meet._chatPanel && meet._chatPanel.isConnected) return meet._chatPanel;
+        let anchor = meet._anchor && meet._anchor.isConnected ? meet._anchor : null;
+        if (!anchor) {
+          const all = document.querySelectorAll("*");
+          for (const el of all) {
+            const label = el.getAttribute && el.getAttribute("aria-label");
+            if (label && /send a message|gửi tin nhắn/i.test(label)) {
+              anchor = el;
+              break;
+            }
+          }
+          meet._anchor = anchor || null;
+        }
+        if (!anchor) return null;
+        let el = anchor.parentElement;
+        for (let i = 0; i < 8 && el && el.tagName && el.tagName !== "BODY"; i++) {
+          let composerKid = null;
+          let listKid = null;
+          const kids = el.children || [];
+          for (const k of kids) {
+            try {
+              if (k.contains && k.contains(anchor)) {
+                composerKid = k;
+                continue;
+              }
+              if (visibleText(k).length >= 10) listKid = k;
+            } catch (e) { /* bỏ qua */ }
+          }
+          if (composerKid && listKid) {
+            meet._chatPanel = el;
+            return el;
+          }
+          el = el.parentElement;
+        }
+      } catch (e) { /* bỏ qua */ }
+      return null;
+    },
+    parseChatNode(node, root, rosterNames) {
       if (!node || node.nodeType !== 1) return null;
       // Bỏ qua nút/menu/tooltip — nguồn rác "chat"/"chat_bubble" đã thấy thực tế.
       try {
         if (node.closest('button, [role="button"], [role="menu"], [role="menuitem"], [role="tooltip"], [aria-hidden="true"]')) return null;
       } catch (e) { /* closest lỗi — tiếp tục */ }
+      // Cấp block khi biết root: leo từ leaf lên tới con trực tiếp của root.
+      // Không root (đường cũ) thì parse ngay tại node.
+      let block = node;
+      if (root) {
+        let el = node;
+        let depth = 0;
+        while (el && el.parentElement && el.parentElement !== root && depth < 8) {
+          el = el.parentElement;
+          depth++;
+        }
+        if (el && el !== root) block = el;
+      }
       // Tin nhắn Meet: thử data-message-text rồi fallback text chung.
       const textEl =
-        node.querySelector?.("[data-message-text]") || node;
+        block.querySelector?.("[data-message-text]") || block;
       const text = visibleText(textEl);
       if (!text || text.length < 2 || text.length > 2000) return null;
       if (meet.CHAT_UI_TOKENS.includes(text.toLowerCase())) return null;
-      // Sender: node anh em/phần tử tên gần nhất. Không có tên mà text lại
-      // là 1-2 từ viết thường kiểu tên icon (snake_case) → rác UI.
-      const scope = node.closest?.('[data-message-id], [role="listitem"], li') || node.parentElement || node;
-      let senderEl = null;
+      // Sender trong block trước.
+      let sender = "";
       try {
-        senderEl = scope.querySelector?.("[data-sender-name]");
+        const se = block.querySelector?.("[data-sender-name]");
+        sender = se ? visibleText(se) : "";
       } catch (e) { /* bỏ qua */ }
-      const sender = senderEl ? visibleText(senderEl) : "";
-      if (!sender && /^[a-z][a-z0-9_]{1,40}$/.test(text)) return null;
-      if (sender && text === sender) return null;
-      return { text, sender: sender || "Khách" };
+      let body = text;
+      if (sender) {
+        // Bỏ phần tên khỏi body (ưu tiên tiền tố, rồi lần xuất hiện đầu).
+        if (text.toLowerCase().startsWith(sender.toLowerCase())) {
+          body = text.slice(sender.length).trim().replace(/^:\s*/, "");
+        } else {
+          const idx = text.indexOf(sender);
+          body = idx >= 0 ? (text.slice(0, idx) + " " + text.slice(idx + sender.length)).trim() : text;
+        }
+      } else if (root) {
+        // Ở cấp block thì BẮT BUỘC có sender (ô composer "Send a message"
+        // không sender → rớt đúng). Đường cũ không root giữ fallback "Khách".
+        sender = meet.senderOfChatText(text, rosterNames);
+        if (!sender) return null;
+        body = text.slice(sender.length).trim().replace(/^:\s*/, "");
+      } else {
+        // Đường cũ: giữ tương thích.
+        const scope = node.closest?.('[data-message-id], [role="listitem"], li') || node.parentElement || node;
+        let senderEl = null;
+        try {
+          senderEl = scope.querySelector?.("[data-sender-name]");
+        } catch (e) { /* bỏ qua */ }
+        const s2 = senderEl ? visibleText(senderEl) : "";
+        if (!s2 && /^[a-z][a-z0-9_]{1,40}$/.test(text)) return null;
+        if (s2 && text === s2) return null;
+        return { text, sender: s2 || "Khách" };
+      }
+      // Bỏ timestamp đuôi ("10:38 PM") và kiểm tra rác cuối.
+      body = body.replace(/\s+\d{1,2}:\d{2}(\s*[AP]M)?\s*$/i, "").trim();
+      if (!body || meet.CHAT_UI_TOKENS.includes(body.toLowerCase())) return null;
+      if (/^\((you|bạn)\)$/i.test(body)) return null;
+      if (sender && body === sender) return null;
+      return { text: body, sender: sender || "Khách" };
     },
     captionRoot() {
       return firstMatch([
@@ -239,23 +326,65 @@
       }
       // Meet mới render "Tên nội dung" KHÔNG dấu hai chấm (thấy thực tế:
       // "You Giữ lại nha..."). Khớp tiền tố tên trong roster (lấy khớp dài nhất).
+      const stripped = meet.stripSpeakerPrefix(text, rosterNames);
+      if (stripped.name) return { name: stripped.name, text: stripped.body };
+      // Không bóc được tên mà text lại nhắc tới caption → status, bỏ.
+      if (/caption/i.test(text)) return null;
+      return { name: "", text };
+    },
+    // Key để so gộp caption: tước prefix tên roster + "You"/"Bạn".
+    // Pure — test được.
+    captionMergeKey(text, rosterNames) {
+      const s = meet.stripSpeakerPrefix(String(text || ""), rosterNames);
+      let body = s.name ? s.body : String(text || "");
+      const m = body.match(/^(you|bạn)\s+(.+)$/i);
+      if (m) body = m[2];
+      return body.trim();
+    },
+    // Tên người gửi trong block chat: roster-prefix dài nhất → "Name:" → You/Bạn.
+    // Trả "" khi không xác định được (block chat BẮT BUỘC có sender, nếu không là UI).
+    // Pure — test được.
+    senderOfChatText(text, rosterNames) {
+      const t = String(text || "").trim();
+      if (!t) return "";
+      const stripped = meet.stripSpeakerPrefix(t, rosterNames);
+      if (stripped.name) return stripped.name;
+      const m = t.match(/^([^:]{1,60}):\s+.+$/s);
+      if (m && m[1].trim()) return m[1].trim();
+      const y = t.match(/^(you|bạn)\b\s+.+/i);
+      if (y) return y[1];
+      return "";
+    },
+    // Tước prefix "Tên " ở đầu câu (khớp dài nhất trong roster).
+    // Trả { name, body }. Pure — test được.
+    stripSpeakerPrefix(text, rosterNames) {
+      const t = String(text || "");
+      let best = "";
       if (Array.isArray(rosterNames)) {
-        const low = text.toLowerCase();
-        let best = "";
+        const low = t.toLowerCase();
         for (const n of rosterNames) {
           const nn = String(n || "").trim();
           if (!nn) continue;
           const nl = nn.toLowerCase();
           if ((low === nl || low.startsWith(nl + " ")) && nn.length > best.length) best = nn;
         }
-        if (best) {
-          const rest = text.slice(best.length).trim();
-          if (rest) return { name: best, text: rest };
-        }
       }
-      // Không bóc được tên mà text lại nhắc tới caption → status, bỏ.
-      if (/caption/i.test(text)) return null;
-      return { name: "", text };
+      if (best) {
+        const rest = t.slice(best.length).trim();
+        if (rest) return { name: best, body: rest };
+      }
+      return { name: "", body: t };
+    },
+    // Hai mảnh caption có gộp thành một câu không? So PHẦN THÂN (đã tước tên)
+    // vì element tên của Meet nhấp nháy (có/không) giữa chừng — so cả tên như
+    // cũ là mỗi lần nhấp nháy ngắt câu, stack từng mảnh (thấy thực tế).
+    // Pure — test được.
+    shouldMergeCaption(prev, next) {
+      if (!prev || !next) return false;
+      const a = String(prev.body || "").trim();
+      const b = String(next.body || "").trim();
+      if (!a || !b) return false;
+      return a === b || b.startsWith(a) || a.startsWith(b);
     },
     sampleActiveSpeaker() {
       // Tile đang nói của Meet có chỉ báo âm lượng/border — thử nhiều dấu hiệu.

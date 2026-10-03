@@ -152,6 +152,74 @@ describe("extension platforms.js — caption (Meet)", () => {
   });
 });
 
+describe("extension platforms.js — caption merge key + gộp câu", () => {
+  it("captionMergeKey tước tên roster và You/Bạn", () => {
+    const key = meet.captionMergeKey as (t: string, r?: string[]) => string;
+    expect(key("Trình Lê Khánh Khác nhau không?", ["Trình Lê Khánh"])).toBe("Khác nhau không?");
+    expect(key("You Khác nhau không?", ["Trình Lê Khánh"])).toBe("Khác nhau không?");
+    expect(key("Khác nhau không?", ["Trình Lê Khánh"])).toBe("Khác nhau không?");
+  });
+
+  it("shouldMergeCaption gộp khi thân trùng nhau dù tên nhấp nháy (ca stack thật)", () => {
+    const merge = meet.shouldMergeCaption as (a: { body: string }, b: { body: string }) => boolean;
+    expect(merge({ body: "Khác nhau không" }, { body: "Khác nhau không, anh đang nói" })).toBe(true);
+    expect(merge({ body: "Khác nhau không, anh đang nói" }, { body: "Khác nhau không" })).toBe(true);
+    expect(merge({ body: "Xin chào" }, { body: "Tạm biệt" })).toBe(false);
+    expect(merge({ body: "" }, { body: "abc" })).toBe(false);
+  });
+
+  it("senderOfChatText bóc sender nhiều dạng", () => {
+    const senderOf = meet.senderOfChatText as (t: string, r?: string[]) => string;
+    expect(senderOf("Trình Lê Khánh tutewt 10:38 PM", ["Trình Lê Khánh"])).toBe("Trình Lê Khánh");
+    expect(senderOf("You: hello", [])).toBe("You");
+    expect(senderOf("You tutewt", [])).toBe("You");
+    expect(senderOf("Send a message", [])).toBe("");
+    expect(senderOf("In-call messages", [])).toBe("");
+  });
+});
+
+describe("extension platforms.js — chat root từ anchor + parse cấp block", () => {
+  it("chatRoot tìm panel từ ô Send a message khi selector chính trượt", () => {
+    // DOM thật: block tách dòng + timestamp nên text nhánh đủ dài (như Meet render).
+    setBody(`
+      <div class="side-panel">
+        <div class="msg-list">
+          <div class="msg">
+            <span>You</span>
+            <span>tutewt</span>
+            <span>10:38 PM</span>
+          </div>
+        </div>
+        <div class="composer"><div role="textbox" aria-label="Send a message"></div></div>
+      </div>`);
+    const root = meet.chatRoot() as HTMLElement | null;
+    expect(root).not.toBeNull();
+    expect(root!.className).toContain("side-panel");
+  });
+
+  it("parseChatNode cấp block: giữ tin thật, loại composer", () => {
+    const parse = meet.parseChatNode as (
+      n: Element,
+      root?: Element | null,
+      roster?: string[]
+    ) => { text: string; sender: string } | null;
+    setBody(`
+      <div id="panel">
+        <div class="msg" id="m1">
+          <span>You</span>
+          <span>tutewt</span>
+          <span>10:38 PM</span>
+        </div>
+        <div class="composer" id="c1"><div role="textbox" aria-label="Send a message">Send a message</div></div>
+      </div>`);
+    const panel = document.querySelector("#panel")!;
+    const leaf = document.querySelector("#m1 span")!;
+    expect(parse(leaf, panel, [])).toEqual({ text: "tutewt", sender: "You" });
+    const composerLeaf = document.querySelector("#c1 div")!;
+    expect(parse(composerLeaf, panel, [])).toBeNull();
+  });
+});
+
 describe("extension platforms.js — describe() (chẩn đoán)", () => {
   it("chat:anchor-chain leo từ ô Send a message khi root trượt", () => {
     setBody(`
