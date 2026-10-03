@@ -51,6 +51,9 @@
     const events = Object.entries(byKind).map(([kind, items]) => {
       if (kind === "participants") return { kind, participants: items[items.length - 1] };
       if (kind === "chat") return { kind, messages: items };
+      // Caption CHỈ dùng fusion tên người nói cho ASR (background giữ trong
+      // t.captions, không đẩy lên API) — không bao giờ thành segment transcript.
+      if (kind === "caption") return { kind, captions: items };
       return { kind, segments: items };
     });
     // Gửi kèm sessionId để background nhận diện phiên ngay cả khi map RAM
@@ -106,15 +109,14 @@
       seenCaption.delete(first);
     }
     const now = Date.now() / 1000;
-    // Caption gửi dạng transcript phụ (uncertain=false khi có tên).
-    queue("transcript", {
+    // Caption chỉ phục vụ fusion tên cho ASR (kind riêng, background không
+    // đẩy lên API) — transcript lấy từ audio qua model STT.
+    queue("caption", {
       id: "cap_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8),
-      speaker: p.name || "SPEAKER_00",
+      speaker: p.name || "",
       text: p.text,
       start: now - Math.max(4, p.text.length / 15),
       end: now,
-      caption: true,
-      uncertain: !p.name,
     });
   }
 

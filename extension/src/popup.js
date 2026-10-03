@@ -46,6 +46,37 @@
     if (mine && mine.unhealthy) {
       showActionMsg("Không đọc được dữ liệu phòng họp — thử mở panel People/Chat trong Meet và bật phụ đề (CC).", true);
     }
+    // Trạng thái thu audio realtime (offscreen): tốt thì hiện số câu ASR,
+    // lỗi thì hiện đúng nguyên nhân (tab chưa phát tiếng / WS chết...).
+    if (mine) {
+      const a = mine.audioState;
+      if (!a) {
+        showActionMsg("Audio: chưa bắt đầu thu (mở tab Meet có tiếng rồi bấm Bắt đầu lại).", true);
+      } else {
+        const AUDIO_MSGS = {
+          starting: "Audio: đang xin quyền thu âm tab...",
+          capturing: "Audio: đã thu được tiếng tab, đang nối ASR...",
+          ws_connecting: "Audio: đang nối server ASR...",
+          ws_open: "Audio: đã nối ASR, chờ câu nói đầu tiên...",
+          transcribing: null, // hiện số câu bên dưới
+          stopped: "Audio: đã dừng thu.",
+          mic_failed: `Audio LỖI: không thu được tiếng tab (${a.detail || "tab chưa phát tiếng"}). Hãy phát tiếng trong tab Meet rồi bấm Bắt đầu lại.`,
+          offscreen_failed: `Audio LỖI: không mở được offscreen (${a.detail || ""}). Reload extension rồi thử lại.`,
+          capture_failed: `Audio LỖI: không lấy được audio tab (${a.detail || ""}). Hãy phát tiếng trong tab Meet rồi bấm Bắt đầu lại.`,
+          ws_retrying: `Audio: ${a.detail || "đang thử nối lại ASR..."}`,
+          ws_dead: "Audio LỖI: không nối được server ASR. Kiểm tra server asr-live.",
+        };
+        if (a.state === "transcribing") {
+          const when = a.lastFinalAt
+            ? new Date(a.lastFinalAt).toLocaleTimeString("vi-VN")
+            : "?";
+          showActionMsg(`Audio: ASR đã trả ${a.finals || 0} câu (mới nhất lúc ${when}).`, false);
+        } else {
+          const msg = AUDIO_MSGS[a.state] || `Audio: trạng thái ${a.state}.`;
+          showActionMsg(msg, /LỖI/.test(msg));
+        }
+      }
+    }
     // Trạng thái lần đẩy cuối: hết cảnh "số 0 bí ẩn" — lỗi nào hiện mặt chữ đó.
     if (mine && mine.lastFlush && mine.lastFlush.status !== "ok") {
       const at = mine.lastFlush.at ? new Date(mine.lastFlush.at).toLocaleTimeString("vi-VN") : "?";

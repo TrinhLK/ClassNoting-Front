@@ -19,6 +19,23 @@
   // tabId -> capture state
   const captures = new Map();
 
+  // Báo trạng thái thu audio về background để hiện ra popup (/ext sau này).
+  // Trước đây startCapture chết im (getUserMedia/tabCapture/WS lỗi đều nuốt),
+  // nên ASR im lặng mà không ai biết vì sao.
+  function reportAudio(cap, state, detail) {
+    try {
+      chrome.runtime.sendMessage({
+        type: "CN_AUDIO_STATE",
+        tabId: cap.tabId,
+        sessionId: cap.sessionId,
+        state,
+        detail: detail || "",
+        finals: cap.finals || 0,
+        lastFinalAt: cap.lastFinalAt || 0,
+      });
+    } catch (e) { /* background restart */ }
+  }
+
   function downsample(buffer, inputRate, outputRate) {
     if (outputRate === inputRate) {
       const buf = new Int16Array(buffer.length);
@@ -118,6 +135,9 @@
     } else {
       sendSeg("asr_" + Date.now(), r.name, packet.text, start, end, r.uncertain);
     }
+    cap.finals = (cap.finals || 0) + 1;
+    cap.lastFinalAt = Date.now();
+    reportAudio(cap, "transcribing", `Đã nhận ${cap.finals} câu từ ASR`);
   }
 
   async function startCapture(msg) {
@@ -129,15 +149,25 @@
       retry: 0, closed: false, serverOffset: null, lastEnd: 0,
       prevName: undefined, prevEnd: undefined, unknownCount: 0,
       buffer: [],
+      finals: 0, lastFinalAt: 0,
     };
     captures.set(tabId, cap);
+    reportAudio(cap, "starting", "Đang xin quyền thu audio tab...");
 
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        mandatory: { chromeMediaSource: "tab", chromeMediaSourceId: msg.streamId },
-      },
-    });
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          mandatory: { chromeMediaSource: "tab", chromeMediaSourceId: msg.streamId },
+        },
+      });
+    } catch (e) {
+      // Hay gặp nhất: tab chưa phát tiếng (not audible) hoặc thiếu gesture.
+      reportAudio(cap, "mic_failed", String((e && e.message) || e));
+      throw e;
+    }
     cap.stream = stream;
+    reportAudio(cap, "capturing", "Đã thu được audio tab, đang nối WS ASR...");
     const ctx = new AudioContext();
     cap.ctx = ctx;
     const src = ctx.createMediaStreamSource(stream);
@@ -150,12 +180,14 @@
       if (cap.closed) return;
       const ws = new WebSocket(`${wsBase}/?language=vi&client=extension&session=${msg.sessionId}`);
       cap.ws = ws;
+      reportAudio(cap, "ws_connecting", "Đang nối WebSocket tới server ASR...");
       cap.connectTimer = setTimeout(() => {
         if (ws.readyState === WebSocket.CONNECTING) { try { ws.close(); } catch (e) {} }
       }, CONNECT_TIMEOUT_MS);
       ws.onopen = () => {
         if (cap.connectTimer) { clearTimeout(cap.connectTimer); cap.connectTimer = null; }
         cap.retry = 0;
+        reportAudio(cap, "ws_open", "Đã nối ASR, đang chờ câu nói...");
         if (ctx.state === "suspended") ctx.resume().catch(() => {});
         for (const chunk of cap.buffer.splice(0)) {
           if (ws.readyState === WebSocket.OPEN) ws.send(chunk.buffer);
@@ -178,7 +210,10 @@
         if (cap.retry < MAX_RETRY) {
           const delay = Math.min(1000 * Math.pow(2, cap.retry), 16000);
           cap.retry++;
+          reportAudio(cap, "ws_retrying", `Mất nối ASR, thử lại lần ${cap.retry}/${MAX_RETRY}...`);
           setTimeout(connect, delay);
+        } else {
+          reportAudio(cap, "ws_dead", "Không nối được server ASR sau nhiều lần thử.");
         }
       };
     };
@@ -201,6 +236,7 @@
     const cap = captures.get(tabId);
     if (!cap) return;
     cap.closed = true;
+    reportAudio(cap, "stopped", "Đã dừng thu audio.");
     captures.delete(tabId);
     try { cap.ws && cap.ws.close(1000, "stop"); } catch (e) {}
     if (cap.heartbeat) clearInterval(cap.heartbeat);

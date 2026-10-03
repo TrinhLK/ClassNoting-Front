@@ -251,10 +251,28 @@ async function ensureOffscreen() {
   return offscreenReady;
 }
 
+function setAudioState(tabId, audioState) {
+  const t = tabs.get(tabId);
+  if (!t) return;
+  t.audioState = Object.assign({ at: Date.now() }, audioState);
+}
+
 async function startAudioCapture(tabId, sessionId, provider) {
-  await ensureOffscreen();
+  try {
+    await ensureOffscreen();
+  } catch (e) {
+    setAudioState(tabId, { state: "offscreen_failed", detail: String((e && e.message) || e) });
+    throw e;
+  }
   const { appOrigin } = await getSettings();
-  const streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tabId });
+  let streamId;
+  try {
+    streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tabId });
+  } catch (e) {
+    // Hay gặp: tab chưa phát tiếng / thiếu gesture — hiện rõ ra popup.
+    setAudioState(tabId, { state: "capture_failed", detail: String((e && e.message) || e) });
+    throw e;
+  }
   const auth = await getAuth();
   // Bắt buộc .catch: offscreen chưa chạy thì promise reject → lỗi
   // "Could not establish connection" tràn trang Errors (đã thấy thực tế).
@@ -435,13 +453,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       } else if (ev.kind === "chat") {
         for (const m of ev.messages || []) t.queue.push({ kind: "chat", payload: m });
         if ((ev.messages || []).length > 0) gotData = true;
+      } else if (ev.kind === "caption") {
+        // Caption chỉ fusion tên cho ASR (offscreen đọc qua CN_GET_SPANS),
+        // không đẩy lên API, không thành segment.
+        for (const s of ev.captions || []) {
+          if (!s || !String(s.text || "").trim()) continue;
+          t.captions.push({ name: s.speaker || "", text: s.text, start: s.start, end: s.end });
+          if (t.captions.length > 200) t.captions.splice(0, t.captions.length - 200);
+        }
       } else if (ev.kind === "transcript") {
         for (const s of ev.segments || []) {
           t.queue.push({ kind: "transcript", payload: s });
-          if (s.caption === true) {
-            t.captions.push({ name: s.speaker, text: s.text, start: s.start, end: s.end });
-            if (t.captions.length > 200) t.captions.splice(0, t.captions.length - 200);
-          }
         }
         if ((ev.segments || []).length > 0) gotData = true;
       }
@@ -577,6 +599,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           unhealthy: (t.emptyStreak || 0) >= EMPTY_HEARTBEAT_LIMIT,
           // Trạng thái lần đẩy cuối để popup hiện thay vì im lặng.
           lastFlush: t.lastFlush || null,
+          // Trạng thái thu audio realtime (offscreen báo về).
+          audioState: t.audioState || null,
         })),
       });
     });
@@ -591,6 +615,23 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (typeof msg.consent === "boolean") patch.consent = msg.consent;
     chrome.storage.sync.set(patch).then(() => sendResponse({ ok: true }));
     return true;
+  }
+  // Trạng thái thu audio realtime do offscreen báo về (để popup hiện,
+  // khỏi mù như trước: ASR im lặng mà không ai biết vì sao).
+  if (msg?.type === "CN_AUDIO_STATE" && tabId) {
+    let t = tabs.get(tabId);
+    if (!t && msg.sessionId) t = attachLight(tabId, msg.sessionId, msg);
+    if (t) {
+      t.audioState = {
+        state: msg.state || "unknown",
+        detail: msg.detail || "",
+        finals: msg.finals || 0,
+        lastFinalAt: msg.lastFinalAt || 0,
+        at: Date.now(),
+      };
+      t.lastSeen = Date.now();
+    }
+    return;
   }
   if (msg?.type === "CN_PING") {
     sendResponse({ ok: true, pong: true, time: Date.now() });

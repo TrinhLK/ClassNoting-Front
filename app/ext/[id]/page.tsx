@@ -7,6 +7,7 @@ import { Loader2, Radio, AlertCircle, AlignLeft, MessageSquare, Users } from "lu
 import { subscribeToExtSession } from "@/app/lib/db/extSessionDb";
 import type { ExtSession } from "@/app/lib/ext-sessions";
 import ChatPanel from "@/app/components/Meeting/ChatPanel";
+import ExtLiveInsight from "@/app/components/Meeting/ExtLiveInsight";
 import { PROVIDER_LABELS } from "@/app/lib/meeting-links";
 
 /** Màn hình xem live phiên ghi từ Chrome extension: ai nói gì + chat realtime. */
@@ -130,12 +131,19 @@ export default function ExtLivePage() {
           </div>
         </div>
 
-        <div className={`md:w-1/3 bg-white rounded-2xl border flex-col min-h-0 overflow-hidden ${tab === "transcript" ? "hidden md:flex" : "flex"} flex-1 md:flex-none`}>
-          <div className="p-4 border-b bg-emerald-50 font-bold text-xs uppercase text-emerald-800 shrink-0">
-            Chat · trực tiếp ({session.chatMessages.length})
+        <div className={`md:w-1/3 flex-col min-h-0 gap-4 md:gap-6 overflow-hidden ${tab === "transcript" ? "hidden md:flex" : "flex"} flex-1 md:flex-none`}>
+          {/* Nửa trên: live insight từ transcript ASR (như Ghi âm trực tiếp) */}
+          <div className="flex-1 min-h-0 flex">
+            <ExtLiveInsight segments={session.liveSegments} />
           </div>
-          <div className="flex-1 overflow-y-auto">
-            <ChatPanel messages={session.chatMessages} />
+          {/* Nửa dưới: box chat của cuộc họp */}
+          <div className="flex-1 min-h-0 bg-white rounded-2xl border flex flex-col overflow-hidden">
+            <div className="p-4 border-b bg-emerald-50 font-bold text-xs uppercase text-emerald-800 shrink-0">
+              Chat · trực tiếp ({session.chatMessages.length})
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              <ChatPanel messages={session.chatMessages} />
+            </div>
           </div>
         </div>
       </div>
