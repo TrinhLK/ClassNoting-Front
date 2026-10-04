@@ -33,6 +33,12 @@
       <button id="startBtn" class="ghost">Bắt đầu tab này</button>
       <button id="endBtn" class="danger">Kết thúc &amp; kết xuất</button>
     </div>
+    <div id="liveCard" style="display:none">
+      <div class="row"><span id="liveTitle" class="ok" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px;"></span><span id="liveTimer" class="live"></span></div>
+      <div class="row"><span id="liveCounts" class="muted"></span></div>
+      <div class="row"><input type="text" id="renameInput" maxlength="120" placeholder="Đổi tên bản ghi..." /></div>
+      <div class="row"><button id="renameBtn" class="ghost">Đổi tên</button></div>
+    </div>
     <div id="loginHint" class="muted" style="display:none">Chưa nhận token — hãy mở web app ClassNoting và đăng nhập, rồi mở lại popup.</div>
     <div id="actionMsg" class="muted" style="display:none"></div>
     <div id="serverSessions" style="display:none"></div>

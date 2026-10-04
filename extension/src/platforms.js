@@ -294,11 +294,26 @@
       return { text: body, sender: sender || "Khách" };
     },
     captionRoot() {
-      return firstMatch([
+      // Loại nút bấm (nút toggle CC có aria-label "Captions" — từng vớ nhầm
+      // BUTTON khiến observer sống giả), ưu tiên vùng có chữ thật phi-status.
+      const candidates = allMatches([
         '[aria-label*="Phụ đề" i]',
         '[aria-label*="Captions" i]',
         '[aria-live="polite"]',
-      ]).el;
+      ]).filter((el) => {
+        try {
+          if (el.matches('button, [role="button"]')) return false;
+          if (el.closest('button, [role="button"]')) return false;
+        } catch (e) { /* giữ lại xét tiếp */ }
+        return true;
+      });
+      for (const el of candidates) {
+        try {
+          const t = visibleText(el);
+          if (t && !meet.CAPTION_STATUS_PATTERNS.some((re) => re.test(t))) return el;
+        } catch (e) { /* bỏ qua */ }
+      }
+      return candidates[0] || null;
     },
     // Text hệ thống của Meet — không phải lời nói (đã thấy "closed_caption_off" lọt vào transcript).
     CAPTION_STATUS_PATTERNS: [

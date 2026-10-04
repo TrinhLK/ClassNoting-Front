@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "description": "Tự phát hiện phòng họp Google Meet đang mở, ghi chú người tham gia + chat + transcript live về ClassNoting.",
   "minimum_chrome_version": "116",
-  "permissions": ["tabs", "tabCapture", "storage", "notifications", "alarms", "offscreen"],
+  "permissions": ["tabs", "activeTab", "tabCapture", "storage", "notifications", "alarms", "offscreen"],
   "host_permissions": [
     "https://meet.google.com/*",
     "https://smart-noting.vercel.app/*",

@@ -184,6 +184,7 @@ export async function listLiveSessions(ownerUid: string): Promise<ExtSession[]> 
 }
 
 export interface ExtSessionPatch {
+  title?: string;
   participants?: MeetingParticipant[];
   chatMessages?: ChatMessage[];
   liveSegments?: ExtLiveSegment[];
@@ -227,6 +228,7 @@ export async function patchExtSession(
   const cur = snap.data() as ExtSession;
 
   const next: ExtSession = { ...cur, updatedAt: Date.now() };
+  if (patch.title !== undefined) next.title = patch.title;
   if (patch.participants) next.participants = patch.participants;
   if (patch.chatMessages) {
     const seen = new Set(cur.chatMessages.map((m) => m.id));

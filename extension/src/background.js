@@ -565,6 +565,28 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     });
     return true;
   }
+  // Đổi tên phiên của tab (popup) — meeting kết xuất sau mang tên đã sửa.
+  if (msg?.type === "CN_RENAME_SESSION" && msg.tabId && msg.title) {
+    (async () => {
+      try {
+        const t = tabs.get(msg.tabId);
+        if (!t || !t.sessionId) {
+          sendResponse({ ok: false, reason: "no_session" });
+          return;
+        }
+        const res = await apiFetch("/api/extension/rename", {
+          sessionId: t.sessionId,
+          title: String(msg.title).slice(0, 120),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.ok) sendResponse({ ok: true, title: data.title });
+        else sendResponse({ ok: false, reason: "api_failed", status: res.status });
+      } catch (e) {
+        sendResponse({ ok: false, reason: "network" });
+      }
+    })();
+    return true;
+  }
   // Liệt kê phiên live của user (popup "kết thúc tất cả").
   if (msg?.type === "CN_LIST_SESSIONS") {
     (async () => {
@@ -655,6 +677,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 // Rời phòng: tab đóng → end; heartbeat quá hạn → end.
 chrome.tabs.onRemoved.addListener((tabId) => {
   if (tabs.has(tabId)) endSession(tabId, "đóng tab");
+});
+
+// Tab bắt đầu phát tiếng mà audio chưa chạy tốt (chết lúc tab câm) →
+// tự thử lại thu audio, khỏi bắt user bấm tay.
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (changeInfo.audible !== true) return;
+  const t = tabs.get(tabId);
+  if (!t || !t.sessionId) return;
+  const st = t.audioState && t.audioState.state;
+  if (st === "capturing" || st === "ws_open" || st === "transcribing" || st === "starting" || st === "ws_connecting" || st === "ws_retrying") return;
+  startAudioCapture(tabId, t.sessionId, t.provider).catch(() => {});
 });
 
 chrome.alarms.create("cn-sweep", { periodInMinutes: 1 });

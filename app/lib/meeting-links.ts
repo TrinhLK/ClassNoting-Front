@@ -25,6 +25,23 @@ export const PROVIDER_LABELS: Record<MeetingProvider, string> = {
   meet: "Google Meet",
 };
 
+/** Trích mã phòng Meet (xxx-yyyy-zzz) từ URL để đặt tên bản ghi dễ nhớ. */
+export function meetCodeFromUrl(rawUrl: string): string {
+  const m = rawUrl.trim().match(/meet\.google\.com\/([a-z]{3}-[a-z]{4}-[a-z]{3})/i);
+  return m ? m[1].toLowerCase() : "";
+}
+
+/** Tên phiên mặc định: "Họp Meet {mã} {dd/MM HH:mm}" (Meet không có tên phòng). */
+export function defaultMeetingTitle(meetingUrl: string, at: number = Date.now()): string {
+  const code = meetCodeFromUrl(meetingUrl);
+  const d = new Date(at);
+  const day = String(d.getDate()).padStart(2, "0");
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return code ? `Họp Meet ${code} ${day}/${month} ${hh}:${mm}` : `Ghi chú họp ${day}/${month}`;
+}
+
 /**
  * Build the display bot name as "Thư ký của {userName}".
  * Falls back to email prefix / generic when name is missing.

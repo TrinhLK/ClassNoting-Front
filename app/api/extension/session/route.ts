@@ -3,7 +3,7 @@ import { checkRateLimit } from "@/app/lib/rate-limit";
 import { verifyExtensionAuth } from "@/app/lib/extension-auth";
 import { getOrCreateLiveSession } from "@/app/lib/ext-sessions";
 import { endStaleSessions } from "@/app/lib/ext-finalize";
-import { detectProvider, PROVIDER_LABELS } from "@/app/lib/meeting-links";
+import { detectProvider, defaultMeetingTitle } from "@/app/lib/meeting-links";
 
 export const dynamic = "force-dynamic";
 
@@ -38,9 +38,13 @@ export async function POST(req: Request) {
   // banner treo tự biến mất ở lần poll tiếp theo mà không cần cron.
   endStaleSessions(auth.uid).catch(() => {});
 
+  // Tên mặc định = mã phòng + giờ (Meet không có tên phòng). Bỏ qua title
+  // chung chung từ document.title ("Meet", "Meet - xxx") để tên dễ nhớ.
+  const rawTitle = (body.title || "").trim();
   const title =
-    (body.title || "").trim() ||
-    `Ghi chú họp (${PROVIDER_LABELS[provider]}) ${new Date().toLocaleDateString("vi-VN")}`;
+    rawTitle && !/^meet( - |$)/i.test(rawTitle)
+      ? rawTitle
+      : defaultMeetingTitle(meetingUrl);
 
   try {
     // ID xác định theo (user, link, ngày) + create-if-absent: hai request đua

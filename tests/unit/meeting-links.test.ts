@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { detectProvider, validateMeetingUrl, buildBotName } from "@/app/lib/meeting-links";
+import {
+  detectProvider,
+  validateMeetingUrl,
+  buildBotName,
+  meetCodeFromUrl,
+  defaultMeetingTitle,
+} from "@/app/lib/meeting-links";
 
 describe("meeting-links (Meet-only)", () => {
   it("detects Google Meet links", () => {
@@ -32,5 +38,19 @@ describe("meeting-links (Meet-only)", () => {
     expect(buildBotName("Nguyen Van A")).toBe("Thư ký của Nguyen Van A");
     expect(buildBotName("", "john@example.com")).toBe("Thư ký của john");
     expect(buildBotName(null, null)).toBe("Thư ký AI");
+  });
+
+  it("meetCodeFromUrl trích mã phòng Meet", () => {
+    expect(meetCodeFromUrl("https://meet.google.com/abc-defg-hij")).toBe("abc-defg-hij");
+    expect(meetCodeFromUrl("https://meet.google.com/ABC-DEFG-HIJ?authuser=0")).toBe("abc-defg-hij");
+    expect(meetCodeFromUrl("https://example.com/x")).toBe("");
+  });
+
+  it("defaultMeetingTitle = mã phòng + giờ", () => {
+    const at = new Date(2026, 9, 2, 19, 49).getTime();
+    expect(defaultMeetingTitle("https://meet.google.com/abc-defg-hij", at)).toBe(
+      "Họp Meet abc-defg-hij 02/10 19:49"
+    );
+    expect(defaultMeetingTitle("https://example.com/x", at)).toBe("Ghi chú họp 02/10");
   });
 });

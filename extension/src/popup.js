@@ -5,6 +5,8 @@
   const $ = (id) => document.getElementById(id);
 
   let currentTabId = null;
+  let serverList = [];
+  let timerHandle = null;
 
   function refresh() {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -14,6 +16,44 @@
         render(st);
       });
     });
+  }
+
+  function fmtElapsed(ms) {
+    const s = Math.max(0, Math.floor(ms / 1000));
+    const hh = String(Math.floor(s / 3600)).padStart(2, "0");
+    const mm = String(Math.floor((s % 3600) / 60)).padStart(2, "0");
+    const ss = String(s % 60).padStart(2, "0");
+    return `${hh}:${mm}:${ss}`;
+  }
+
+  // Thẻ live của tab hiện tại: tên + timer + số liệu từ server.
+  function fillLiveCard(mine) {
+    const box = $("liveCard");
+    if (timerHandle) {
+      clearInterval(timerHandle);
+      timerHandle = null;
+    }
+    if (!mine) {
+      box.style.display = "none";
+      return;
+    }
+    box.style.display = "block";
+    const srv = serverList.find((s) => s.sessionId === mine.sessionId);
+    $("liveTitle").textContent = (srv && srv.title) || "Đang ghi...";
+    if (document.activeElement !== $("renameInput")) {
+      $("renameInput").value = (srv && srv.title) || "";
+    }
+    const counts = srv
+      ? `${srv.participantCount || 0} người · ${srv.chatCount || 0} chat · ${srv.segmentCount || 0} câu`
+      : "";
+    $("liveCounts").textContent = counts;
+    const tick = () => {
+      const cur = serverList.find((s) => s.sessionId === mine.sessionId);
+      const started = cur && cur.startedAt;
+      $("liveTimer").textContent = started ? `● ${fmtElapsed(Date.now() - started)}` : "●";
+    };
+    tick();
+    timerHandle = setInterval(tick, 1000);
   }
 
   function render(st) {
@@ -39,6 +79,7 @@
     }
     // Tab hiện tại đang ghi → chỉ hiện nút Kết thúc; chưa ghi → chỉ hiện Bắt đầu.
     const mine = currentTabId != null ? live.find((t) => t.tabId === currentTabId) : null;
+    fillLiveCard(mine);
     $("startBtn").style.display = mine ? "none" : "block";
     $("endBtn").style.display = mine ? "block" : "none";
     $("startBtn").style.flex = mine ? "" : "1";
@@ -251,9 +292,44 @@
 
   function refreshServerSessions() {
     chrome.runtime.sendMessage({ type: "CN_LIST_SESSIONS" }, (res) => {
-      if (res && res.ok) renderServerSessions(res.sessions);
+      if (res && res.ok) {
+        serverList = res.sessions || [];
+        renderServerSessions(serverList);
+        // Cập nhật tên/counts/timer của thẻ live nếu đang mở.
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+          const tid = tabs && tabs[0] ? tabs[0].id : null;
+          chrome.runtime.sendMessage({ type: "CN_GET_STATE" }, (st) => {
+            if (!st) return;
+            const live = st.liveTabs || [];
+            fillLiveCard(tid != null ? live.find((t) => t.tabId === tid) || null : null);
+          });
+        });
+      }
     });
   }
+
+  $("renameBtn").addEventListener("click", () => {
+    const title = $("renameInput").value.trim();
+    if (!title) {
+      showActionMsg("Nhập tên mới trước khi đổi.", true);
+      return;
+    }
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const tab = tabs[0];
+      if (!tab) return;
+      chrome.runtime.sendMessage(
+        { type: "CN_RENAME_SESSION", tabId: tab.id, title },
+        (res) => {
+          if (res && res.ok) {
+            showActionMsg(`Đã đổi tên thành "${res.title}".`, false);
+            refreshServerSessions();
+          } else {
+            showActionMsg("Đổi tên thất bại — thử lại.", true);
+          }
+        }
+      );
+    });
+  });
 
   // Chẩn đoán DOM tab Meet hiện tại — copy kết quả gửi dev để viết selector khớp.
   $("diagBtn").addEventListener("click", () => {
