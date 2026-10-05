@@ -102,9 +102,20 @@
       prevEnd: cap.prevEnd,
       fallbackName: "SPEAKER_" + String(cap.unknownCount).padStart(2, "0"),
     });
+    // Tiếng phát ra mà không ai sáng tên (vd share màn hình có tiếng) thì là
+    // của chủ phiên — gán tên tài khoản, giữ cờ uncertain để trung thực.
+    let finalName = r.name;
+    let finalUncertain = r.uncertain;
+    if (r.uncertain && r.name.indexOf("SPEAKER_") === 0 && spans.length === 0 && cap.selfName) {
+      finalName = cap.selfName;
+      finalUncertain = true;
+    }
     if (r.uncertain && r.name.startsWith("SPEAKER_")) cap.unknownCount++;
-    cap.prevName = r.name;
+    cap.prevName = finalName;
     cap.prevEnd = end;
+    // Ghi đè kết quả resolve bằng tên đã chốt.
+    r.name = finalName;
+    r.uncertain = finalUncertain;
 
     const sendSeg = (id, speaker, text, s, e, uncertain) => {
       try {
@@ -144,7 +155,8 @@
     const { tabId, wsBase } = msg;
     if (captures.has(tabId)) return;
     const cap = {
-      tabId, sessionId: msg.sessionId, ws: null, ctx: null, proc: null,
+      tabId, sessionId: msg.sessionId, selfName: msg.ownerDisplayName || "",
+      ws: null, ctx: null, proc: null,
       stream: null, heartbeat: null, connectTimer: null,
       retry: 0, closed: false, serverOffset: null, lastEnd: 0,
       prevName: undefined, prevEnd: undefined, unknownCount: 0,

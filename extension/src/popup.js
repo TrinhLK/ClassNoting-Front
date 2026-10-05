@@ -378,6 +378,43 @@
     });
   });
 
+  // Quyền micro: phải xin trong popup (có gesture). Quyền lưu theo origin
+  // extension nên offscreen sau đó lấy mic im lặng. Không có mic thì họp solo câm.
+  async function refreshMicState() {
+    const el = $("micState");
+    try {
+      if (!navigator.permissions || !navigator.permissions.query) {
+        el.textContent = "không kiểm tra được";
+        return;
+      }
+      const st = await navigator.permissions.query({ name: "microphone" });
+      if (st.state === "granted") {
+        el.textContent = "Đã cho phép";
+        el.className = "ok";
+      } else if (st.state === "denied") {
+        el.textContent = "Bị chặn — mở khóa trong cài đặt Chrome";
+        el.className = "muted";
+      } else {
+        el.textContent = "Chưa hỏi";
+        el.className = "muted";
+      }
+    } catch (e) {
+      el.textContent = "không kiểm tra được";
+    }
+  }
+
+  $("micBtn").addEventListener("click", async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((t) => t.stop());
+      showActionMsg("Đã cho phép micro. Lần ghi sau sẽ gồm cả giọng bạn.", false);
+    } catch (e) {
+      showActionMsg("Chưa cấp quyền micro — kiểm tra popup xin quyền của Chrome hoặc biểu tượng micro trên thanh địa chỉ.", true);
+    }
+    refreshMicState();
+  });
+
   refresh();
   refreshServerSessions();
+  refreshMicState();
 })();

@@ -289,6 +289,8 @@ async function startAudioCapture(tabId, sessionId, provider) {
       wsBase: "wss://asr-live.noting.io.vn",
       appOrigin,
       idToken: auth?.idToken,
+      // Để offscreen gán tiếng share-màn-hình (không ai sáng tên) cho chủ phiên.
+      ownerDisplayName: auth?.displayName || auth?.email || "",
     });
   } catch (e) { /* offscreen chưa sẵn sàng — roster/chat/caption vẫn chạy */ }
 }
