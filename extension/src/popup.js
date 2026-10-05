@@ -403,15 +403,14 @@
     }
   }
 
-  $("micBtn").addEventListener("click", async () => {
+  // Mở tab onboarding để xin quyền (popup sập khi mất focus nên hộp
+  // Allow không bao giờ hiện nếu xin trực tiếp trong popup).
+  $("micBtn").addEventListener("click", () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      stream.getTracks().forEach((t) => t.stop());
-      showActionMsg("Đã cho phép micro. Lần ghi sau sẽ gồm cả giọng bạn.", false);
+      chrome.tabs.create({ url: chrome.runtime.getURL("src/onboarding.html") });
     } catch (e) {
-      showActionMsg("Chưa cấp quyền micro — kiểm tra popup xin quyền của Chrome hoặc biểu tượng micro trên thanh địa chỉ.", true);
+      showActionMsg("Không mở được trang cấp quyền — thử lại.", true);
     }
-    refreshMicState();
   });
 
   refresh();
