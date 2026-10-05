@@ -57,6 +57,7 @@
   }
 
   function render(st) {
+    if ($("codeVersion")) $("codeVersion").textContent = st.codeVersion || "?";
     $("consentBox").style.display = st.consent ? "none" : "block";
     $("autoStart").checked = st.autoStart !== false;
     $("appOrigin").value = st.appOrigin || "";
@@ -345,7 +346,7 @@
           const lines = [
             `url: ${d.url}`,
             `title: ${d.title}`,
-            `sessionId: ${d.sessionId || "(chưa có)"} | queuePending: ${d.queuePending || 0}`,
+            `content: bản ${d.codeVersion || "?"} | sessionId: ${d.sessionId || "(chưa có)"} | queuePending: ${d.queuePending || 0}`,
             `roster: ${(d.rosterNames || []).join(" | ") || "(rỗng)"}`,
             `observed: chat=${d.chatObserved ? "sống" : "CHẾT"} | caption=${d.captionObserved ? "sống" : "CHẾT"}`,
             "--- checks ---",

@@ -6,6 +6,10 @@
 (function () {
   "use strict";
 
+  // Đồng bộ với manifest.json — hiện trong ô chẩn đoán để biết tab đang
+  // chạy content bản nào (tránh cãi nhau chuyện reload chưa).
+  const CODE_VERSION = "0.2.0";
+
   const shared = globalThis.ClassNotingShared;
   const platforms = globalThis.ClassNotingPlatforms;
   if (!shared || !platforms) return;
@@ -368,6 +372,7 @@
         const diag = platform.describe
           ? platform.describe()
           : { url: location.href, title: document.title, checks: [] };
+        diag.codeVersion = CODE_VERSION;
         diag.sessionId = sessionId;
         diag.queuePending = eventQueue.length;
         diag.chatObserved = watchedAlive(chatObs, chatWatched);

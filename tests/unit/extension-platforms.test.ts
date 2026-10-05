@@ -3,6 +3,19 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
+describe("extension — version đồng bộ manifest/background/content", () => {
+  it("CODE_VERSION 3 nơi trùng nhau (hết cảnh không biết đang chạy bản nào)", () => {
+    const manifest = JSON.parse(readFileSync(path.join(EXT, "../manifest.json"), "utf-8")) as {
+      version: string;
+    };
+    const bg = readFileSync(path.join(EXT, "background.js"), "utf-8");
+    const content = readFileSync(path.join(EXT, "content.js"), "utf-8");
+    expect(manifest.version).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(bg).toContain(`const CODE_VERSION = "${manifest.version}"`);
+    expect(content).toContain(`const CODE_VERSION = "${manifest.version}"`);
+  });
+});
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const EXT = path.resolve(__dirname, "../../extension/src");
 

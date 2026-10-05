@@ -3,6 +3,9 @@
  * background.js — Service worker (MV3 module): phát hiện tab họp, quản lý
  * session, gom batch events, điều phối offscreen audio, tự end khi rời phòng.
  */
+// Đổi theo manifest.json mỗi build — popup/diag hiện số này để biết chắc
+// cả 3 mảnh (popup/background/content) có đồng bộ không.
+const CODE_VERSION = "0.2.0";
 const DEFAULT_APP_ORIGIN = "https://smart-noting.vercel.app";
 const FLUSH_MS = 2000;
 const HEARTBEAT_TIMEOUT_MS = 2 * 60 * 1000;
@@ -608,6 +611,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.type === "CN_GET_STATE") {
     Promise.all([getSettings(), getAuth()]).then(([settings, auth]) => {
       sendResponse({
+        codeVersion: CODE_VERSION,
         consent: settings.consent,
         autoStart: settings.autoStart,
         appOrigin: settings.appOrigin,
