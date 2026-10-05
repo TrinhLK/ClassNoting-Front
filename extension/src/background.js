@@ -5,7 +5,7 @@
  */
 // Đổi theo manifest.json mỗi build — popup/diag hiện số này để biết chắc
 // cả 3 mảnh (popup/background/content) có đồng bộ không.
-const CODE_VERSION = "0.2.0";
+const CODE_VERSION = "0.2.1";
 const DEFAULT_APP_ORIGIN = "https://smart-noting.vercel.app";
 const FLUSH_MS = 2000;
 const HEARTBEAT_TIMEOUT_MS = 2 * 60 * 1000;
@@ -260,6 +260,12 @@ function setAudioState(tabId, audioState) {
   t.audioState = Object.assign({ at: Date.now() }, audioState);
 }
 
+// Audio coi là khỏe khi đang thu/nối tốt — các trạng thái còn lại đều đáng thử lại.
+function isAudioHealthy(t) {
+  const s = t && t.audioState && t.audioState.state;
+  return s === "capturing" || s === "ws_open" || s === "transcribing" || s === "ws_connecting" || s === "ws_retrying" || s === "starting";
+}
+
 async function startAudioCapture(tabId, sessionId, provider) {
   try {
     await ensureOffscreen();
@@ -441,6 +447,15 @@ async function recoverFromHeartbeat(tabId, msg) {
 // ---- Nhận message từ content/offscreen/popup ----
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   const tabId = sender.tab?.id ?? msg.tabId;
+  // Đánh dấu content còn sống (phục vụ tiêm chủ động khi content im lặng).
+  if (
+    sender.tab && typeof sender.tab.id === "number" && msg &&
+    (msg.type === "CN_MEETING_STATE" || msg.type === "CN_EVENTS" ||
+      msg.type === "CN_SPANS" || msg.type === "CN_HEARTBEAT")
+  ) {
+    const e = tabs.get(sender.tab.id);
+    if (e) e.contentSeenAt = Date.now();
+  }
   if (msg?.type === "CN_MEETING_STATE" && sender.tab?.id) {
     ensureSession(sender.tab.id, msg).then((sid) => sendResponse({ sessionId: sid }));
     return true;
@@ -543,8 +558,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           { provider: msg.provider, url: tab.url, title: tab.title },
           { manual: true }
         );
-        if (r.sessionId) sendResponse({ ok: true, sessionId: r.sessionId, reused: !!r.reused });
-        else sendResponse({ ok: false, reason: r.error || "api_failed", status: r.status });
+        if (!r.sessionId) {
+          sendResponse({ ok: false, reason: r.error || "api_failed", status: r.status });
+          return;
+        }
+        // Bấm tay = có user gesture → activeTab có hiệu lực: luôn thử lại audio
+        // khi chưa khỏe (auto lúc mở tab không gesture nên getMediaStreamId chết
+        // với lỗi invocation, và nhánh session-tồn-tại trước đây bỏ qua audio).
+        const t = tabs.get(msg.tabId);
+        if (t && !isAudioHealthy(t)) {
+          try {
+            await startAudioCapture(msg.tabId, r.sessionId, t.provider || msg.provider);
+          } catch (e) { /* audioState đã ghi lý do — popup hiện */ }
+        }
+        sendResponse({ ok: true, sessionId: r.sessionId, reused: !!r.reused });
       } catch (e) {
         sendResponse({ ok: false, reason: "error" });
       }
@@ -683,6 +710,29 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 // Rời phòng: tab đóng → end; heartbeat quá hạn → end.
 chrome.tabs.onRemoved.addListener((tabId) => {
   if (tabs.has(tabId)) endSession(tabId, "đóng tab");
+});
+
+// Tiêm chủ động content script: tab Meet load xong mà quá 30s không thấy
+// content nói gì (auto-inject trượt / tab chưa F5 sau unpack) thì tiêm trực tiếp
+// shared → platforms → content. Không còn phụ thuộc "nhớ F5".
+const injectedAt = new Map();
+const MEET_ROOM_RE = /^https:\/\/(www\.)?meet\.google\.com\/([a-z]{3}-[a-z]{4}-[a-z]{3}|lookup\/[\w-]+)/i;
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status !== "complete" || !tab.url || !MEET_ROOM_RE.test(tab.url)) return;
+  const lastInject = injectedAt.get(tabId) || 0;
+  if (Date.now() - lastInject < 30000) return;
+  const t = tabs.get(tabId);
+  if (t && t.contentSeenAt && Date.now() - t.contentSeenAt < 30000) return;
+  injectedAt.set(tabId, Date.now());
+  chrome.scripting
+    .executeScript({
+      target: { tabId },
+      files: ["src/shared.js", "src/platforms.js", "src/content.js"],
+    })
+    .catch(() => {});
+});
+chrome.tabs.onRemoved.addListener((tabId) => {
+  injectedAt.delete(tabId);
 });
 
 // Tab bắt đầu phát tiếng mà audio chưa chạy tốt (chết lúc tab câm) →

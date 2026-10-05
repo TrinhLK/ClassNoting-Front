@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
   "name": "ClassNoting — Ghi chú cuộc họp tự động",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Tự phát hiện phòng họp Google Meet đang mở, ghi chú người tham gia + chat + transcript live về ClassNoting.",
   "minimum_chrome_version": "116",
-  "permissions": ["tabs", "activeTab", "tabCapture", "storage", "notifications", "alarms", "offscreen"],
+  "permissions": ["tabs", "activeTab", "tabCapture", "storage", "notifications", "alarms", "offscreen", "scripting"],
   "host_permissions": [
     "https://meet.google.com/*",
     "https://smart-noting.vercel.app/*",
