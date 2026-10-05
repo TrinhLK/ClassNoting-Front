@@ -220,6 +220,49 @@ describe("extension platforms.js — chat root từ anchor + parse cấp block",
   });
 });
 
+describe("extension platforms.js — chat blocks theo timestamp", () => {
+  const PANEL = `
+    <div id="chatpanel">
+      <div class="msg" id="m1">
+        <span>Trình Lê Khánh</span>
+        <span>có ok không</span>
+        <span>10:39 AM</span>
+      </div>
+      <div class="msg" id="m2">
+        <span>test</span>
+        <span>10:49 AM</span>
+      </div>
+      <div class="composer"><div role="textbox" aria-label="Send a message">Send a message</div></div>
+    </div>`;
+
+  it("findChatBlocks tìm đúng 2 block tin nhắn", () => {
+    setBody(PANEL);
+    const blocks = meet.findChatBlocks(document.querySelector("#chatpanel")!) as Element[];
+    expect(blocks.map((b) => b.id).sort()).toEqual(["m1", "m2"]);
+  });
+
+  it("parseChatBlock: tin có tên + tin của mình (không tên) + loại composer", () => {
+    const parse = meet.parseChatBlock as (
+      b: Element,
+      roster?: string[],
+      self?: string
+    ) => { text: string; sender: string } | null;
+    setBody(PANEL);
+    const panel = document.querySelector("#chatpanel")!;
+    expect(parse(document.querySelector("#m1")!, ["Trình Lê Khánh"], "Bạn")).toEqual({
+      text: "có ok không",
+      sender: "Trình Lê Khánh",
+    });
+    // Tin của chính mình không hiện tên → gán selfName
+    expect(parse(document.querySelector("#m2")!, ["Trình Lê Khánh"], "Bạn")).toEqual({
+      text: "test",
+      sender: "Bạn",
+    });
+    // Composer không bao giờ thành tin nhắn
+    expect(parse(document.querySelector(".composer")!, ["Trình Lê Khánh"], "Bạn")).toBeNull();
+  });
+});
+
 describe("extension platforms.js — describe() (chẩn đoán)", () => {
   it("chat:anchor-chain leo từ ô Send a message khi root trượt", () => {
     setBody(`

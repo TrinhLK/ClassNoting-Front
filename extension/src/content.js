@@ -252,6 +252,40 @@
   }
   setInterval(pollCaption, 5000);
 
+  // Quét block tin nhắn theo timestamp (neo ổn định hơn selector class của
+  // Meet). Tin nhắn tồn tại trong DOM nên poll bắt được cả khi observer trượt.
+  function handleChatBlock(block) {
+    let parsed = null;
+    try {
+      parsed = platform.parseChatBlock(block, lastRosterNames, selfName || "Bạn");
+    } catch (e) { /* DOM lạ */ }
+    if (!parsed || !parsed.text) return;
+    const key = chatKey(parsed.sender, parsed.text);
+    if (seenChat.has(key)) return;
+    seenChat.add(key);
+    if (seenChat.size > 1000) {
+      const first = seenChat.values().next().value;
+      seenChat.delete(first);
+    }
+    queue("chat", {
+      id: "chat_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8),
+      sender: parsed.sender,
+      text: parsed.text,
+      timestamp: Date.now(),
+    });
+  }
+
+  function pollChatBlocks() {
+    if (!running) return;
+    try {
+      const root = platform.chatRoot();
+      if (!root || !platform.findChatBlocks) return;
+      const blocks = platform.findChatBlocks(root);
+      for (const b of blocks) handleChatBlock(b);
+    } catch (e) { /* DOM lạ */ }
+  }
+  setInterval(pollChatBlocks, 3000);
+
   // Roster: quét mỗi 5s, chỉ gửi khi thay đổi.
   function pollRoster() {
     if (!running) return;

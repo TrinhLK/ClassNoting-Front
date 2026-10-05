@@ -167,13 +167,41 @@
       throw e;
     }
     cap.stream = stream;
-    reportAudio(cap, "capturing", "Đã thu được audio tab, đang nối WS ASR...");
+    // Trộn thêm mic: tabCapture chỉ thu TIẾNG RA của tab — giọng chính mình
+    // (mic đi vào, không phát lại ra loa) nên họp solo mic luôn câm.
+    // Mic lỗi/quyền (offscreen khó có gesture) thì vẫn chạy tab-only.
+    let micStream = null;
+    try {
+      micStream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true },
+      });
+      cap.micStream = micStream;
+    } catch (e) {
+      cap.micDenied = String((e && e.message) || e);
+    }
+    reportAudio(
+      cap,
+      "capturing",
+      micStream
+        ? "Đã thu tiếng tab + mic, đang nối ASR..."
+        : "Chỉ thu tiếng tab (mic bị chặn, họp solo sẽ câm)."
+    );
     const ctx = new AudioContext();
     cap.ctx = ctx;
     const src = ctx.createMediaStreamSource(stream);
-    const proc = ctx.createScriptProcessor(BUFFER_SIZE, 1, 1);
+    // 2 kênh vào: 0 = tab, 1 = mic (kênh thiếu đọc ra im lặng).
+    const proc = ctx.createScriptProcessor(BUFFER_SIZE, 2, 1);
     cap.proc = proc;
     src.connect(proc);
+    if (micStream) {
+      try {
+        const micSrc = ctx.createMediaStreamSource(micStream);
+        cap.micSrc = micSrc;
+        micSrc.connect(proc);
+      } catch (e) {
+        cap.micDenied = String((e && e.message) || e);
+      }
+    }
     proc.connect(ctx.destination);
 
     const connect = () => {
@@ -221,7 +249,21 @@
 
     proc.onaudioprocess = (e) => {
       const ws = cap.ws;
-      const pcm = downsample(e.inputBuffer.getChannelData(0), ctx.sampleRate, SAMPLE_RATE);
+      // Trộn kênh 0 (tab) + kênh 1 (mic, im lặng nếu thiếu).
+      const ch0 = e.inputBuffer.getChannelData(0);
+      let ch1 = null;
+      try {
+        if (e.inputBuffer.numberOfChannels > 1) ch1 = e.inputBuffer.getChannelData(1);
+      } catch (err) { /* một kênh */ }
+      let mixed = ch0;
+      if (ch1) {
+        mixed = new Float32Array(ch0.length);
+        for (let i = 0; i < ch0.length; i++) {
+          const v = ch0[i] + ch1[i];
+          mixed[i] = Math.max(-1, Math.min(1, v));
+        }
+      }
+      const pcm = downsample(mixed, ctx.sampleRate, SAMPLE_RATE);
       if (!ws || ws.readyState !== WebSocket.OPEN) {
         cap.buffer.push(pcm);
         if (cap.buffer.length > 50) cap.buffer.shift();
@@ -242,7 +284,9 @@
     if (cap.heartbeat) clearInterval(cap.heartbeat);
     if (cap.connectTimer) clearTimeout(cap.connectTimer);
     try { cap.proc && cap.proc.disconnect(); } catch (e) {}
+    try { cap.micSrc && cap.micSrc.disconnect(); } catch (e) {}
     try { cap.stream && cap.stream.getTracks().forEach((t) => t.stop()); } catch (e) {}
+    try { cap.micStream && cap.micStream.getTracks().forEach((t) => t.stop()); } catch (e) {}
     try { cap.ctx && cap.ctx.close().catch(() => {}); } catch (e) {}
   }
 

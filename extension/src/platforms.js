@@ -364,6 +364,111 @@
       if (m) body = m[2];
       return body.trim();
     },
+    // Tìm các block tin nhắn trong panel chat bằng neo timestamp
+    // ("10:49 AM" xuất hiện ở mỗi tin — thấy thực tế). Leo từ node giờ lên
+    // tới container hẹp nhất còn ≤600 ký tự và có chữ phi-thời-gian.
+    // Trả về các element distinct. Pure theo DOM — test được.
+    findChatBlocks(root) {
+      const blocks = [];
+      const seen = new Set();
+      if (!root || root.nodeType !== 1) return blocks;
+      const TIME_RE = /\d{1,2}:\d{2}\s*[AP]M/i;
+      let walker = null;
+      try {
+        walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      } catch (e) {
+        return blocks;
+      }
+      let node = null;
+      let guard = 0;
+      try {
+        node = walker.nextNode();
+      } catch (e) {
+        return blocks;
+      }
+      while (node && guard++ < 5000) {
+        let text = "";
+        try {
+          text = node.textContent || "";
+        } catch (e) { /* bỏ qua */ }
+        if (TIME_RE.test(text)) {
+          let el = node.parentElement;
+          let depth = 0;
+          while (el && el !== root && depth < 8) {
+            let full = "";
+            try {
+              full = visibleText(el);
+            } catch (e) { /* bỏ qua */ }
+            const nonTime = full.replace(/\d{1,2}:\d{2}\s*[AP]M/gi, "").replace(/\s+/g, " ").trim();
+            if (nonTime.length >= 2 && full.length <= 600) {
+              if (!seen.has(el)) {
+                seen.add(el);
+                blocks.push(el);
+              }
+              break;
+            }
+            if (full.length > 600) break;
+            el = el.parentElement;
+            depth++;
+          }
+        }
+        try {
+          node = walker.nextNode();
+        } catch (e) {
+          break;
+        }
+      }
+      return blocks;
+    },
+    // Parse 1 block tin nhắn: sender (element → roster-prefix → Name: →
+    // You/Bạn → selfName vì tin của chính mình thường không hiện tên) + body
+    // đã trừ timestamp. Trả null khi là UI (composer/header).
+    // Pure theo DOM — test được.
+    // Header/notice trong panel chat — không phải tin nhắn.
+    CHAT_BLOCKLIST: [
+      "in-call messages", "continuous chat", "let participants send",
+      "pin a message", "send a message",
+    ],
+    parseChatBlock(block, rosterNames, selfName) {
+      if (!block || block.nodeType !== 1) return null;
+      try {
+        if (block.matches('button, [role="button"], input, textarea, [role="textbox"]')) return null;
+        // Block chứa ô nhập = composer, không phải tin nhắn.
+        if (block.querySelector('textarea, input, [role="textbox"], [contenteditable="true"]')) return null;
+      } catch (e) { /* tiếp tục */ }
+      const TIME_RE = /\d{1,2}:\d{2}\s*[AP]M/i;
+      let text = "";
+      try {
+        text = visibleText(block);
+      } catch (e) {
+        return null;
+      }
+      if (!text || text.length < 2 || text.length > 2000) return null;
+      const low = text.toLowerCase();
+      if (meet.CHAT_UI_TOKENS.includes(low)) return null;
+      if (meet.CHAT_BLOCKLIST.some((b) => low.includes(b))) return null;
+      // Sender element trước.
+      let sender = "";
+      try {
+        const se = block.querySelector("[data-sender-name]");
+        sender = se ? visibleText(se) : "";
+      } catch (e) { /* bỏ qua */ }
+      if (!sender) sender = meet.senderOfChatText(text, rosterNames);
+      if (!sender) {
+        // Tin của chính mình (Meet không hiện tên trên bubble của mình).
+        sender = selfName || "Bạn";
+      }
+      // Body = text trừ sender đầu + timestamp.
+      let body = text;
+      if (body.toLowerCase().startsWith(sender.toLowerCase())) {
+        body = body.slice(sender.length).trim().replace(/^:\s*/, "");
+      }
+      body = body.replace(/\d{1,2}:\d{2}\s*[AP]M/gi, " ").replace(/\s+/g, " ").trim();
+      if (!body || meet.CHAT_UI_TOKENS.includes(body.toLowerCase())) return null;
+      if (/^\((you|bạn)\)$/i.test(body)) return null;
+      if (body === sender) return null;
+      return { text: body, sender };
+    },
     // Tên người gửi trong block chat: roster-prefix dài nhất → "Name:" → You/Bạn.
     // Trả "" khi không xác định được (block chat BẮT BUỘC có sender, nếu không là UI).
     // Pure — test được.
@@ -497,6 +602,16 @@
         const root = meet.captionRoot();
         const text = root ? visibleText(root).slice(0, 200) : "";
         return { length: text.length, sample: text };
+      });
+      probe("chat:blocks", () => {
+        const root = meet.chatRoot();
+        if (!root) return { count: 0 };
+        const blocks = meet.findChatBlocks(root);
+        const first = blocks[0];
+        return {
+          count: blocks.length,
+          sample: first ? first.tagName + " len=" + visibleText(first).length : "",
+        };
       });
       return out;
     },
