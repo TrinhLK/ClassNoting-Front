@@ -189,20 +189,28 @@
     // sinh tự động của Meet). Leo từ textbox lên, chọn ancestor thấp nhất vừa
     // chứa nhánh composer vừa chứa nhánh text đáng kể (khu vực list tin nhắn).
     // Có cache + validate isConnected. Pure theo DOM — test được.
+    // Tìm ô nhập tin nhắn (neo để leo lên panel chat). Dùng chung cho
+    // chatRootFromAnchor và diag — khỏi lệch nhau.
+    findChatAnchor() {
+      try {
+        const all = document.querySelectorAll("textarea, input, [role='textbox'], [contenteditable='true'], *");
+        for (const el of all) {
+          if (!el.getAttribute) continue;
+          const label = el.getAttribute("aria-label") || "";
+          const holder = el.getAttribute("placeholder") || "";
+          const title = el.getAttribute("title") || "";
+          if (/send a message|gửi tin nhắn/i.test(label + " " + holder + " " + title)) return el;
+        }
+      } catch (e) { /* bỏ qua */ }
+      return null;
+    },
     chatRootFromAnchor() {
       try {
         if (meet._anchor && !meet._anchor.isConnected) meet._anchor = null;
         if (meet._chatPanel && meet._chatPanel.isConnected) return meet._chatPanel;
         let anchor = meet._anchor && meet._anchor.isConnected ? meet._anchor : null;
         if (!anchor) {
-          const all = document.querySelectorAll("*");
-          for (const el of all) {
-            const label = el.getAttribute && el.getAttribute("aria-label");
-            if (label && /send a message|gửi tin nhắn/i.test(label)) {
-              anchor = el;
-              break;
-            }
-          }
+          anchor = meet.findChatAnchor();
           meet._anchor = anchor || null;
         }
         if (!anchor) return null;
@@ -465,17 +473,7 @@
       probe("chat:anchor-chain", () => {
         // Root không thấy mà panel đang mở: leo từ ô "Send a message" lên 5 tầng
         // (chỉ tag#id.class, không HTML đầy) để viết selector tới đúng node tin nhắn.
-        let anchor = null;
-        try {
-          const all = document.querySelectorAll("*");
-          for (const el of all) {
-            const label = el.getAttribute && el.getAttribute("aria-label");
-            if (label && /send a message|gửi tin nhắn/i.test(label)) {
-              anchor = el;
-              break;
-            }
-          }
-        } catch (e) { /* bỏ qua */ }
+        const anchor = meet.findChatAnchor();
         if (!anchor) return { found: false };
         const chain = [];
         let el = anchor;

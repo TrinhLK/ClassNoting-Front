@@ -243,6 +243,17 @@ describe("extension platforms.js — describe() (chẩn đoán)", () => {
     expect(anchor.chain).toContain("meet-chat-panel");
   });
 
+  it("findChatAnchor bắt ô nhập qua placeholder (ca thật: không có aria-label)", () => {
+    const find = meet.findChatAnchor as () => Element | null;
+    setBody(`
+      <div class="panel">
+        <div class="composer"><textarea placeholder="Send a message"></textarea></div>
+      </div>`);
+    const anchor = find();
+    expect(anchor).not.toBeNull();
+    expect(anchor!.tagName).toBe("TEXTAREA");
+  });
+
   it("chat:anchor-chain found=false khi không có ô chat", () => {
     setBody(`<div><p>Không có gì</p></div>`);
     const describe = meet.describe as () => {
