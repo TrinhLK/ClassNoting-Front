@@ -276,6 +276,38 @@ describe("extension platforms.js — chat blocks theo timestamp", () => {
   });
 });
 
+describe("extension platforms.js — chat blocks không timestamp (ca bubble trơn)", () => {
+  const PANEL_NO_TIME = `
+    <div id="chatpanel2">
+      <div class="notice">Continuous chat is turned off</div>
+      <div class="bubble" id="b1"><span>tes thử</span></div>
+      <div class="bubble" id="b2"><span>chưa thấy gì hết</span></div>
+      <div class="composer"><div role="textbox" aria-label="Send a message">Send a message</div></div>
+    </div>`;
+
+  it("findChatBlocks tuyến cấu trúc vẫn bắt được bubble", () => {
+    setBody(PANEL_NO_TIME);
+    const blocks = meet.findChatBlocks(document.querySelector("#chatpanel2")!) as Element[];
+    expect(blocks.map((b) => b.id).sort()).toEqual(["b1", "b2"]);
+  });
+
+  it("parseChatBlock bubble trơn gán selfName, loại notice/composer", () => {
+    const parse = meet.parseChatBlock as (
+      b: Element,
+      roster?: string[],
+      self?: string
+    ) => { text: string; sender: string } | null;
+    setBody(PANEL_NO_TIME);
+    const panel = document.querySelector("#chatpanel2")!;
+    expect(parse(document.querySelector("#b1")!, [], "Bạn")).toEqual({
+      text: "tes thử",
+      sender: "Bạn",
+    });
+    expect(parse(panel.querySelector(".notice")!, [], "Bạn")).toBeNull();
+    expect(parse(panel.querySelector(".composer")!, [], "Bạn")).toBeNull();
+  });
+});
+
 describe("extension platforms.js — describe() (chẩn đoán)", () => {
   it("chat:anchor-chain leo từ ô Send a message khi root trượt", () => {
     setBody(`

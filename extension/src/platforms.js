@@ -364,60 +364,93 @@
       if (m) body = m[2];
       return body.trim();
     },
-    // Tìm các block tin nhắn trong panel chat bằng neo timestamp
-    // ("10:49 AM" xuất hiện ở mỗi tin — thấy thực tế). Leo từ node giờ lên
-    // tới container hẹp nhất còn ≤600 ký tự và có chữ phi-thời-gian.
+    // Tìm các block tin nhắn trong panel chat. Tuyến 1: neo timestamp
+    // ("10:49 AM" xuất hiện ở mỗi tin — thấy thực tế). Tuyến 2 (dự phòng khi
+    // bubble không render giờ như ca "tes thử"): container "lá" có chữ —
+    // parseChatBlock + dedupe phía gọi sẽ loại rác còn lại.
     // Trả về các element distinct. Pure theo DOM — test được.
     findChatBlocks(root) {
       const blocks = [];
       const seen = new Set();
       if (!root || root.nodeType !== 1) return blocks;
+      const take = (el) => {
+        if (el && !seen.has(el)) {
+          seen.add(el);
+          blocks.push(el);
+        }
+      };
+      // Tuyến 1: leo từ node giờ lên container hẹp nhất còn ≤600 ký tự.
       const TIME_RE = /\d{1,2}:\d{2}\s*[AP]M/i;
-      let walker = null;
       try {
-        walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-      } catch (e) {
-        return blocks;
-      }
-      let node = null;
-      let guard = 0;
-      try {
-        node = walker.nextNode();
-      } catch (e) {
-        return blocks;
-      }
-      while (node && guard++ < 5000) {
-        let text = "";
-        try {
-          text = node.textContent || "";
-        } catch (e) { /* bỏ qua */ }
-        if (TIME_RE.test(text)) {
-          let el = node.parentElement;
-          let depth = 0;
-          while (el && el !== root && depth < 8) {
-            let full = "";
-            try {
-              full = visibleText(el);
-            } catch (e) { /* bỏ qua */ }
-            const nonTime = full.replace(/\d{1,2}:\d{2}\s*[AP]M/gi, "").replace(/\s+/g, " ").trim();
-            if (nonTime.length >= 2 && full.length <= 600) {
-              if (!seen.has(el)) {
-                seen.add(el);
-                blocks.push(el);
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+        let node = walker.nextNode();
+        let guard = 0;
+        while (node && guard++ < 5000) {
+          let text = "";
+          try {
+            text = node.textContent || "";
+          } catch (e) { /* bỏ qua */ }
+          if (TIME_RE.test(text)) {
+            let el = node.parentElement;
+            let depth = 0;
+            while (el && el !== root && depth < 8) {
+              let full = "";
+              try {
+                full = visibleText(el);
+              } catch (e) { /* bỏ qua */ }
+              const nonTime = full.replace(/\d{1,2}:\d{2}\s*[AP]M/gi, "").replace(/\s+/g, " ").trim();
+              if (nonTime.length >= 2 && full.length <= 600) {
+                take(el);
+                break;
               }
-              break;
+              if (full.length > 600) break;
+              el = el.parentElement;
+              depth++;
             }
-            if (full.length > 600) break;
-            el = el.parentElement;
-            depth++;
+          }
+          try {
+            node = walker.nextNode();
+          } catch (e) {
+            break;
           }
         }
-        try {
-          node = walker.nextNode();
-        } catch (e) {
-          break;
+      } catch (e) { /* bỏ qua */ }
+      if (blocks.length > 0) return blocks;
+      // Tuyến 2: không thấy giờ nào — duyệt DIV, giữ container "lá" có chữ
+      // 2–400 ký tự, loại nhánh composer/header. parseChatBlock lọc tiếp.
+      try {
+        const all = root.querySelectorAll("div");
+        let scanned = 0;
+        for (const el of all) {
+          if (scanned++ > 2000) break;
+          try {
+            if (el.matches('button, [role="button"], input, textarea, [role="textbox"]')) continue;
+            // Nhánh chứa ô nhập = composer.
+            if (el.querySelector('textarea, input, [role="textbox"], [contenteditable="true"]')) continue;
+          } catch (e) { /* tiếp tục */ }
+          const kids = el.children || [];
+          let hasDivKidWithText = false;
+          for (const k of kids) {
+            if (k.tagName !== "DIV") continue;
+            let kt = "";
+            try {
+              kt = visibleText(k);
+            } catch (e) { /* bỏ qua */ }
+            if (kt && kt.trim().length >= 2) {
+              hasDivKidWithText = true;
+              break;
+            }
+          }
+          if (hasDivKidWithText) continue;
+          let t = "";
+          try {
+            t = visibleText(el);
+          } catch (e) { /* bỏ qua */ }
+          if (!t || t.length < 2 || t.length > 400) continue;
+          if (meet.CHAT_BLOCKLIST.some((b) => t.toLowerCase().includes(b))) continue;
+          take(el);
         }
-      }
+      } catch (e) { /* bỏ qua */ }
       return blocks;
     },
     // Parse 1 block tin nhắn: sender (element → roster-prefix → Name: →

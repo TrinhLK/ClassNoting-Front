@@ -104,7 +104,11 @@
           stopped: "Audio: đã dừng thu.",
           mic_failed: `Audio LỖI: không thu được tiếng tab (${a.detail || "tab chưa phát tiếng"}). Hãy phát tiếng trong tab Meet rồi bấm Bắt đầu lại.`,
           offscreen_failed: `Audio LỖI: không mở được offscreen (${a.detail || ""}). Reload extension rồi thử lại.`,
-          capture_failed: `Audio LỖI: không lấy được audio tab (${a.detail || ""}). Hãy phát tiếng trong tab Meet rồi bấm Bắt đầu lại.`,
+          capture_failed: `Audio LỖI: không lấy được audio tab (${a.detail || ""}). ${
+            /active stream/i.test(a.detail || "")
+              ? "Tab đang bị 1 phiên thu khác giữ (tắt extension ghi màn hình khác, bấm Kết thúc rồi Bắt đầu lại)."
+              : "Hãy phát tiếng trong tab Meet rồi bấm Bắt đầu lại."
+          }`,
           ws_retrying: `Audio: ${a.detail || "đang thử nối lại ASR..."}`,
           ws_dead: "Audio LỖI: không nối được server ASR. Kiểm tra server asr-live.",
         };

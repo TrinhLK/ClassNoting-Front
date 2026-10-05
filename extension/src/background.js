@@ -5,7 +5,7 @@
  */
 // Đổi theo manifest.json mỗi build — popup/diag hiện số này để biết chắc
 // cả 3 mảnh (popup/background/content) có đồng bộ không.
-const CODE_VERSION = "0.2.1";
+const CODE_VERSION = "0.2.2";
 const DEFAULT_APP_ORIGIN = "https://smart-noting.vercel.app";
 const FLUSH_MS = 2000;
 const HEARTBEAT_TIMEOUT_MS = 2 * 60 * 1000;

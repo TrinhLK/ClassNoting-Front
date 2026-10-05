@@ -153,7 +153,16 @@
 
   async function startCapture(msg) {
     const { tabId, wsBase } = msg;
-    if (captures.has(tabId)) return;
+    const prev = captures.get(tabId);
+    if (prev) {
+      // Capture cũ còn sót (phiên trước end không sạch / SW restart mồ côi)
+      // giữ stream tab → getMediaStreamId mới chết "active stream".
+      // Cùng session thì giữ nguyên; khác session thì dừng cũ rồi thu mới.
+      if (prev.sessionId && prev.sessionId === msg.sessionId) return;
+      try {
+        stopCapture(tabId);
+      } catch (e) { /* tiếp tục thu mới */ }
+    }
     const cap = {
       tabId, sessionId: msg.sessionId, selfName: msg.ownerDisplayName || "",
       ws: null, ctx: null, proc: null,
