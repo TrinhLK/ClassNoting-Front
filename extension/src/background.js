@@ -266,7 +266,18 @@ function isAudioHealthy(t) {
   return s === "capturing" || s === "ws_open" || s === "transcribing" || s === "ws_connecting" || s === "ws_retrying" || s === "starting";
 }
 
-async function startAudioCapture(tabId, sessionId, provider) {
+async function startAudioCapture(tabId, sessionId, provider, opts) {
+  // Tab phụ (vd tab YouTube đang share): fusion tên dùng spans của tab Meet
+  // cùng session — truyền spansTabId để offscreen hỏi đúng chỗ.
+  let spansTabId = (opts && opts.spansTabId) || undefined;
+  if (!spansTabId) {
+    for (const [id, t] of tabs.entries()) {
+      if (t.sessionId === sessionId && id !== tabId) {
+        spansTabId = id;
+        break;
+      }
+    }
+  }
   try {
     await ensureOffscreen();
   } catch (e) {
@@ -297,6 +308,7 @@ async function startAudioCapture(tabId, sessionId, provider) {
       idToken: auth?.idToken,
       // Để offscreen gán tiếng share-màn-hình (không ai sáng tên) cho chủ phiên.
       ownerDisplayName: auth?.displayName || auth?.email || "",
+      spansTabId,
     });
   } catch (e) { /* offscreen chưa sẵn sàng — roster/chat/caption vẫn chạy */ }
 }
@@ -579,6 +591,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg?.type === "CN_MANUAL_END" && msg.tabId) {
+    // Tab phụ: chỉ dừng thu của nó, giữ nguyên session.
+    const extra = tabs.get(msg.tabId);
+    if (extra && extra.extraTab) {
+      stopAudioCapture(msg.tabId).catch(() => {});
+      tabs.delete(msg.tabId);
+      persistTabs();
+      sendResponse({ ok: true, extraStopped: true });
+      return true;
+    }
     endSession(msg.tabId, "bấm tay").then((r) => {
       if (r && !r.error) sendResponse({ ok: true, ...r });
       else {
@@ -587,6 +608,60 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse({ ok: false, reason: "no_session" });
       }
     });
+    return true;
+  }
+  // Thu thêm tiếng 1 tab khác (vd tab YouTube đang share) vào cùng session.
+  // Bấm khi đang đứng ở tab đó → có gesture/activeTab. Offscreen thu đa-tab sẵn.
+  if (msg?.type === "CN_CAPTURE_EXTRA" && msg.tabId && msg.sessionId) {
+    (async () => {
+      try {
+        const tab = await chrome.tabs.get(msg.tabId).catch(() => null);
+        tabs.set(msg.tabId, {
+          sessionId: msg.sessionId,
+          provider: "extra",
+          url: (tab && tab.url) || "",
+          extraTab: true,
+          lastSeen: Date.now(),
+          queue: [],
+          spans: [],
+          captions: [],
+          emptyStreak: 0,
+        });
+        persistTabs();
+        await startAudioCapture(msg.tabId, msg.sessionId, "extra");
+        sendResponse({ ok: true, sessionId: msg.sessionId });
+      } catch (e) {
+        sendResponse({ ok: false, reason: "error" });
+      }
+    })();
+    return true;
+  }
+  // Thu thêm tiếng 1 tab khác vào session có sẵn (nút "＋ tab này").
+  // Dùng khi share màn hình có tiếng: tiếng share phát ở tab nguồn,
+  // không qua tab Meet nên phải thu trực tiếp tab đó.
+  if (msg?.type === "CN_CAPTURE_EXTRA" && msg.tabId && msg.sessionId) {
+    (async () => {
+      try {
+        const tab = await chrome.tabs.get(msg.tabId).catch(() => null);
+        tabs.set(msg.tabId, {
+          sessionId: msg.sessionId,
+          provider: "extra",
+          url: (tab && tab.url) || "",
+          extraTab: true,
+          lastSeen: Date.now(),
+          queue: [],
+          spans: [],
+          captions: [],
+          emptyStreak: 0,
+        });
+        persistTabs();
+        await startAudioCapture(msg.tabId, msg.sessionId, "extra");
+        setBadge(msg.tabId, "REC", "#dc2626");
+        sendResponse({ ok: true, sessionId: msg.sessionId });
+      } catch (e) {
+        sendResponse({ ok: false, reason: "error" });
+      }
+    })();
     return true;
   }
   // Kết thúc 1 session theo id (dọn được cả phiên mồ côi trong popup "kết thúc tất cả").
@@ -708,8 +783,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 });
 
 // Rời phòng: tab đóng → end; heartbeat quá hạn → end.
+// Tab phụ (extraTab, vd tab YouTube đang share) đóng thì chỉ dừng thu của nó,
+// KHÔNG end cả session.
+// Bắt thêm tiếng tab khác vào cùng session ("＋ tab này" trong popup):
+// gesture bấm nút cho activeTab hiệu lực. Dùng khi share màn hình có tiếng —
+// tiếng share phát ở tab nguồn, không qua tab Meet.
 chrome.tabs.onRemoved.addListener((tabId) => {
-  if (tabs.has(tabId)) endSession(tabId, "đóng tab");
+  const t = tabs.get(tabId);
+  if (!t) return;
+  if (t.extraTab) {
+    tabs.delete(tabId);
+    persistTabs();
+    stopAudioCapture(tabId).catch(() => {});
+    return;
+  }
+  endSession(tabId, "đóng tab");
 });
 
 // Tiêm chủ động content script: tab Meet load xong mà quá 30s không thấy
@@ -751,6 +839,8 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name !== "cn-sweep") return;
   const now = Date.now();
   tabs.forEach((t, tabId) => {
+    // Tab phụ không heartbeat (không content script) → bỏ qua sweep.
+    if (t.extraTab) return;
     if (now - t.lastSeen > HEARTBEAT_TIMEOUT_MS) endSession(tabId, "mất tín hiệu");
   });
 });

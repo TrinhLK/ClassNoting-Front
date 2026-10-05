@@ -68,7 +68,9 @@
     return { kind: data.is_final ? "final" : "interim", text: raw, words, serverSpeaker: sp };
   }
 
-  function getSpans(tabId) {
+  // Tab phụ (share) không có spans của mình → hỏi theo tab Meet cùng session.
+  function getSpans(cap) {
+    const tabId = (cap && cap.spansTabId) || (cap && cap.tabId);
     return new Promise((resolve) => {
       try {
         chrome.runtime.sendMessage({ type: "CN_GET_SPANS", tabId }, (res) => {
@@ -94,7 +96,7 @@
     const end = words.length > 0 ? words[words.length - 1].end : cap.lastEnd + 0.1;
     cap.lastEnd = Math.max(cap.lastEnd, end);
 
-    const { spans, captions } = await getSpans(cap.tabId);
+    const { spans, captions } = await getSpans(cap);
     const r = shared.resolveSpeakerName(start, end, {
       activeSpans: spans,
       captionLines: captions,
@@ -127,7 +129,36 @@
       } catch (err) { /* background restart */ }
     };
 
+    // Gửi câu đang giữ (đã gộp) đi. Gọi khi hết 1.2s im hoặc dừng thu.
+    function flushPending(c) {
+      const p = c.pending;
+      c.pending = null;
+      if (!p) return;
+      if (p.timer) {
+        try {
+          clearTimeout(p.timer);
+        } catch (e) { /* bỏ qua */ }
+      }
+      sendSeg(p.id, p.speaker, p.text, p.start, p.end, p.uncertain);
+    }
+
     // Tách segment khi lật người nói giữa chừng: resolve riêng từng nửa.
+    // Mọi segment đi qua hold-buffer gộp câu (tránh vụn "đây/đây/đây").
+    const hold = (id, speaker, text, s, e, uncertain) => {
+      const seg = { id, speaker, text, start: s, end: e, uncertain };
+      const prev = cap.pending;
+      if (prev && shared.shouldMergeSeg(prev, seg)) {
+        clearTimeout(prev.timer);
+        prev.text = shared.mergeText(prev.text, seg.text);
+        prev.end = seg.end;
+        if (!prev.speaker) prev.speaker = seg.speaker;
+        prev.timer = setTimeout(() => flushPending(cap), 1200);
+        return;
+      }
+      flushPending(cap);
+      seg.timer = setTimeout(() => flushPending(cap), 1200);
+      cap.pending = seg;
+    };
     if (r.splitAt && r.splitAt > start + 0.5 && r.splitAt < end - 0.5) {
       const ratio = (r.splitAt - start) / Math.max(0.01, end - start);
       const cut = Math.max(1, Math.floor(packet.text.length * ratio));
@@ -140,11 +171,11 @@
         activeSpans: spans, captionLines: captions, prevName: undefined, prevEnd: undefined,
         fallbackName: "SPEAKER_" + String(cap.unknownCount).padStart(2, "0"),
       });
-      sendSeg("asr_" + Date.now() + "_a", r1.name, packet.text.slice(0, cut), start, r.splitAt, r1.uncertain);
-      sendSeg("asr_" + Date.now() + "_b", r2.name, packet.text.slice(cut), r.splitAt, end, r2.uncertain);
+      hold("asr_" + Date.now() + "_a", r1.name, packet.text.slice(0, cut), start, r.splitAt, r1.uncertain);
+      hold("asr_" + Date.now() + "_b", r2.name, packet.text.slice(cut), r.splitAt, end, r2.uncertain);
       cap.prevName = r2.name;
     } else {
-      sendSeg("asr_" + Date.now(), r.name, packet.text, start, end, r.uncertain);
+      hold("asr_" + Date.now(), r.name, packet.text, start, end, r.uncertain);
     }
     cap.finals = (cap.finals || 0) + 1;
     cap.lastFinalAt = Date.now();
@@ -165,6 +196,8 @@
     }
     const cap = {
       tabId, sessionId: msg.sessionId, selfName: msg.ownerDisplayName || "",
+      // Tab phụ (share) fusion tên theo spans của tab Meet cùng session.
+      spansTabId: msg.spansTabId || tabId,
       ws: null, ctx: null, proc: null,
       stream: null, heartbeat: null, connectTimer: null,
       retry: 0, closed: false, serverOffset: null, lastEnd: 0,
@@ -299,6 +332,23 @@
     const cap = captures.get(tabId);
     if (!cap) return;
     cap.closed = true;
+    // Đẩy nốt câu đang giữ trong hold-buffer trước khi dọn.
+    try {
+      const p = cap.pending;
+      cap.pending = null;
+      if (p) {
+        if (p.timer) {
+          try {
+            clearTimeout(p.timer);
+          } catch (e) { /* bỏ qua */ }
+        }
+        chrome.runtime.sendMessage({
+          type: "CN_ASR_FINAL", tabId: cap.tabId, sessionId: cap.sessionId,
+          id: p.id, speaker: p.speaker, text: p.text,
+          start: p.start, end: p.end, uncertain: p.uncertain || undefined,
+        });
+      }
+    } catch (e) { /* bỏ qua */ }
     reportAudio(cap, "stopped", "Đã dừng thu audio.");
     captures.delete(tabId);
     try { cap.ws && cap.ws.close(1000, "stop"); } catch (e) {}

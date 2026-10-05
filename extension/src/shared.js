@@ -71,9 +71,40 @@
     return { name: (ctx.fallbackName || "SPEAKER_00"), uncertain: true };
   }
 
+  // Nối chuỗi chống lặp (port từ mergeText của realtime-protocol.ts).
+  function mergeText(prev, next) {
+    const p = String(prev || "").trim();
+    const n = String(next || "").trim();
+    if (!p) return n;
+    if (!n) return p;
+    if (n.startsWith(p)) return n;
+    if (p.endsWith(n)) return p;
+    const overlapMax = Math.min(p.length, n.length, 20);
+    for (let i = overlapMax; i > 0; i--) {
+      if (p.slice(-i) === n.slice(0, i)) return p + n.slice(i);
+    }
+    if (/^[.,!?;:]/.test(n)) return p + n;
+    return p + " " + n;
+  }
+
+  // Hai segment ASR final có gộp thành một không? Cùng người nói (chuẩn hóa)
+  // và gap nhỏ — mirror mergeFinalSegment phía web app. Pure — test được.
+  // maxGap mặc định 1.5s (rộng hơn web 1.0s vì nhịp ASR extension thưa hơn).
+  function shouldMergeSeg(prev, next, maxGap) {
+    if (!prev || !next) return false;
+    const gap = typeof maxGap === "number" ? maxGap : 1.5;
+    const ps = normalizeName(prev.speaker || "").toLowerCase();
+    const ns = normalizeName(next.speaker || "").toLowerCase();
+    if (!ps || ps !== ns) return false;
+    const g = (next.start || 0) - (prev.end || 0);
+    return g >= 0 && g < gap;
+  }
+
   global.ClassNotingShared = {
     detectProvider,
     normalizeName,
     resolveSpeakerName,
+    mergeText,
+    shouldMergeSeg,
   };
 })(typeof globalThis !== "undefined" ? globalThis : this);

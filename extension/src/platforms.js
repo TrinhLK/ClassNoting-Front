@@ -183,7 +183,7 @@
     // Token UI của Meet — không bao giờ là nội dung tin nhắn.
     CHAT_UI_TOKENS: [
       "chat", "chat_bubble", "chat_bubble_outline", "chat_off",
-      "send", "close", "chat_options", "more", "reply", "react",
+      "send", "send message", "close", "chat_options", "more", "reply", "react",
     ],
     // Tìm root panel chat từ ô nhập tin nhắn (neo aria-label ổn định hơn class
     // sinh tự động của Meet). Leo từ textbox lên, chọn ancestor thấp nhất vừa

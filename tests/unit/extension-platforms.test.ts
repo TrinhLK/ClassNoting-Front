@@ -7,12 +7,14 @@ describe("extension — version đồng bộ manifest/background/content", () =>
   it("CODE_VERSION 3 nơi trùng nhau (hết cảnh không biết đang chạy bản nào)", () => {
     const manifest = JSON.parse(readFileSync(path.join(EXT, "../manifest.json"), "utf-8")) as {
       version: string;
+      permissions: string[];
     };
     const bg = readFileSync(path.join(EXT, "background.js"), "utf-8");
     const content = readFileSync(path.join(EXT, "content.js"), "utf-8");
     expect(manifest.version).toMatch(/^\d+\.\d+\.\d+$/);
     expect(bg).toContain(`const CODE_VERSION = "${manifest.version}"`);
     expect(content).toContain(`const CODE_VERSION = "${manifest.version}"`);
+    expect(manifest.permissions).toContain("scripting");
   });
 });
 
@@ -27,8 +29,16 @@ function loadPlatforms() {
   (0, eval)(platforms);
   const g = globalThis as unknown as {
     ClassNotingPlatforms: { meet: Record<string, (...a: never[]) => unknown> };
+    ClassNotingShared: Record<string, (...a: never[]) => unknown>;
   };
   return g.ClassNotingPlatforms.meet;
+}
+
+function loadShared() {
+  const g = globalThis as unknown as {
+    ClassNotingShared: Record<string, (...a: never[]) => unknown>;
+  };
+  return g.ClassNotingShared;
 }
 
 let meet: ReturnType<typeof loadPlatforms>;
@@ -40,6 +50,33 @@ beforeAll(() => {
 const setBody = (html: string) => {
   document.body.innerHTML = html;
 };
+
+describe("extension shared.js — gộp câu ASR (chống vụn đây/đây/đây)", () => {
+  it("shouldMergeSeg: cùng người + gap nhỏ thì gộp, khác người/gap lớn thì tách", () => {
+    const shared = loadShared();
+    const shouldMergeSeg = shared.shouldMergeSeg as (
+      p: { speaker: string; start: number; end: number },
+      n: { speaker: string; start: number; end: number },
+      g?: number
+    ) => boolean;
+    const seg = (speaker: string, start: number, end: number) => ({ speaker, start, end });
+    // Ca thật: "đây", "đây", "đây" cùng người, gap nhỏ → gộp
+    expect(shouldMergeSeg(seg("Lê Khánh Trịnh", 0, 1), seg("Lê Khánh Trịnh", 1.2, 2))).toBe(true);
+    expect(shouldMergeSeg(seg("Lê Khánh Trịnh", 0, 2), seg("Someone Else", 2.5, 4))).toBe(false);
+    expect(shouldMergeSeg(seg("A", 0, 2), seg("A", 10, 12))).toBe(false);
+    expect(shouldMergeSeg(seg("", 0, 1), seg("A", 1, 2))).toBe(false);
+    expect(shouldMergeSeg(seg("A", 0, 1), seg("A", 1, 2), 0.5)).toBe(true);
+    expect(shouldMergeSeg(seg("A", 0, 1), seg("A", 1.5, 2), 0.5)).toBe(false);
+  });
+
+  it("mergeText nối chồng lấp, không lặp từ", () => {
+    const shared = loadShared();
+    const mergeText = shared.mergeText as (a: string, b: string) => string;
+    expect(mergeText("đây", "đây")).toBe("đây");
+    expect(mergeText("năm mười", "mười triệu")).toBe("năm mười triệu");
+    expect(mergeText("xin chào", "chào bạn")).toBe("xin chào bạn");
+  });
+});
 
 describe("extension platforms.js — roster (Meet)", () => {
   it("cleanRosterName rút tên nhân đôi, bỏ hậu tố, chặn header", () => {

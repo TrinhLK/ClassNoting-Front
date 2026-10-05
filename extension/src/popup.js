@@ -289,8 +289,41 @@
           refresh();
         });
       });
+      // Ghi thêm tiếng tab hiện tại (vd tab YouTube đang share) vào phiên này.
+      // Bấm khi đang đứng ở tab đó → có gesture/activeTab.
+      const addBtn = document.createElement("button");
+      addBtn.className = "ghost";
+      addBtn.textContent = "＋ tab này";
+      addBtn.title = "Thu thêm tiếng của tab đang mở vào phiên này (dùng khi share màn hình có tiếng)";
+      addBtn.addEventListener("click", () => {
+        addBtn.disabled = true;
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+          const tab = tabs[0];
+          if (!tab) {
+            addBtn.disabled = false;
+            return;
+          }
+          chrome.runtime.sendMessage(
+            { type: "CN_CAPTURE_EXTRA", tabId: tab.id, sessionId: s.sessionId },
+            (res) => {
+              addBtn.disabled = false;
+              if (res && res.ok) {
+                showActionMsg("Đã bắt đầu thu thêm tiếng tab này vào phiên.", false);
+              } else {
+                showActionMsg("Không thu được tab này — thử phát tiếng trong tab rồi bấm lại.", true);
+              }
+              refresh();
+            }
+          );
+        });
+      });
       row.appendChild(name);
-      row.appendChild(btn);
+      const btns = document.createElement("span");
+      btns.style.display = "flex";
+      btns.style.gap = "4px";
+      btns.appendChild(addBtn);
+      btns.appendChild(btn);
+      row.appendChild(btns);
       box.appendChild(row);
     });
   }
