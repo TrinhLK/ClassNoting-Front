@@ -345,6 +345,26 @@ Frontend render editor + trigger summarize
 
 Chi tiết API xem tại: https://github.com/NguyenVanHung2004/Server-local-ai-meeting-assistant/blob/cleanup/remove-unused-files/README.md
 
+### Phân tích lại người nói (refine_meeting)
+
+Nút "Phân tích lại người nói từ audio" gọi RunPod với:
+
+```json
+{ "input": { "action": "refine_meeting", "audio_chunks": [{"url": "...", "source": "mic|tab", "start": 0}], "audio_url": "https://...", "language": "vi" } }
+```
+
+Worker **bắt buộc** phải implement action này, trả về:
+
+```json
+{ "status": "success", "transcript": [{ "id": "...", "speakerId": "...", "start": 0, "end": 1.2, "text": "...", "words": [] }] }
+```
+
+Nếu endpoint chạy bản worker cũ (chưa có action), job FAILED với lỗi
+`Unknown action: refine_meeting` và UI sẽ hướng dẫn redeploy. Cách khắc phục:
+rebuild Docker image từ repo worker bản mới nhất và redeploy endpoint RunPod
+(Frontend dùng `RUNPOD_API_KEY` / `RUNPOD_ENDPOINT_ID` phía server cho luồng này —
+khác với `NEXT_PUBLIC_RUNPOD_*` dùng ở client. Cần set cả hai bộ trên Vercel).
+
 ---
 
 ## 🚀 Triển khai

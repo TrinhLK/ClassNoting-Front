@@ -15,6 +15,7 @@ import { uploadAudioToFirebase, startTranscriptionJob } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { useGlobalUI } from "../context/GlobalUIProvider";
 import { deleteFieldValue } from "../lib/utils/firestore";
+import { snapshotMeetingForReprocess } from "../lib/reprocessBackup";
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -99,6 +100,10 @@ export default function DashboardPage() {
           meeting.audioUrl,
           meeting.language ?? "vi"
         );
+        // Snapshot trước khi wipe — job fail vẫn khôi phục được bản cũ.
+        if (!snapshotMeetingForReprocess(meeting)) {
+          toast.warning("Không lưu được bản sao lưu, vẫn tiếp tục xử lý lại.");
+        }
         await updateMeetingProcess(meeting.id, {
           status: MEETING_STATUS.TRANSCRIBING,
           jobId: newJobId,

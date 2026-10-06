@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { NotebookPen } from "lucide-react";
+import BrandIcon from "./BrandIcon";
 import { useAuth } from "../context/AuthContext";
 import Spinner from "./ui/Spinner";
 import Button from "./ui/Button";
@@ -45,7 +45,7 @@ export default function LoginState() {
             <div className="p-8 md:p-10 text-center">
               {mounted ? (
                 <div className="mx-auto w-20 h-20 bg-gradient-to-tr from-primary-600 to-violet-600 rounded-2xl flex items-center justify-center shadow-lg shadow-primary-500/20 mb-8 transform hover:scale-105 transition-transform duration-300">
-                  <NotebookPen className="w-10 h-10 text-white" />
+                  <BrandIcon className="w-10 h-10 text-white" />
                 </div>
               ) : (
                 <div className="mx-auto w-20 h-20 bg-slate-200 rounded-2xl mb-8 animate-pulse" />

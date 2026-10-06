@@ -1,10 +1,13 @@
 "use client";
 
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import RefinementControl from "./Meeting/RefinementControl";
-import { Sparkles, FileText as FileIcon, Share2, AlignLeft, MessageSquare } from "lucide-react";
-import { Meeting } from "../lib/db";
+import { Sparkles, FileText as FileIcon, Share2, AlignLeft, MessageSquare, AlertTriangle, History } from "lucide-react";
+import { Meeting, updateMeetingProcess } from "../lib/db";
 import type { Segment, Speaker, ChatMessage } from "../lib/db";
+import { MEETING_STATUS } from "../lib/constants";
+import { getReprocessBackup, clearReprocessBackup } from "../lib/reprocessBackup";
+import { deleteFieldValue } from "../lib/utils/firestore";
 import { useGlobalUI } from "../context/GlobalUIProvider";
 import { useMeetingDetail } from "../hooks/useMeetingDetail";
 import { useAudioPlayer } from "../hooks/useAudioPlayer";
@@ -37,6 +40,8 @@ export default function MeetingDetailState({
 }) {
   const { toast } = useGlobalUI();
   const [showDocsFill, setShowDocsFill] = useState(false);
+  const [hasReprocessBackup, setHasReprocessBackup] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
 
   const {
     meeting, setMeeting,
@@ -46,6 +51,44 @@ export default function MeetingDetailState({
     handleShare,
     handleSummarizeRequest,
   } = useMeetingDetail(initialMeeting, onSummarize, onBack, toast);
+
+  useEffect(() => {
+    setHasReprocessBackup(getReprocessBackup(initialMeeting.id) !== null);
+  }, [initialMeeting.id, meeting.status]);
+
+  const handleRestoreBackup = useCallback(async () => {
+    const backup = getReprocessBackup(initialMeeting.id);
+    if (!backup) {
+      toast.error("Không tìm thấy bản sao lưu trên trình duyệt này.");
+      return;
+    }
+    setIsRestoring(true);
+    try {
+      const restored: Meeting = {
+        ...meeting,
+        segments: backup.segments,
+        speakers: backup.speakers,
+        summary: backup.summary,
+        status: backup.status,
+      };
+      await updateMeetingProcess(meeting.id, {
+        segments: backup.segments,
+        speakers: backup.speakers,
+        summary: backup.summary ?? deleteFieldValue<string | undefined>(),
+        errorMessage: deleteFieldValue<string | undefined>(),
+        jobId: deleteFieldValue<string | undefined>(),
+        status: backup.status,
+      });
+      clearReprocessBackup(meeting.id);
+      setMeeting(restored);
+      setHasReprocessBackup(false);
+      toast.success("Đã khôi phục bản trước khi xử lý lại.");
+    } catch (err) {
+      toast.error("Khôi phục thất bại: " + (err as Error).message);
+    } finally {
+      setIsRestoring(false);
+    }
+  }, [initialMeeting.id, meeting, setMeeting, toast]);
 
   const {
     audioRef, isPlaying, currentTime, duration, playbackRate,
@@ -117,6 +160,28 @@ export default function MeetingDetailState({
         formatDate={formatDate}
         formatDuration={formatDuration}
       />
+
+      {meeting.status === MEETING_STATUS.FAILED && (
+        <div className="mx-4 md:mx-8 mt-4 p-4 bg-red-50 border border-red-200 rounded-xl flex items-start gap-3 shrink-0" role="alert">
+          <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-bold text-red-800">Xử lý thất bại</p>
+            {meeting.errorMessage && (
+              <p className="text-sm text-red-700 mt-1 break-words">{meeting.errorMessage}</p>
+            )}
+            {hasReprocessBackup && !isReadOnly && (
+              <button
+                onClick={handleRestoreBackup}
+                disabled={isRestoring}
+                className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-red-700 bg-white hover:bg-red-100 border border-red-300 rounded-lg transition-colors disabled:opacity-50"
+              >
+                <History className="w-4 h-4" />
+                {isRestoring ? "Đang khôi phục..." : "Khôi phục bản trước khi xử lý lại"}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {!isReadOnly && (
         <div className="md:hidden bg-white border-b border-slate-200 p-3 grid grid-cols-2 gap-2 shrink-0">

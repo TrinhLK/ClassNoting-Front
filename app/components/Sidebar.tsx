@@ -3,8 +3,9 @@ import { useState, useEffect } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   Home, FileText, ClipboardList, Users, Database, LogOut,
-  ChevronsLeft, ChevronsRight, NotebookPen, Trash2
+  ChevronsLeft, ChevronsRight, Trash2
 } from "lucide-react";
+import BrandIcon from "./BrandIcon";
 import { useAuth } from "@/app/context/AuthContext";
 import { useGlobalUI } from "@/app/context/GlobalUIProvider";
 import { cn } from "@/app/lib/cn";
@@ -103,7 +104,7 @@ export default function Sidebar({ onNavigate, forceOpen = false }: SidebarProps)
       {/* Logo */}
       <div className="h-16 flex items-center gap-2 px-4 border-b border-slate-200 shrink-0">
         <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center shadow-sm shrink-0">
-          <NotebookPen className="w-5 h-5 text-white" />
+          <BrandIcon className="w-5 h-5 text-white" />
         </div>
         {(forceOpen || !collapsed) && (
           <span className="font-bold text-slate-800 tracking-tight truncate">Smart Meeting</span>

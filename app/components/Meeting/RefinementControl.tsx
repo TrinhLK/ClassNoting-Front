@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { auth } from "@/app/lib/firebase";
 import { getMeetingById, type Meeting } from "@/app/lib/db";
+import { explainRefinementError } from "@/app/lib/refinementError";
 
 export default function RefinementControl({ meeting, onUpdate }: { meeting: Meeting; onUpdate: (m: Meeting) => void }) {
   const [status, setStatus] = useState(meeting.refinement?.status || "");
@@ -10,7 +11,7 @@ export default function RefinementControl({ meeting, onUpdate }: { meeting: Meet
     const token = await auth.currentUser?.getIdToken();
     const res = await fetch(`/api/meetings/${encodeURIComponent(meeting.id)}/refine`, { method, headers: { Authorization: `Bearer ${token}` } });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Hậu xử lý thất bại");
+    if (!res.ok) throw new Error(explainRefinementError(data.error || "Hậu xử lý thất bại"));
     setStatus(data.refinement?.status || ""); setError(data.refinement?.error || "");
     if (data.refinement?.status === "completed") {
       const updated = await getMeetingById(meeting.id); if (updated) onUpdate(updated);
@@ -37,6 +38,6 @@ export default function RefinementControl({ meeting, onUpdate }: { meeting: Meet
       try { await request("POST"); } catch (e) { setStatus("failed"); setError(e instanceof Error ? e.message : String(e)); }
     }}>{busy ? "Đang phân tích lại người nói…" : "Phân tích lại người nói từ audio"}</button>
     <span className="text-slate-500">{status === "completed" ? "Đã cập nhật transcript. Có thể tạo lại tóm tắt." : "Giữ các đoạn đã chỉnh sửa thủ công."}</span>
-    {error && <span role="alert" className="text-amber-700">{error}</span>}
+    {error && <span role="alert" className="text-amber-700">{explainRefinementError(error)}</span>}
   </div>;
 }

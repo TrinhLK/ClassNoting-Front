@@ -188,6 +188,11 @@ export default function MeetingCard({
           <div className="mt-2">
             <Badge status={meeting.status} />
           </div>
+          {meeting.status === MEETING_STATUS.FAILED && meeting.errorMessage && (
+            <p className="mt-1.5 text-xs text-red-600 truncate" title={meeting.errorMessage}>
+              {meeting.errorMessage}
+            </p>
+          )}
         </div>
 
         <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
