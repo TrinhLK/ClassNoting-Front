@@ -90,3 +90,7 @@ Họp mở: để trống để bot vào như khách.
 ## Speaker attribution v0.3
 
 Xem [triển khai, cấu hình và giới hạn tích hợp](../docs/speaker-attribution/README.md). Tài liệu này thay thế mô tả cũ về giao thức audio và gán người nói.
+
+Extension `0.3.2` hiển thị trong popup trạng thái diarization của server, số người Meet đọc được và active-speaker gần nhất. Khi chữ vẫn về nhưng status báo `diarization tắt`, server đang chạy nhưng thiếu model/env; khi roster là `0`, bấm **Chẩn đoán tab Meet này** để xem selectors `roster:*` và `speaker:active`.
+
+Audio tab vẫn luôn được thu; mic thiết bị chỉ mở khi toolbar Meet xác nhận mic đang bật. Khi mic Meet tắt hoặc trạng thái chưa đọc được, luồng mic extension không được mở/đưa vào ASR. Sau khi cập nhật cần kết thúc phiên cũ, reload extension và tải lại tab Meet để offscreen document cũ được thay thế.

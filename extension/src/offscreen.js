@@ -5,9 +5,9 @@
   const shared = globalThis.ClassNotingShared;
   const captures = new Map();
   const RATE = 16000;
-  function report(cap, state, detail) {
+  function report(cap, state, detail, extra = {}) {
     chrome.runtime.sendMessage({ type: "CN_AUDIO_STATE", tabId: cap.tabId,
-      sessionId: cap.sessionId, state, detail, finals: cap.finals || 0 }).catch(() => {});
+      sessionId: cap.sessionId, state, detail, finals: cap.finals || 0, ...extra }).catch(() => {});
   }
   function pcm16(input, rate) {
     const ratio = rate / RATE;
@@ -138,7 +138,19 @@
       ws.onmessage = event => {
         let data; try { data = JSON.parse(event.data); } catch { return; }
         if (data.type === "flushed") { source.onFlushed?.(); return; }
-        if (data.type === "ready") { source.protocol = data.protocol || 1; return; }
+        if (data.type === "ready") {
+          source.protocol = data.protocol || 1;
+          const diarization = data.diarization === true;
+          report(cap, "speaker_status", "", { speakerStatus: {
+            [name]: { protocol: source.protocol, diarization },
+          } });
+          if (source.protocol < 2) {
+            report(cap, "protocol_error", `Server ${name} chưa hỗ trợ protocol 2; audio chưa được gửi để nhận dạng`);
+          } else if (!diarization) {
+            report(cap, "diarization_disabled", `Server ${name} chưa nạp model phân biệt người nói`);
+          }
+          return;
+        }
         const metadataDeadline = Date.now() + (data.is_final ? 2000 : 0);
         source.processing = source.processing.then(async () => {
           await new Promise(resolve => setTimeout(resolve, Math.max(0, metadataDeadline - Date.now())));
@@ -179,6 +191,48 @@
         source.ws.send(chunk.pcm.buffer);
       }
     };
+    return source;
+  }
+  async function setMicGate(cap, muted) {
+    const allowed = !cap.closed && !cap.stopping && muted === false && (!cap.spansTabId || cap.spansTabId === cap.tabId);
+    cap.micMuted = typeof muted === "boolean" ? muted : null;
+    if (!allowed && cap.micStream) {
+      // Disabled MediaStreamTracks output only silence to the recorder; tab
+      // capture continues, so remote participants remain transcribed.
+      cap.micStream.getAudioTracks().forEach(track => { track.enabled = false; });
+      cap.micCapture = muted === true ? "muted" : "unknown";
+      report(cap, "mic_status", "", { micCapture: cap.micCapture });
+      return;
+    }
+    if (allowed && !cap.micStream) {
+      if (!cap.micOpening) {
+        cap.micOpening = (async () => {
+          try {
+            const mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+            if (cap.closed || cap.micMuted !== false) {
+              mic.getTracks().forEach(track => track.stop());
+              return;
+            }
+            cap.micStream = mic;
+            cap.streams.push(mic);
+            cap.micSource = startSource(cap, mic, "mic");
+          } catch (e) {
+            cap.micCapture = "permission_denied";
+            report(cap, "mic_failed", `Meet đang bật mic nhưng không mở được mic cục bộ: ${e.message}`,
+              { micCapture: cap.micCapture });
+          }
+        })().finally(() => { cap.micOpening = null; });
+      }
+      await cap.micOpening;
+    }
+    if (allowed && cap.micStream) {
+      cap.micStream.getAudioTracks().forEach(track => { track.enabled = true; });
+      cap.micCapture = "enabled";
+      report(cap, "mic_status", "", { micCapture: cap.micCapture });
+    } else if (!cap.micStream) {
+      cap.micCapture = muted === true ? "muted" : "unknown";
+      report(cap, "mic_status", "", { micCapture: cap.micCapture });
+    }
   }
   async function startCapture(msg) {
     if (captures.has(msg.tabId)) return;
@@ -191,14 +245,10 @@
       cap.audioOrigin = Date.now() / 1000 - cap.epoch - cap.ctx.currentTime;
       if (!Number.isFinite(cap.audioOrigin)) throw new Error("Thiếu thời điểm bắt đầu phiên");
       startSource(cap, tab, "tab");
-      // Auxiliary shared-media tabs must never capture a second copy of the microphone.
-      if (!msg.spansTabId || msg.spansTabId === msg.tabId) {
-        try {
-          const mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
-          cap.streams.push(mic); startSource(cap, mic, "mic");
-        } catch { report(cap, "mic_failed", "Chỉ thu tab; cấp quyền mic để thu giọng tại máy này"); }
-      }
       await cap.ctx.resume();
+      // Privacy default: the physical mic is never opened unless Meet's own
+      // toolbar explicitly reports it unmuted. Unknown state stays disabled.
+      await setMicGate(cap, msg.micMuted);
     } catch (e) { report(cap, "capture_failed", String(e.message)); await stopCapture(msg.tabId); throw e; }
   }
   async function stopCapture(tabId) {
@@ -226,5 +276,9 @@
   chrome.runtime.onMessage.addListener((msg, sender, respond) => {
     if (msg?.type === "CN_AUDIO_START") { startCapture(msg).then(() => respond({ ok: true })).catch(e => respond({ error: String(e) })); return true; }
     if (msg?.type === "CN_AUDIO_STOP") { stopCapture(msg.tabId).then(respond); return true; }
+    if (msg?.type === "CN_AUDIO_MIC_GATE") {
+      const cap = captures.get(msg.tabId);
+      if (cap && !cap.closed) setMicGate(cap, msg.muted).catch(() => {});
+    }
   });
 })();

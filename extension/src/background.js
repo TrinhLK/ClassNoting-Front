@@ -5,7 +5,7 @@
  */
 // Đổi theo manifest.json mỗi build — popup/diag hiện số này để biết chắc
 // cả 3 mảnh (popup/background/content) có đồng bộ không.
-const CODE_VERSION = "0.3.0";
+const CODE_VERSION = "0.3.2";
 const DEFAULT_APP_ORIGIN = "https://smart-noting.vercel.app";
 const FLUSH_MS = 2000;
 const HEARTBEAT_TIMEOUT_MS = 2 * 60 * 1000;
@@ -257,7 +257,7 @@ function setAudioState(tabId, audioState) {
 // Audio coi là khỏe khi đang thu/nối tốt — các trạng thái còn lại đều đáng thử lại.
 function isAudioHealthy(t) {
   const s = t && t.audioState && t.audioState.state;
-  return s === "capturing" || s === "ws_open" || s === "transcribing" || s === "ws_connecting" || s === "ws_retrying" || s === "starting";
+  return s === "capturing" || s === "ws_open" || s === "transcribing" || s === "speaker_status" || s === "diarization_disabled" || s === "protocol_error" || s === "ws_connecting" || s === "ws_retrying" || s === "starting";
 }
 
 async function startAudioCapture(tabId, sessionId, provider, opts) {
@@ -288,6 +288,17 @@ async function startAudioCapture(tabId, sessionId, provider, opts) {
     throw e;
   }
   const auth = await getAuth();
+  let micMuted = tabs.get(tabId)?.micMuted;
+  if (provider === "meet" && typeof micMuted !== "boolean") {
+    try {
+      const micState = await chrome.tabs.sendMessage(tabId, { type: "CN_GET_MIC_STATE" });
+      micMuted = typeof micState?.muted === "boolean" ? micState.muted : null;
+    } catch { micMuted = null; }
+  }
+  if (tabs.has(tabId)) {
+    tabs.get(tabId).micMuted = typeof micMuted === "boolean" ? micMuted : null;
+    await persistTabs();
+  }
   // Bắt buộc .catch: offscreen chưa chạy thì promise reject → lỗi
   // "Could not establish connection" tràn trang Errors (đã thấy thực tế).
   try {
@@ -304,6 +315,7 @@ async function startAudioCapture(tabId, sessionId, provider, opts) {
       // Để offscreen gán tiếng share-màn-hình (không ai sáng tên) cho chủ phiên.
       ownerDisplayName: auth?.displayName || auth?.email || "",
       spansTabId,
+      micMuted: provider === "meet" ? micMuted : true,
     });
   } catch (e) { /* offscreen chưa sẵn sàng — roster/chat/caption vẫn chạy */ }
 }
@@ -369,6 +381,11 @@ async function persistTabs() {
       url: t.url,
       startedAt: t.startedAt,
       queue: t.queue,
+      audioState: t.audioState,
+      speakerStatus: t.speakerStatus,
+      rosterCount: t.rosterCount,
+      activeSpeaker: t.activeSpeaker,
+      micMuted: t.micMuted,
     }));
     await chrome.storage.session.set({ liveTabs: dump });
   } catch (e) { /* storage chưa sẵn — bỏ qua */ }
@@ -391,6 +408,11 @@ async function rehydrateTabs() {
         queue: d.queue || [],
         spans: [],
         captions: [],
+        audioState: d.audioState || null,
+        speakerStatus: d.speakerStatus || {},
+        rosterCount: Number.isFinite(d.rosterCount) ? d.rosterCount : undefined,
+        activeSpeaker: d.activeSpeaker || "",
+        micMuted: typeof d.micMuted === "boolean" ? d.micMuted : null,
         emptyStreak: 0,
         recovered: true,
       });
@@ -486,6 +508,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     ensureSession(sender.tab.id, msg).then((sid) => sendResponse({ sessionId: sid }));
     return true;
   }
+  if (msg?.type === "CN_MIC_STATE" && sender.tab?.id) {
+    const t = tabs.get(sender.tab.id);
+    if (t) {
+      t.micMuted = typeof msg.muted === "boolean" ? msg.muted : null;
+      persistTabs();
+      chrome.runtime.sendMessage({ type: "CN_AUDIO_MIC_GATE", tabId: sender.tab.id, muted: t.micMuted }).catch(() => {});
+    }
+    return;
+  }
   if (msg?.type === "CN_EVENTS" && tabId) {
     let t = tabs.get(tabId);
     if (!t && msg.sessionId) t = attachLight(tabId, msg.sessionId, msg);
@@ -495,6 +526,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     for (const ev of msg.events || []) {
       if (ev.kind === "participants") {
         t.participants = ev.participants;
+        t.rosterCount = (ev.participants || []).length;
         t.queue.push({ kind: "participants", payload: ev.participants });
         if ((ev.participants || []).length > 0) gotData = true;
       } else if (ev.kind === "chat") {
@@ -530,6 +562,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (!t && msg.sessionId) t = attachLight(tabId, msg.sessionId, msg);
     if (!t) return;
     t.spans = (msg.spans || []).slice(-200);
+    const last = t.spans[t.spans.length - 1];
+    t.activeSpeaker = last && Date.now() / 1000 - last.end < 1.5 ? String(last.name || "") : "";
     return;
   }
   if (msg?.type === "CN_HEARTBEAT" && tabId) {
@@ -537,10 +571,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (!t && msg.sessionId) {
       // Tab biết sessionId của mình → gắn lại trực tiếp, khỏi gọi API.
       t = attachLight(tabId, msg.sessionId, msg);
+      t.rosterCount = Number.isFinite(msg.rosterCount) ? msg.rosterCount : 0;
+      t.activeSpeaker = typeof msg.activeSpeaker === "string" ? msg.activeSpeaker : "";
       noteHeartbeat(tabId, t, msg);
       return;
     }
     if (t) {
+      t.rosterCount = Number.isFinite(msg.rosterCount) ? msg.rosterCount : 0;
+      t.activeSpeaker = typeof msg.activeSpeaker === "string" ? msg.activeSpeaker : "";
       noteHeartbeat(tabId, t, msg);
       return;
     }
@@ -752,6 +790,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           lastFlush: t.lastFlush || null,
           // Trạng thái thu audio realtime (offscreen báo về).
           audioState: t.audioState || null,
+          speakerStatus: t.speakerStatus || {},
+          rosterCount: Number.isFinite(t.rosterCount) ? t.rosterCount : (t.participants || []).length,
+          activeSpeaker: t.activeSpeaker || "",
+          micMuted: typeof t.micMuted === "boolean" ? t.micMuted : null,
         })),
       });
     });
@@ -774,12 +816,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (!t && msg.sessionId) t = attachLight(tabId, msg.sessionId, msg);
     if (t) {
       t.audioState = {
+        ...(t.audioState || {}),
         state: msg.state || "unknown",
         detail: msg.detail || "",
         finals: msg.finals || 0,
         lastFinalAt: msg.lastFinalAt || 0,
         at: Date.now(),
       };
+      if (typeof msg.micCapture === "string") t.audioState.micCapture = msg.micCapture;
+      if (msg.speakerStatus && typeof msg.speakerStatus === "object") {
+        t.speakerStatus = { ...(t.speakerStatus || {}), ...msg.speakerStatus };
+      }
+      persistTabs();
       t.lastSeen = Date.now();
     }
     return;

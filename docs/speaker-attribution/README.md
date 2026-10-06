@@ -23,6 +23,8 @@ Final packet giữ định dạng `channel.alternatives[].words`, bổ sung `pro
 - Mốc DOM epoch được đổi về cùng timeline audio trước khi ghép.
 - Tên dựa riêng active-speaker hoặc riêng caption được đánh dấu chưa xác nhận; tín hiệu xung đột/overlap không được biến thành tên chắc chắn.
 - Hai người trùng tên chỉ được phân biệt nếu có participant ID hoặc cụm giọng riêng. Không dùng displayName làm danh tính chắc chắn.
+- Extension popup `0.3.2` hiển thị cờ server `diarization`, protocol, số roster đọc được và active-speaker gần nhất. `diarization tắt` nghĩa ASR đang chạy nhưng server chưa nạp model; roster `0` nghĩa Meet DOM chưa được đọc.
+- Extension `0.3.2` chỉ mở mic thiết bị khi nút mic Meet được xác nhận đang bật. Khi Meet mute hoặc không đọc được trạng thái, mic thiết bị bị khóa; audio tab vẫn chạy.
 - Có khoảng đợi metadata 2 giây sau final ASR để nhận caption đã batch. Đây là độ trễ bổ sung, không phải cam kết tổng độ trễ 2 giây.
 - WAV theo nguồn được lưu mỗi khoảng 30 giây. Pending upload lưu IndexedDB trong extension, retry cùng ID. Nếu audio chưa gửi được, giữ phiên để thử kết thúc lại.
 - Hàng đợi event lưu `chrome.storage.session` để sống qua việc MV3 service worker bị dừng. Không bảo đảm phục hồi sau khi người dùng đóng toàn bộ trình duyệt; browser-session storage có vòng đời riêng.
@@ -147,7 +149,9 @@ Teams bot/importer chuẩn hóa thành contract của adapter:
 1. Deploy backend realtime v2 cùng hai model và kiểm tra ready/diarization flag.
 2. Deploy file-processing có action `refine_meeting`.
 3. Cấu hình Firebase Admin/Storage bucket và RunPod server-only trên web app; deploy frontend.
-4. Reload extension 0.3.0; cấp mic/tab từ thao tác người dùng; kiểm tra một cuộc Meet ngắn, stop rồi mở transcript/refinement.
+4. Reload extension 0.3.2; cấp quyền tab từ thao tác người dùng; kiểm tra một cuộc Meet ngắn, stop rồi mở transcript/refinement.
 5. Khi có Zoom/Teams app, dựng relay/SDK host rồi chạy kiểm thử end-to-end bằng tài khoản được cấp quyền. Không coi fixture tests là xác nhận đã hoạt động trên hai nền tảng thật.
+
+Khi transcript vẫn chạy nhưng người nói chưa xác định: popup extension `0.3.2` phải báo `tab: diarization bật` và roster lớn hơn 0. Nếu cờ diarization tắt, cấu hình hai đường dẫn model trên host realtime rồi redeploy. Nếu roster là 0, bấm **Chẩn đoán tab Meet này** ngay khi panel People đang mở; `roster:people-panel` và `roster:scrapeRoster` cho biết lỗi selector, `speaker:active` cho biết Meet có lộ tín hiệu active-speaker qua DOM hay không. Reload extension và tải lại tab Meet sau khi cập nhật.
 
 Các thay đổi này chưa deploy lên production hoặc thay đổi tài khoản cloud.

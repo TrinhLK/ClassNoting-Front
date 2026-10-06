@@ -40,6 +40,23 @@
     box.style.display = "block";
     const srv = serverList.find((s) => s.sessionId === mine.sessionId);
     $("liveTitle").textContent = (srv && srv.title) || "Đang ghi...";
+    const diag = $("speakerDiag");
+    if (diag) {
+      const rosterCount = Number.isFinite(mine.rosterCount)
+        ? mine.rosterCount
+        : Number(srv?.participantCount || 0);
+      const statuses = Object.entries(mine.speakerStatus || {}).map(([source, value]) =>
+        `${source}: ${value.diarization ? "diarization bật" : "diarization tắt"} (protocol ${value.protocol || "?"})`
+      );
+      const active = mine.activeSpeaker ? `; active speaker: ${mine.activeSpeaker}` : "; chưa bắt được active speaker";
+      const mic = mine.audioState?.micCapture === "enabled"
+        ? "mic cục bộ đang thu vì Meet mic bật"
+        : mine.micMuted === true ? "Meet mic tắt; mic cục bộ bị khóa"
+          : mine.micMuted === false ? "Meet mic bật; mic cục bộ không hoạt động"
+            : "Meet mic chưa xác định; mic cục bộ bị khóa";
+      diag.textContent = `Định danh: ${statuses.join(" · ") || "chưa nhận trạng thái từ ASR"}. Meet roster: ${rosterCount} người${active}. ${mic}.`;
+      diag.style.color = statuses.some(s => s.includes("diarization tắt")) || rosterCount === 0 ? "#b45309" : "#475569";
+    }
     if (document.activeElement !== $("renameInput")) {
       $("renameInput").value = (srv && srv.title) || "";
     }
@@ -102,7 +119,8 @@
           ws_open: "Audio: đã nối ASR, chờ câu nói đầu tiên...",
           transcribing: null, // hiện số câu bên dưới
           stopped: "Audio: đã dừng thu.",
-          mic_failed: `Audio LỖI: không thu được tiếng tab (${a.detail || "tab chưa phát tiếng"}). Hãy phát tiếng trong tab Meet rồi bấm Bắt đầu lại.`,
+          mic_failed: `Mic cục bộ chưa thu được (${a.detail || "cấp quyền micro nếu cần"}); audio tab vẫn được ghi.`,
+          mic_status: "Trạng thái micro được khóa theo nút mic của Meet.",
           offscreen_failed: `Audio LỖI: không mở được offscreen (${a.detail || ""}). Reload extension rồi thử lại.`,
           capture_failed: `Audio LỖI: không lấy được audio tab (${a.detail || ""}). ${
             /active stream/i.test(a.detail || "")
@@ -111,8 +129,13 @@
           }`,
           ws_retrying: `Audio: ${a.detail || "đang thử nối lại ASR..."}`,
           ws_dead: "Audio LỖI: không nối được server ASR. Kiểm tra server asr-live.",
+          diarization_disabled: `Audio vẫn nhận dạng chữ, nhưng server chưa nạp model diarization (${a.detail || ""}).`,
+          protocol_error: `Audio đã kết nối nhưng server chưa hỗ trợ giao thức speaker (${a.detail || ""}).`,
+          speaker_status: "Audio: đã nhận được trạng thái diarization từ server.",
         };
-        if (a.state === "transcribing") {
+        if (a.state === "mic_status") {
+          showActionMsg(a.micCapture === "enabled" ? "Mic cục bộ đang thu vì mic Meet được bật." : "Mic cục bộ đã khóa; chỉ audio tab tiếp tục được ghi.", false);
+        } else if (a.state === "transcribing") {
           const when = a.lastFinalAt
             ? new Date(a.lastFinalAt).toLocaleTimeString("vi-VN")
             : "?";
@@ -389,18 +412,14 @@
             "--- checks ---",
           ];
           (d.checks || []).forEach((c) => {
-            const detail =
-              c.count !== undefined
-                ? `count=${c.count}`
-                : c.matched !== undefined
-                  ? `matched=${c.matched}`
-                  : c.length !== undefined
-                    ? `length=${c.length}`
-                    : c.found !== undefined
-                      ? `found=${c.found}`
-                      : c.error
-                        ? `ERROR=${c.error}`
-                        : "";
+            let detail = "";
+            if (c.count !== undefined) detail = `count=${c.count}`;
+            else if (c.matched !== undefined) detail = `matched=${c.matched}`;
+            else if (c.length !== undefined) detail = `length=${c.length}`;
+            else if (c.indicatorCount !== undefined) detail = `name=${c.name || "(rỗng)"}; indicators=${c.indicatorCount}`;
+            else if (c.name !== undefined) detail = `name=${c.name || "(rỗng)"}`;
+            else if (c.found !== undefined) detail = `found=${c.found}`;
+            else if (c.error) detail = `ERROR=${c.error}`;
             lines.push(`[${c.label}] ${detail}`);
             if (c.sample) lines.push(`  sample: ${c.sample}`);
             if (c.chain) lines.push(`  chain: ${c.chain}`);

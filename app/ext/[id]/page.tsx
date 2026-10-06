@@ -51,6 +51,10 @@ export default function ExtLivePage() {
     );
   }
 
+  const rosterMissing = session.status === "live" && session.participants.length === 0;
+  const speakerMissing = session.status === "live" && session.liveSegments.length > 0 &&
+    session.liveSegments.every((s) => s.uncertain || s.speaker === "Chưa xác định");
+
   return (
     <div className="flex flex-col h-screen bg-slate-50 overflow-hidden">
       <div className="bg-white border-b px-4 md:px-6 py-3 flex items-center justify-between gap-3 shrink-0">
@@ -84,6 +88,14 @@ export default function ExtLivePage() {
           <Users className="w-4 h-4" /> {session.participants.length} người
         </div>
       </div>
+
+      {(rosterMissing || speakerMissing) && (
+        <div className="bg-amber-50 border-b border-amber-200 px-4 md:px-6 py-2 text-xs text-amber-900 shrink-0">
+          <span className="font-semibold">Chưa xác định được người nói.</span>{" "}
+          {rosterMissing && <>Extension chưa đọc được roster Meet (0 người). Mở panel People và chạy “Chẩn đoán tab Meet này” trong popup extension. </>}
+          {speakerMissing && <>Transcript vẫn đến nhưng chưa có cụm giọng chắc chắn; kiểm tra popup xem ASR đang dùng protocol 2 và diarization đã bật chưa.</>}
+        </div>
+      )}
 
       <div className="md:hidden flex bg-white border-b shrink-0">
         {(["transcript", "chat"] as const).map((t) => (

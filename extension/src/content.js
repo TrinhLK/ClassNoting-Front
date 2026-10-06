@@ -8,7 +8,7 @@
 
   // Đồng bộ với manifest.json — hiện trong ô chẩn đoán để biết tab đang
   // chạy content bản nào (tránh cãi nhau chuyện reload chưa).
-  const CODE_VERSION = "0.3.0";
+  const CODE_VERSION = "0.3.2";
 
   const shared = globalThis.ClassNotingShared;
   const platforms = globalThis.ClassNotingPlatforms;
@@ -301,7 +301,7 @@
       roster = platform.scrapeRoster() || [];
     } catch (e) { /* DOM lạ */ }
     lastRosterNames = roster.map((r) => r.name).filter(Boolean);
-    const key = JSON.stringify(roster.map((r) => r.name));
+    const key = JSON.stringify(roster.map((r) => [r.name, r.id || null]));
     if (key !== lastRosterKey) {
       lastRosterKey = key;
       queue("participants", roster);
@@ -333,19 +333,35 @@
     send({ type: "CN_SPANS", spans: activeSpans.slice(-50), sessionId: sessionId || undefined });
   }, 500);
 
+  // Mic vật lý chỉ được extension lấy khi Meet xác nhận mic đang bật.
+  // Nếu nhãn nút chưa đọc được thì fail-closed: không cấp mic riêng cho extension.
+  let lastMicMuted;
+  function reportMicState() {
+    let muted = null;
+    try { muted = platform.microphoneMuted(); } catch (e) { /* giữ trạng thái an toàn */ }
+    if (muted === lastMicMuted) return;
+    lastMicMuted = muted;
+    send({ type: "CN_MIC_STATE", muted, sessionId: sessionId || undefined });
+  }
+  reportMicState();
+  setInterval(reportMicState, 250);
+
   // Heartbeat + self-check selector.
   setInterval(() => {
     if (!running) return;
     let rosterCount = 0;
+    let activeSpeaker = "";
     try {
       rosterCount = (platform.scrapeRoster() || []).length;
     } catch (e) { /* bỏ qua */ }
+    try { activeSpeaker = (platform.sampleActiveSpeaker() || "").trim(); } catch (e) { /* bỏ qua */ }
     send({
       type: "CN_HEARTBEAT",
       provider,
       url: location.href,
       title: document.title,
       rosterCount,
+      activeSpeaker,
       chatPanel: !!platform.chatRoot(),
       captionPanel: !!platform.captionRoot(),
       sessionId: sessionId || undefined,
@@ -361,6 +377,12 @@
   });
 
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (msg?.type === "CN_GET_MIC_STATE") {
+      let muted = null;
+      try { muted = platform.microphoneMuted(); } catch (e) { /* unknown: mic stays disabled */ }
+      sendResponse({ muted });
+      return;
+    }
     if (msg?.type === "CN_SESSION") {
       sessionId = msg.sessionId;
       if (msg.ownerDisplayName) selfName = String(msg.ownerDisplayName);

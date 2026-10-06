@@ -138,16 +138,36 @@
           } catch (e) { return true; }
         });
         for (const panel of panels) {
-          const items = panel.querySelectorAll('[role="listitem"], li, [data-participant-id]');
+          // Meet có thể render participant rows thành button thay vì
+          // listitem. Không loại role=button ở cấp row: nút mute/menu con sẽ
+          // bị lọc ở firstNameIn/cleanRosterName phía dưới.
+          const items = panel.querySelectorAll('[role="listitem"], li, [data-participant-id], [role="button"], button');
           items.forEach((it) => {
-            try {
-              if (it.matches('input, button, [role="button"], [role="menuitem"]')) return;
-            } catch (e) { /* tiếp tục */ }
-            push(meet.firstNameIn(it) || visibleText(it));
+            if (it.matches('input, [role="menuitem"]')) return;
+            push(meet.firstNameIn(it) || it.getAttribute("aria-label") || visibleText(it));
           });
           if (items.length === 0) {
             // Panel dạng flat text — tách theo dòng, lọc qua blocklist.
             visibleText(panel).split("\n").forEach((line) => push(line));
+          }
+        }
+      } catch (e) { /* DOM lạ */ }
+      // Một số bản Meet chỉ render heading "People"; panel không có aria-label
+      // và từng participant row là button. Tìm danh sách từ heading đang thấy,
+      // leo tối đa 5 tầng và chỉ nhận ancestor cho ra ít nhất 2 tên hợp lệ.
+      try {
+        const headings = [...document.querySelectorAll('[role="heading"], h1, h2, h3')]
+          .filter((el) => /^(people|mọi người)$/i.test(visibleText(el).trim()));
+        for (const heading of headings) {
+          let ancestor = heading.parentElement;
+          for (let depth = 0; ancestor && depth < 5; depth++, ancestor = ancestor.parentElement) {
+            const before = names.length;
+            ancestor.querySelectorAll('[role="listitem"], li, [data-participant-id], [role="button"], button')
+              .forEach((row) => {
+                if (row.matches('input, [role="menuitem"]')) return;
+                push(meet.firstNameIn(row) || row.getAttribute("aria-label") || visibleText(row));
+              });
+            if (names.length - before >= 2) break;
           }
         }
       } catch (e) { /* DOM lạ */ }
@@ -555,9 +575,39 @@
       ]);
       if (speaking.length > 0) {
         const label = speaking[0].getAttribute("aria-label") || "";
-        if (label.trim()) return label.trim();
+        const direct = meet.cleanRosterName(label.replace(/\s*[,·]\s*(presenting|annotating|muted|unmuted|đang trình bày).*$/i, ""));
+        if (direct) return direct;
+        let el = speaking[0];
+        for (let depth = 0; el && depth < 4; depth++, el = el.parentElement) {
+          const name = meet.firstNameIn(el);
+          if (name) return name;
+        }
+      }
+      // Fallback cho UI Meet hiện hành: trạng thái nói đôi khi chỉ nằm trong
+      // aria-label của tile và không có data-speaking/data-active-speaker.
+      const labelled = allMatches([
+        '[aria-label*="speaking" i]', '[aria-label*="đang nói" i]',
+        '[aria-label*="đang phát biểu" i]',
+      ]);
+      for (const el of labelled) {
+        const raw = el.getAttribute("aria-label") || "";
+        const name = meet.cleanRosterName(raw.replace(/\s*[,·]\s*(is\s+)?speaking.*$/i, "").replace(/\s*[,·]\s*đang\s+(nói|phát biểu).*$/i, ""));
+        if (name) return name;
+        const nearby = meet.firstNameIn(el.parentElement);
+        if (nearby) return nearby;
       }
       return "";
+    },
+    microphoneMuted() {
+      // Labels trên toolbar mô tả hành động tiếp theo: "Turn on/Bật mic" nghĩa
+      // là mic hiện đang tắt; "Turn off/Tắt mic" nghĩa là mic đang bật.
+      const controls = document.querySelectorAll('button[aria-label], [role="button"][aria-label]');
+      for (const control of controls) {
+        const label = String(control.getAttribute("aria-label") || "").toLowerCase();
+        if (/turn on (the )?microphone|unmute microphone|bật (mic|micro)(rô)?|bật tiếng/.test(label)) return true;
+        if (/turn off (the )?microphone|mute microphone|tắt (mic|micro)(rô)?|tắt tiếng/.test(label)) return false;
+      }
+      return null;
     },
     // Chẩn đoán DOM: báo từng selector trúng/trượt + snippet thực tế để viết
     // selector khớp 100% thay vì đoán. Không thu nội dung nhạy cảm (cắt 300 ký tự).
@@ -588,6 +638,15 @@
         out.rosterNames = names.map((r) => r.name);
         return { count: names.length };
       });
+      probe("speaker:active", () => {
+        const value = meet.sampleActiveSpeaker();
+        const indicators = allMatches([
+          "[data-participant-id][data-speaking='true']", "[data-active-speaker='true']",
+          '[aria-label*="speaking" i]', '[aria-label*="đang nói" i]', '[aria-label*="đang phát biểu" i]',
+        ]);
+        return { name: value || "", indicatorCount: indicators.length, sample: snip(indicators[0]) };
+      });
+      probe("microphone:meet-state", () => ({ muted: meet.microphoneMuted() }));
       probe("roster:people-panel", () => {
         const panels = allMatches([
           '[aria-label*="People" i]',
