@@ -35,6 +35,8 @@ export interface ExtSession {
   audioManifest: string[];
   historyVersion?: number;
   meetingId?: string;
+  /** SHA-256 hashes of bearer tokens used to view this session publicly while live. */
+  publicTokenHashes?: string[];
 }
 
 const COLLECTION = "ext_sessions";
@@ -117,6 +119,27 @@ export async function getExtSession(id: string): Promise<ExtSession | null> {
   const snap = await db().collection(COLLECTION).doc(id).get();
   if (!snap.exists) return null;
   return snap.data() as ExtSession;
+}
+
+/** Store only a hash of a public live-view token. The raw token is shown once to its owner. */
+export async function addExtPublicTokenHash(
+  id: string,
+  ownerUid: string,
+  tokenHash: string
+): Promise<boolean> {
+  const ref = db().collection(COLLECTION).doc(id);
+  return db().runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) return false;
+    const session = snap.data() as ExtSession;
+    if (session.ownerUid !== ownerUid || session.status !== "live") return false;
+    const hashes = session.publicTokenHashes || [];
+    tx.update(ref, {
+      publicTokenHashes: [...hashes.slice(-99), tokenHash],
+      updatedAt: Date.now(),
+    });
+    return true;
+  });
 }
 
 /**

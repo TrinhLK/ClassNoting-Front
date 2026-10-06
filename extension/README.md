@@ -91,6 +91,10 @@ Họp mở: để trống để bot vào như khách.
 
 Xem [triển khai, cấu hình và giới hạn tích hợp](../docs/speaker-attribution/README.md). Tài liệu này thay thế mô tả cũ về giao thức audio và gán người nói.
 
-Extension `0.3.2` hiển thị trong popup trạng thái diarization của server, số người Meet đọc được và active-speaker gần nhất. Khi chữ vẫn về nhưng status báo `diarization tắt`, server đang chạy nhưng thiếu model/env; khi roster là `0`, bấm **Chẩn đoán tab Meet này** để xem selectors `roster:*` và `speaker:active`.
+Extension `0.3.4` có popup một thao tác: mở extension và bấm **Bắt đầu tab này** để tạo phiên và thu âm tab hiện tại. Cú bấm thủ công là xác nhận chỉ cho tab đó; tự động ghi khi mở Meet vẫn cần bật riêng trong **Cài đặt nâng cao**. Đăng nhập ClassNoting vẫn cần thiết để lưu biên bản. Các thao tác đổi tên, cấp quyền mic, danh sách phiên và chẩn đoán nằm trong phần nâng cao. Icon extension là sổ ghi chú, đồng bộ với icon web.
+
+Trạng thái diarization của server, số người Meet đọc được và active-speaker gần nhất nằm trong phần chẩn đoán. Khi chữ vẫn về nhưng status báo `diarization tắt`, server đang chạy nhưng thiếu model/env; khi roster là `0`, bấm **Chẩn đoán tab Meet** để xem selectors `roster:*` và `speaker:active`.
+
+Trên trang `/ext/[sessionId]`, chủ phiên bấm **Chia sẻ live** để copy link chỉ đọc. Người nhận không cần tài khoản hay tham gia cuộc họp; link cho phép xem transcript, người nói và chat khi phiên còn live. Khóa truy cập nằm trong URL fragment, server chỉ lưu hash, và API công khai không trả audio, link họp hoặc thông tin nội bộ của chủ phiên.
 
 Audio tab vẫn luôn được thu; mic thiết bị chỉ mở khi toolbar Meet xác nhận mic đang bật. Khi mic Meet tắt hoặc trạng thái chưa đọc được, luồng mic extension không được mở/đưa vào ASR. Sau khi cập nhật cần kết thúc phiên cũ, reload extension và tải lại tab Meet để offscreen document cũ được thay thế.

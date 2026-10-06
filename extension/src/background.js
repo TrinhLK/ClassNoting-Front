@@ -5,7 +5,7 @@
  */
 // Đổi theo manifest.json mỗi build — popup/diag hiện số này để biết chắc
 // cả 3 mảnh (popup/background/content) có đồng bộ không.
-const CODE_VERSION = "0.3.2";
+const CODE_VERSION = "0.3.4";
 const DEFAULT_APP_ORIGIN = "https://smart-noting.vercel.app";
 const FLUSH_MS = 2000;
 const HEARTBEAT_TIMEOUT_MS = 2 * 60 * 1000;
@@ -155,13 +155,13 @@ async function pushSession(tabId, sessionId) {
 }
 
 // ---- Đảm bảo session khi phát hiện phòng họp ----
-// opts.manual=true (nút "Bắt đầu tab này" trong popup): bỏ qua cờ autoStart,
-// nhưng vẫn yêu cầu consent một lần + đăng nhập.
+// opts.manual=true (nút "Bắt đầu tab này" trong popup): cú bấm xác nhận ghi
+// riêng tab hiện tại, không yêu cầu bật quyền tự động ghi.
 // tryEnsureSession trả { sessionId } hoặc { error, status } để popup chẩn đoán
 // chính xác (thay vì một message chung chung).
 async function tryEnsureSession(tabId, info, opts) {
   const { autoStart, consent } = await getSettings();
-  if (!consent) return { error: "no_consent" };
+  if (!opts?.manual && !consent) return { error: "no_consent" };
   if (!opts?.manual && !autoStart) return { error: "auto_off" };
   const existing = tabs.get(tabId);
   if (existing?.sessionId) {
@@ -461,8 +461,8 @@ function noteHeartbeat(tabId, t, msg) {
 // (server dedupe theo URL nên trả đúng sessionId cũ), không cần user bấm gì.
 async function recoverFromHeartbeat(tabId, msg) {
   if (!msg.url) return false;
-  const { consent } = await getSettings();
-  if (!consent) return false;
+  const { consent, autoStart } = await getSettings();
+  if (!consent || !autoStart) return false;
   const auth = await getAuth();
   if (!auth) return false;
   try {

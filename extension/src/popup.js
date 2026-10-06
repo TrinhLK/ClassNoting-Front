@@ -28,13 +28,14 @@
 
   // Thẻ live của tab hiện tại: tên + timer + số liệu từ server.
   function fillLiveCard(mine) {
-    const box = $("liveCard");
+    const box = $("activeSummary");
     if (timerHandle) {
       clearInterval(timerHandle);
       timerHandle = null;
     }
     if (!mine) {
       box.style.display = "none";
+      $("speakerDiag").style.display = "none";
       return;
     }
     box.style.display = "block";
@@ -56,13 +57,14 @@
             : "Meet mic chưa xác định; mic cục bộ bị khóa";
       diag.textContent = `Định danh: ${statuses.join(" · ") || "chưa nhận trạng thái từ ASR"}. Meet roster: ${rosterCount} người${active}. ${mic}.`;
       diag.style.color = statuses.some(s => s.includes("diarization tắt")) || rosterCount === 0 ? "#b45309" : "#475569";
+      diag.style.display = "block";
     }
     if (document.activeElement !== $("renameInput")) {
       $("renameInput").value = (srv && srv.title) || "";
     }
     const counts = srv
-      ? `${srv.participantCount || 0} người · ${srv.chatCount || 0} chat · ${srv.segmentCount || 0} câu`
-      : "";
+      ? `${srv.segmentCount || 0} câu nhận dạng · ${srv.participantCount || 0} người`
+      : "Đang khởi tạo phiên...";
     $("liveCounts").textContent = counts;
     const tick = () => {
       const cur = serverList.find((s) => s.sessionId === mine.sessionId);
@@ -76,28 +78,37 @@
   function render(st) {
     if ($("codeVersion")) $("codeVersion").textContent = st.codeVersion || "?";
     $("consentBox").style.display = st.consent ? "none" : "block";
-    $("autoStart").checked = st.autoStart !== false;
+    $("autoStart").checked = st.autoStart !== false && st.consent === true;
     $("appOrigin").value = st.appOrigin || "";
     const authEl = $("authState");
     if (st.authed) {
       authEl.textContent = st.email || "Đã đăng nhập";
       authEl.className = "ok";
       $("loginHint").style.display = "none";
+      $("loginBtn").style.display = "none";
     } else {
       authEl.textContent = "Chưa đăng nhập";
       authEl.className = "muted";
       $("loginHint").style.display = "block";
+      $("loginBtn").style.display = "block";
     }
     const live = st.liveTabs || [];
+    const mine = currentTabId != null ? live.find((t) => t.tabId === currentTabId) : null;
     const liveEl = $("liveState");
-    if (live.length > 0) {
-      liveEl.innerHTML = live.map((t) => `<span class="live">● ${t.provider || "meet"}</span>`).join(" ");
+    if (mine) {
+      liveEl.textContent = "Đang ghi cuộc họp";
+      $("statusDot").classList.add("live");
+    } else if (live.length > 0) {
+      liveEl.textContent = "Đang ghi ở tab khác";
+      $("statusDot").classList.add("live");
     } else {
-      liveEl.textContent = "Không có";
+      liveEl.textContent = "Sẵn sàng ghi";
+      $("statusDot").classList.remove("live");
     }
     // Tab hiện tại đang ghi → chỉ hiện nút Kết thúc; chưa ghi → chỉ hiện Bắt đầu.
-    const mine = currentTabId != null ? live.find((t) => t.tabId === currentTabId) : null;
     fillLiveCard(mine);
+    $("idleSummary").style.display = mine ? "none" : "block";
+    $("liveCard").style.display = "none";
     $("startBtn").style.display = mine ? "none" : "block";
     $("endBtn").style.display = mine ? "block" : "none";
     $("startBtn").style.flex = mine ? "" : "1";
@@ -160,18 +171,20 @@
   }
 
   $("consentBtn").addEventListener("click", () => {
+    $("autoStart").checked = true;
     chrome.runtime.sendMessage(
-      { type: "CN_SET_SETTINGS", consent: true, autoStart: $("autoStart").checked, appOrigin: $("appOrigin").value.trim() || undefined },
+      { type: "CN_SET_SETTINGS", consent: true, autoStart: true, appOrigin: $("appOrigin").value.trim() || undefined },
       () => refresh()
     );
   });
 
   $("saveBtn").addEventListener("click", () => {
+    const autoStart = $("autoStart").checked;
     chrome.runtime.sendMessage(
       {
         type: "CN_SET_SETTINGS",
-        consent: true,
-        autoStart: $("autoStart").checked,
+        consent: autoStart,
+        autoStart,
         appOrigin: $("appOrigin").value.trim(),
       },
       () => refresh()
@@ -179,7 +192,7 @@
   });
 
   const REASONS = {
-    no_consent: "Chưa đồng ý — bấm nút đồng ý ở trên trước.",
+    no_consent: "Cần bật quyền tự động ghi trong Cài đặt nâng cao.",
     no_auth: "Chưa đăng nhập — mở web app ClassNoting, đăng nhập, rồi F5 lại tab web.",
     token_expired: "Token hết hạn — mở web app, F5 lại tab web để đẩy token mới, rồi thử lại.",
     bad_link: "Tab này không phải link Google Meet được hỗ trợ.",
@@ -229,6 +242,12 @@
         }
         refresh();
       });
+    });
+  });
+
+  $("loginBtn").addEventListener("click", () => {
+    chrome.runtime.sendMessage({ type: "CN_GET_STATE" }, (st) => {
+      chrome.tabs.create({ url: (st && st.appOrigin) || "https://smart-noting.vercel.app" });
     });
   });
 

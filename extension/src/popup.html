@@ -2,59 +2,105 @@
 <html lang="vi">
 <head>
 <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
 <style>
-  body { width: 320px; margin: 0; font-family: system-ui, sans-serif; font-size: 13px; color: #1e293b; }
-  .wrap { padding: 14px; }
-  h1 { font-size: 15px; margin: 0 0 8px; }
-  .card { border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px; margin-bottom: 10px; background: #f8fafc; }
-  .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 6px 0; }
-  button { border: 0; border-radius: 8px; padding: 8px 12px; font-weight: 700; cursor: pointer; }
-  .primary { background: #4f46e5; color: #fff; width: 100%; }
-  .danger { background: #dc2626; color: #fff; }
-  .ghost { background: #e2e8f0; color: #334155; }
-  input[type=text] { width: 100%; box-sizing: border-box; padding: 7px; border: 1px solid #cbd5e1; border-radius: 8px; }
-  .muted { color: #64748b; font-size: 12px; line-height: 1.5; }
-  .live { color: #dc2626; font-weight: 700; }
-  .ok { color: #059669; font-weight: 700; }
-  label.switch { display: flex; align-items: center; gap: 8px; }
+  :root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #172033; background: #fff; }
+  * { box-sizing: border-box; }
+  body { width: 340px; margin: 0; font-size: 13px; }
+  .wrap { padding: 16px; }
+  .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 15px; }
+  .mark { display: block; width: 34px; height: 34px; padding: 3px; border-radius: 11px; background: #eeedff; object-fit: contain; }
+  h1 { font-size: 14px; line-height: 1.25; margin: 0; font-weight: 750; letter-spacing: -.2px; }
+  .subtitle { color: #748096; font-size: 11px; margin-top: 3px; }
+  .card { border: 1px solid #e6eaf1; border-radius: 14px; padding: 14px; background: #fff; }
+  .meeting { background: #f8f9fc; }
+  .status { display: flex; align-items: center; gap: 7px; color: #5d687d; font-size: 12px; margin-bottom: 12px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #94a3b8; }
+  .dot.live { background: #e23b43; box-shadow: 0 0 0 3px #ffe6e7; }
+  .meeting-name { color: #26324b; font-size: 13px; font-weight: 650; line-height: 1.4; margin: 0 0 4px; overflow-wrap: anywhere; }
+  .hint { color: #758198; font-size: 11px; line-height: 1.5; margin: 0 0 13px; }
+  button { border: 0; border-radius: 10px; min-height: 40px; padding: 9px 12px; font: inherit; font-weight: 700; cursor: pointer; transition: background .15s, transform .15s; }
+  button:active { transform: translateY(1px); }
+  button:disabled { cursor: wait; opacity: .65; }
+  .primary { display: block; width: 100%; background: #5145cd; color: white; font-size: 13px; }
+  .primary:hover { background: #4338b5; }
+  .danger { display: block; width: 100%; color: #fff; background: #d92d3a; }
+  .danger:hover { background: #bd2330; }
+  .ghost { background: #e9edf4; color: #34415a; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 8px 0; }
+  .meta { color: #778399; font-size: 11px; line-height: 1.5; }
+  .ok { color: #07845c; font-weight: 650; }
+  .liveText { color: #d92d3a; font-weight: 700; font-variant-numeric: tabular-nums; }
+  #liveCard { margin-top: 12px; padding-top: 11px; border-top: 1px solid #e3e7ef; }
+  #actionMsg { margin-top: 10px; padding: 9px 10px; border-radius: 9px; background: #f0f3fa; font-size: 11px; line-height: 1.45; overflow-wrap: anywhere; }
+  #loginHint { margin-top: 10px; color: #a34b11; font-size: 11px; line-height: 1.45; }
+  #loginBtn { margin-top: 9px; width: 100%; }
+  details { margin-top: 12px; }
+  summary { color: #66738a; cursor: pointer; font-size: 11px; font-weight: 650; padding: 4px 1px; user-select: none; }
+  .advanced { margin-top: 8px; padding: 12px; }
+  input[type=text] { width: 100%; min-width: 0; padding: 8px 9px; border: 1px solid #d7dce6; border-radius: 8px; font: inherit; }
+  label.switch { display: flex; align-items: flex-start; gap: 8px; line-height: 1.4; }
+  label.switch input { margin: 2px 0 0; }
+  textarea { width: 100%; height: 120px; font: 10px ui-monospace, monospace; }
+  .subsection { border-top: 1px solid #e6eaf1; padding-top: 9px; margin-top: 10px; }
+  .link { color: #5145cd; font-weight: 650; text-decoration: none; }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>ClassNoting — Ghi chú họp</h1>
-  <div id="consentBox" class="card" style="display:none">
-    <div class="muted">Khi bạn mở phòng họp Google Meet, extension sẽ <b>tự động</b> ghi chú người tham gia, chat và nội dung nói về tài khoản ClassNoting của bạn.</div>
-    <div class="row"><button id="consentBtn" class="primary">Tôi đồng ý, bật tự động</button></div>
-  </div>
-  <div class="card">
-    <div class="row"><span>Trạng thái đăng nhập</span><span id="authState" class="muted">...</span></div>
-    <div class="row"><span>Phiên đang ghi</span><span id="liveState" class="muted">...</span></div>
-    <div class="row">
-      <button id="startBtn" class="ghost">Bắt đầu tab này</button>
-      <button id="endBtn" class="danger">Kết thúc &amp; kết xuất</button>
+  <header class="brand">
+    <img class="mark" src="../icons/icon48.png" alt="" />
+    <div><h1>ClassNoting</h1><div class="subtitle">Ghi chú cuộc họp</div></div>
+  </header>
+
+  <main class="card meeting">
+    <div class="status"><span id="statusDot" class="dot"></span><span id="liveState">Sẵn sàng</span></div>
+    <div id="activeSummary" style="display:none">
+      <p id="liveTitle" class="meeting-name"></p>
+      <div class="row" style="margin:0 0 12px"><span id="liveCounts" class="meta"></span><span id="liveTimer" class="liveText"></span></div>
     </div>
-    <div id="liveCard" style="display:none">
-      <div class="row"><span id="liveTitle" class="ok" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px;"></span><span id="liveTimer" class="live"></span></div>
-      <div class="row"><span id="liveCounts" class="muted"></span></div>
-      <div id="speakerDiag" class="muted" style="margin:6px 0 10px;line-height:1.5"></div>
-      <div class="row"><input type="text" id="renameInput" maxlength="120" placeholder="Đổi tên bản ghi..." /></div>
-      <div class="row"><button id="renameBtn" class="ghost">Đổi tên</button></div>
+    <div id="idleSummary">
+      <p class="meeting-name">Ghi âm tab đang mở</p>
+      <p class="hint">Thu âm thanh của tab cuộc họp. Mic chỉ được thu khi mic Meet đang bật.</p>
     </div>
-    <div id="loginHint" class="muted" style="display:none">Chưa nhận token — hãy mở web app ClassNoting và đăng nhập, rồi mở lại popup.</div>
-    <div class="row"><span>Micro của bạn</span><span id="micState" class="muted">...</span></div>
-    <div class="row"><button id="micBtn" class="ghost" style="flex:1">Cho phép micro</button></div>
-    <div id="actionMsg" class="muted" style="display:none"></div>
-    <div id="serverSessions" style="display:none"></div>
-  </div>
-  <div class="card">
-    <div class="row"><span class="muted">Extension bản</span><span id="codeVersion" class="muted">...</span></div>
-    <div class="row"><label class="switch"><input type="checkbox" id="autoStart" /> Tự động khi mở phòng họp</label></div>
-    <div class="muted">Địa chỉ web app</div>
-    <div class="row"><input type="text" id="appOrigin" placeholder="https://smart-noting.vercel.app" /></div>
-    <div class="row"><button id="saveBtn" class="ghost">Lưu cài đặt</button></div>
-    <div class="row"><button id="diagBtn" class="ghost" style="flex:1">Chẩn đoán tab Meet này</button></div>
-    <div class="row"><textarea id="diagOut" style="display:none;width:100%;box-sizing:border-box;height:120px;font-size:11px;font-family:monospace;" readonly placeholder="Kết quả chẩn đoán DOM..."></textarea></div>
-  </div>
+    <button id="startBtn" class="primary">Bắt đầu tab này</button>
+    <button id="endBtn" class="danger" style="display:none">Kết thúc &amp; tạo biên bản</button>
+    <div id="actionMsg" style="display:none"></div>
+    <div id="liveCard" style="display:none"></div>
+    <div id="loginHint" style="display:none">Cần đăng nhập ClassNoting một lần để lưu biên bản.</div>
+    <button id="loginBtn" class="ghost" style="display:none">Đăng nhập ClassNoting</button>
+  </main>
+
+  <details>
+    <summary>Cài đặt nâng cao</summary>
+    <div class="card advanced">
+      <div class="meta" style="margin-bottom:8px">Đăng nhập: <span id="authState" class="meta">...</span></div>
+      <label class="switch"><input type="checkbox" id="autoStart" /> Tự động ghi khi mở phòng họp</label>
+      <p class="meta" style="margin:5px 0 9px 23px">Chỉ bật nếu bạn muốn extension tự bắt đầu phiên.</p>
+      <div id="consentBox" class="subsection" style="display:none">
+        <div class="meta">Tự động ghi cần quyền đồng ý riêng. Ghi thủ công bằng nút phía trên chỉ áp dụng cho tab này.</div>
+        <div class="row"><button id="consentBtn" class="ghost" style="width:100%">Bật tự động ghi</button></div>
+      </div>
+      <div class="subsection">
+        <div class="meta">Tên bản ghi</div>
+        <div class="row"><input type="text" id="renameInput" maxlength="120" placeholder="Đổi tên bản ghi..." /></div>
+        <button id="renameBtn" class="ghost">Lưu tên</button>
+      </div>
+      <div class="subsection">
+        <div class="row"><span class="meta">Quyền micro</span><span id="micState" class="meta">...</span></div>
+        <button id="micBtn" class="ghost">Cấp quyền micro</button>
+      </div>
+      <div class="subsection">
+        <div class="meta">Địa chỉ web app</div>
+        <div class="row"><input type="text" id="appOrigin" placeholder="https://smart-noting.vercel.app" /></div>
+        <button id="saveBtn" class="ghost">Lưu cài đặt</button>
+      </div>
+      <div class="row"><button id="diagBtn" class="ghost" style="flex:1">Chẩn đoán tab Meet</button><span class="meta">v<span id="codeVersion">...</span></span></div>
+      <textarea id="diagOut" style="display:none" readonly placeholder="Kết quả chẩn đoán DOM..."></textarea>
+      <div id="serverSessions" class="subsection" style="display:none"></div>
+      <div id="speakerDiag" class="subsection meta" style="display:none"></div>
+    </div>
+  </details>
 </div>
 <script src="./popup.js"></script>
 </body>
