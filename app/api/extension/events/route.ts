@@ -64,15 +64,22 @@ function sanitizeEvents(raw: unknown): {
               id: String(s.id ?? `seg_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`),
               speaker: String(s.speaker ?? "SPEAKER_00").trim() || "SPEAKER_00",
               text: String(s.text).slice(0, 2000),
-              start: Number(s.start) || 0,
-              end: Math.max(Number(s.end) || 0, Number(s.start) || 0),
+              start: Number.isFinite(s.start) ? Math.max(0, s.start) : 0,
+              end: Number.isFinite(s.end) ? Math.max(s.end, Number.isFinite(s.start) ? s.start : 0, 0) : 0,
             };
-            if (s.uncertain === true) seg.uncertain = true;
+            seg.uncertain = s.uncertain !== false;
+            if (typeof s.voiceId === "string") seg.voiceId = s.voiceId.slice(0, 160);
+            if (typeof s.participantId === "string") seg.participantId = s.participantId.slice(0, 160);
+            if (["diarization", "caption", "active-speaker", "platform", "unknown"].includes(s.speakerSource || "")) seg.speakerSource = s.speakerSource;
+            seg.revision = Number.isSafeInteger(s.revision) && s.revision! > 0 ? s.revision : 1;
+            if (Array.isArray(s.words)) seg.words = s.words.slice(0, 500).filter(w => Number.isFinite(w.start) && Number.isFinite(w.end)).map(w => ({ word: String(w.word).slice(0, 200), start: w.start, end: Math.max(w.start, w.end) }));
             return seg;
           })
       );
     }
   }
+  if (out.chat) out.chat = out.chat.slice(0, MAX_BATCH);
+  if (out.transcript) out.transcript = out.transcript.slice(0, MAX_BATCH);
   return out;
 }
 

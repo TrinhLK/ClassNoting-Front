@@ -37,18 +37,17 @@ export function mergeMeetingDocs(existing: Meeting | null, incoming: Meeting): M
   const speakers = unionById(existing.speakers || [], incoming.speakers || []);
   const chatMessages = unionById(existing.chatMessages || [], incoming.chatMessages || [])
     .filter((m: ChatMessage) => (m.text || "").trim() !== "")
-    .sort((a, b) => a.timestamp - b.timestamp)
-    .slice(-MERGED_CHAT_CAP);
+    .sort((a, b) => a.timestamp - b.timestamp);
 
   const seenNames = new Set(
     (existing.participants || []).map((p: MeetingParticipant) =>
-      normName(p.displayName || p.name || "")
+      String(p.id ?? normName(p.displayName || p.name || ""))
     )
   );
   const participants = [
     ...(existing.participants || []),
     ...(incoming.participants || []).filter((p) => {
-      const key = normName(p.displayName || p.name || "");
+      const key = String(p.id ?? normName(p.displayName || p.name || ""));
       if (!key || seenNames.has(key)) return false;
       seenNames.add(key);
       return true;

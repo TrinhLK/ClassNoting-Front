@@ -1,3 +1,4 @@
+import { memoryFirestore } from "@/tests/helpers/admin-firestore";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { makeRequest } from "@/tests/helpers/fixtures";
 
@@ -5,52 +6,7 @@ import { makeRequest } from "@/tests/helpers/fixtures";
 const store = new Map<string, any>();
 let idCounter = 0;
 
-const fakeDb = {
-  collection: (name: string) => ({
-    doc: (id?: string) => {
-      const docId = id ?? `doc_${++idCounter}`;
-      return {
-        id: docId,
-        set: async (data: any) => {
-          store.set(`${name}/${docId}`, data);
-        },
-        // Tạo-nếu-chưa-có: trùng id thì ném ALREADY_EXISTS (code 6) như Admin SDK.
-        create: async (data: Record<string, unknown>) => {
-          if (store.has(`${name}/${docId}`)) {
-            const err = new Error("ALREADY_EXISTS") as Error & { code: number };
-            err.code = 6;
-            throw err;
-          }
-          store.set(`${name}/${docId}`, data);
-        },
-        get: async () => {
-          const d = store.get(`${name}/${docId}`);
-          return { exists: !!d, data: () => d };
-        },
-      };
-    },
-    where: (field: string, _op: string, value: any) => {
-      const filters = [{ field, value }];
-      const collect = (n?: number) => {
-        const docs = [...store.entries()]
-          .filter(([k]) => k.startsWith(name + "/"))
-          .map(([k, v]) => ({ id: k.split("/")[1], data: () => v }))
-          .filter((d) => filters.every((f) => d.data()?.[f.field] === f.value));
-        const sliced = n ? docs.slice(0, n) : docs;
-        return { empty: sliced.length === 0, docs: sliced };
-      };
-      const q: any = {
-        where: (f: string, o: string, v: any) => {
-          filters.push({ field: f, value: v });
-          return q;
-        },
-        limit: (n: number) => ({ get: async () => collect(n) }),
-        get: async () => collect(),
-      };
-      return q;
-    },
-  }),
-};
+const fakeDb = memoryFirestore(store);
 
 vi.mock("@/app/lib/firebase-admin", () => ({
   getAdminAuth: () => ({

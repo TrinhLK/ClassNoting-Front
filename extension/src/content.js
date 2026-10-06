@@ -8,7 +8,7 @@
 
   // Đồng bộ với manifest.json — hiện trong ô chẩn đoán để biết tab đang
   // chạy content bản nào (tránh cãi nhau chuyện reload chưa).
-  const CODE_VERSION = "0.2.2";
+  const CODE_VERSION = "0.3.0";
 
   const shared = globalThis.ClassNotingShared;
   const platforms = globalThis.ClassNotingPlatforms;
@@ -119,8 +119,8 @@
       id: "cap_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8),
       speaker: p.name || "",
       text: p.text,
-      start: now - Math.max(4, p.text.length / 15),
-      end: now,
+      start: p.firstSeen,
+      end: p.lastSeen,
     });
   }
 
@@ -149,7 +149,7 @@
     const body = captionBody(parsed.text);
     if (!body) return;
     if (
-      pendingCaption &&
+      pendingCaption && (!speaker || !pendingCaption.name || speaker === pendingCaption.name) &&
       platform.shouldMergeCaption({ body: captionBody(pendingCaption.text) }, { body })
     ) {
       clearTimeout(pendingCaption.timer);
@@ -158,11 +158,14 @@
         pendingCaption.text = body;
       }
       if (speaker) pendingCaption.name = speaker;
+      pendingCaption.lastSeen = Date.now() / 1000;
     } else {
       flushPendingCaption();
       pendingCaption = {
         name: speaker,
         text: body,
+        firstSeen: Date.now() / 1000,
+        lastSeen: Date.now() / 1000,
         timer: setTimeout(flushPendingCaption, CAPTION_SETTLE_MS),
       };
       return;
@@ -325,6 +328,7 @@
         lastActive = { name, ts: now };
       }
     }
+    if (!name) lastActive = { name: "", ts: now };
     // Gửi spans mới về background để fusion với ASR.
     send({ type: "CN_SPANS", spans: activeSpans.slice(-50), sessionId: sessionId || undefined });
   }, 500);

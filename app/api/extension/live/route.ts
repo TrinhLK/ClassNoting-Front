@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { checkRateLimit } from "@/app/lib/rate-limit";
 import { verifyExtensionAuth } from "@/app/lib/extension-auth";
-import { listLiveSessions, normalizeMeetingUrl } from "@/app/lib/ext-sessions";
+import { listLiveSessions, normalizeMeetingUrl, getExtSession } from "@/app/lib/ext-sessions";
 import { endStaleSessions } from "@/app/lib/ext-finalize";
 
 export const dynamic = "force-dynamic";
@@ -20,6 +20,12 @@ export async function GET(req: Request) {
   if (!allowed) return NextResponse.json({ error: "Too many requests" }, { status: 429 });
 
   const { searchParams } = new URL(req.url);
+  const sessionId = searchParams.get("sessionId");
+  if (sessionId) {
+    const session = await getExtSession(sessionId);
+    if (!session || session.ownerUid !== auth.uid) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return NextResponse.json({ sessionId, startedAt: session.startedAt });
+  }
   const meetingUrl = (searchParams.get("meetingUrl") || "").trim();
   if (!meetingUrl) return NextResponse.json({ error: "Missing meetingUrl" }, { status: 400 });
 

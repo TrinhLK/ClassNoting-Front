@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { formatTranscriptText, formatWords } from "../lib/utils";
 import {
     downsampleBuffer,
-    SILENCE_BUFFER,
+    splitSpeakerTurns,
     MAX_AUDIO_BUFFER_SIZE,
     CONNECT_TIMEOUT_MS,
     MAX_RECONNECT_ATTEMPTS,
@@ -27,6 +27,10 @@ export default function useLocalTranscription(
     const [connectionError, setConnectionError] = useState<string | null>(null);
 
     // --- REFS ---
+    const drainRef = useRef<Promise<void> | null>(null);
+    const samplesRef = useRef(0);
+    const protocolRef = useRef(0);
+    const speakerMapRef = useRef(new Map<string, number>());
     const socketRef = useRef<WebSocket | null>(null);
     const audioContextRef = useRef<AudioContext | null>(null);
     const processorRef = useRef<ScriptProcessorNode | null>(null);
@@ -62,7 +66,10 @@ export default function useLocalTranscription(
     }, [onPermanentError]);
 
     const handleServerResponse = useCallback((data: any) => {
-        const packet = parseServerMessage(data);
+        if (data?.type === "ready") { protocolRef.current = data.protocol || 1; return; }
+        const parsed = parseServerMessage(data);
+        if (!parsed) return;
+        for (const packet of splitSpeakerTurns(parsed)) {
         // null = keepalive / message rỗng / sai định dạng → bỏ qua.
         if (!packet) return;
 
@@ -90,26 +97,31 @@ export default function useLocalTranscription(
 
             return {
                 ...w,
-                start: normStart + offsetTimeRef.current,
-                end: normEnd + offsetTimeRef.current
+                start: packet.protocol === 2 ? w.start : normStart + offsetTimeRef.current,
+                end: packet.protocol === 2 ? w.end : normEnd + offsetTimeRef.current
             };
         });
 
         const words = formatWords(rawWords);
 
-        if (onFinal) onFinal({ speaker: 0, content: transcript });
+        const key = `${packet.speakerScope || "legacy"}:${packet.serverSpeaker}`;
+        if (packet.serverSpeaker >= 0 && !speakerMapRef.current.has(key))
+            speakerMapRef.current.set(key, speakerMapRef.current.size);
+        const speaker = packet.serverSpeaker < 0 ? -1 : speakerMapRef.current.get(key)!;
+        if (onFinal) onFinal({ speaker, content: transcript });
 
         setSegments(prev => {
             const result = mergeFinalSegment(
                 prev,
                 transcript,
                 words,
-                packet.serverSpeaker,
+                speaker,
                 lastEndTimestampRef.current
             );
             lastEndTimestampRef.current = result.lastEnd;
-            return result.segments;
+            return result.segments.map(s => ({ ...s, uncertain: s.speaker < 0 }));
         });
+        }
     }, [onFinal]);
 
     const setupWebSocket = useCallback((language: string) => {
@@ -124,6 +136,7 @@ export default function useLocalTranscription(
 
         if (connectTimeoutRef.current) clearTimeout(connectTimeoutRef.current);
 
+        protocolRef.current = 0;
         const finalUrl = buildRealtimeUrl(serverUrl, language);
         const ws = new WebSocket(finalUrl);
         socketRef.current = ws;
@@ -150,22 +163,12 @@ export default function useLocalTranscription(
                 audioContextRef.current.resume().catch(() => {});
             }
 
-            // [P1] Flush audio buffer đã tích lũy trong lúc mất kết nối
-            if (audioBufferRef.current.length > 0) {
-                const buffered = audioBufferRef.current.splice(0);
-                for (const chunk of buffered) {
-                    if (ws.readyState === WebSocket.OPEN) {
-                        ws.send(chunk.buffer);
-                    }
-                }
-            }
-
             if (heartbeatRef.current) clearInterval(heartbeatRef.current);
 
             // [P0+P2] Heartbeat: gửi silence buffer 16kHz mỗi 8s — giữ connection sống trước Cloudflare idle timeout
             heartbeatRef.current = setInterval(() => {
                 if (ws.readyState === WebSocket.OPEN) {
-                    ws.send(SILENCE_BUFFER.buffer);
+                    if (protocolRef.current >= 2) ws.send(JSON.stringify({ type: "ping" }));
                 }
             }, 8000);
         };
@@ -231,6 +234,7 @@ export default function useLocalTranscription(
     }, [serverUrl, handleServerResponse]);
 
     const startListening = async (rawStream: MediaStream, startTimeOffset: number = 0, language: string = "vi") => {
+        await drainRef.current;
         offsetTimeRef.current = startTimeOffset;
         startTimeOffsetRef.current = startTimeOffset;
         languageRef.current = language;
@@ -239,6 +243,8 @@ export default function useLocalTranscription(
         setIsListening(true);
         serverStartOffsetRef.current = null;
         audioBufferRef.current = [];
+        samplesRef.current = Math.round(startTimeOffset * 16000);
+        if (startTimeOffset === 0) speakerMapRef.current.clear();
 
         // [FIX] Reset toàn bộ trạng thái retry cho phiên ghi âm mới
         if (reconnectTimeoutRef.current) {
@@ -272,30 +278,22 @@ export default function useLocalTranscription(
             processor.onaudioprocess = (e) => {
                 const ws = socketRef.current;
 
-                // [P1] Nếu WebSocket không open -> buffer audio thay vì drop
-                if (!ws || ws.readyState !== WebSocket.OPEN) {
-                    if (isReconnectingRef.current) {
-                        const inputData = e.inputBuffer.getChannelData(0);
-                        const pcmData = downsampleBuffer(inputData, audioContext.sampleRate, 16000);
-                        audioBufferRef.current.push(pcmData);
-                        // Giới hạn bộ nhớ: giữ tối đa ~5 giây
-                        if (audioBufferRef.current.length > MAX_AUDIO_BUFFER_SIZE) {
-                            audioBufferRef.current.shift();
-                        }
-                    }
+                const pcmData = downsampleBuffer(e.inputBuffer.getChannelData(0), audioContext.sampleRate, 16000);
+                const offset = samplesRef.current / 16000;
+                samplesRef.current += pcmData.length;
+                if (!ws || ws.readyState !== WebSocket.OPEN || protocolRef.current < 2) {
+                    audioBufferRef.current.push(pcmData);
+                    if (audioBufferRef.current.length > MAX_AUDIO_BUFFER_SIZE) audioBufferRef.current.shift();
                     return;
                 }
-
-                // Flush buffer trước khi gửi audio mới
-                if (audioBufferRef.current.length > 0) {
-                    const buffered = audioBufferRef.current.splice(0);
-                    for (const chunk of buffered) {
-                        ws.send(chunk.buffer);
-                    }
+                const buffered = audioBufferRef.current.splice(0);
+                const bufferedSamples = buffered.reduce((sum, c) => sum + c.length, 0);
+                if (buffered.length) {
+                    offsetTimeRef.current = offset - bufferedSamples / 16000;
+                    if (protocolRef.current >= 2) ws.send(JSON.stringify({ type: "audio_clock", offset: offsetTimeRef.current }));
+                    for (const chunk of buffered) ws.send(chunk.buffer);
                 }
-
-                const inputData = e.inputBuffer.getChannelData(0);
-                const pcmData = downsampleBuffer(inputData, audioContext.sampleRate, 16000);
+                if (protocolRef.current >= 2) ws.send(JSON.stringify({ type: "audio_clock", offset }));
                 ws.send(pcmData.buffer);
             };
         }
@@ -303,6 +301,8 @@ export default function useLocalTranscription(
     };
 
     const stopListening = () => {
+        if (drainRef.current) return drainRef.current;
+        const draining = (async () => {
         isListeningRef.current = false;
         setIsListening(false);
         if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
@@ -316,7 +316,18 @@ export default function useLocalTranscription(
 
         // [FIX] Đánh dấu close do client -> onclose sẽ không retry
         clientCloseRef.current = true;
-        socketRef.current?.close(1000, "User stopped");
+        const closingSocket = socketRef.current;
+        processorRef.current?.disconnect();
+        if (closingSocket?.readyState === WebSocket.OPEN && protocolRef.current >= 2) {
+            await new Promise<void>(resolve => {
+                const finish = () => { clearTimeout(timeout); closingSocket.removeEventListener("message", handler); resolve(); };
+                const handler = (event: MessageEvent) => { try { if (JSON.parse(event.data).type === "flushed") finish(); } catch { /* binary */ } };
+                const timeout = setTimeout(finish, 20000);
+                closingSocket.addEventListener("message", handler);
+                closingSocket.send(JSON.stringify({ type: "flush" }));
+            });
+        }
+        closingSocket?.close(1000, "User stopped");
 
         if (processorRef.current) {
             processorRef.current.disconnect();
@@ -326,6 +337,11 @@ export default function useLocalTranscription(
             audioContextRef.current.close().catch(() => {});
             audioContextRef.current = null;
         }
+
+        })();
+        drainRef.current = draining;
+        void draining.finally(() => { drainRef.current = null; });
+        return draining;
     };
 
     // [P1] Tự kết nối lại NGAY khi máy có mạng trở lại (thay vì chờ backoff tiếp)
@@ -361,6 +377,7 @@ export default function useLocalTranscription(
 
     const resetTranscript = () => {
         setSegments([]);
+        speakerMapRef.current.clear();
         setInterimContent("");
     };
 

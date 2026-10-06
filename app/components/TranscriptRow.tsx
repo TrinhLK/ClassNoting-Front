@@ -237,7 +237,7 @@ function TranscriptRow({
             }}
             className={`text-xs font-bold px-2 py-1 rounded border flex items-center gap-1 transition-colors ${speaker.color}`}
           >
-            {speaker.name}
+            {speaker.name}{segment.uncertain && <span className="ml-2 text-amber-600 text-xs" title="Danh tính người nói chưa được xác nhận">Chưa xác nhận</span>}
             <ChevronDown className="w-3 h-3 opacity-50" />
           </button>
 

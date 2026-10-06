@@ -1,4 +1,5 @@
 "use client";
+import { meetingEvidence } from "../lib/meeting-evidence";
 import { useState, useCallback } from "react";
 import { Meeting, generateMeetingShareToken } from "../lib/db";
 import type { MeetingTemplate } from "../lib/templates";
@@ -36,10 +37,7 @@ export function useMeetingDetail(
 
   const handleSummarizeRequest = useCallback((template: MeetingTemplate) => {
     if (!onSummarize) return;
-    const fullText = meeting.segments.map((s: Segment) => {
-      const name = meeting.speakers.find((sp: Speaker) => sp.id === s.speakerId)?.name || `Speaker ${s.speakerId.split("_")[1] || "00"}`;
-      return `[${formatTime(s.start)}] [${name}]: ${s.text}`;
-    }).join("\n");
+    const fullText = meetingEvidence(meeting);
     onSummarize(meeting, fullText, template.structure);
     toast?.info(`Đang tóm tắt theo mẫu: ${template.name}...`);
     setShowTemplateModal(false);

@@ -86,3 +86,7 @@ Họp mở: để trống để bot vào như khách.
 - Khai báo quyền `tabCapture`, `tabs`, `notifications` + chính sách quyền riêng tư
   (chỉ thu tab họp Meet, token trong `chrome.storage.session`, không log nội dung chat).
 - Chuẩn bị screenshot popup + trang `/ext/[id]` live.
+
+## Speaker attribution v0.3
+
+Xem [triển khai, cấu hình và giới hạn tích hợp](../docs/speaker-attribution/README.md). Tài liệu này thay thế mô tả cũ về giao thức audio và gán người nói.

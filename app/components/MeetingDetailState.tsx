@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useMemo, useRef, useState } from "react";
+import RefinementControl from "./Meeting/RefinementControl";
 import { Sparkles, FileText as FileIcon, Share2, AlignLeft, MessageSquare } from "lucide-react";
 import { Meeting } from "../lib/db";
 import type { Segment, Speaker, ChatMessage } from "../lib/db";
@@ -77,7 +78,7 @@ export default function MeetingDetailState({
       ...chatMessages.map((msg) => ({ kind: "chat" as const, msg })),
     ];
     const timeOf = (it: TimelineItem) =>
-      it.kind === "segment" ? it.seg.start : it.msg.timestamp / 1000;
+      it.kind === "segment" ? it.seg.start : (it.msg.timestamp - meeting.createdAt) / 1000;
     return items.sort((a, b) => timeOf(a) - timeOf(b));
   }, [filteredSegments, chatMessages, hasChat]);
 
@@ -99,6 +100,7 @@ export default function MeetingDetailState({
 
   return (
     <div className="flex flex-col h-full bg-slate-50 font-sans text-slate-900">
+      {!isReadOnly && <RefinementControl meeting={meeting} onUpdate={setMeeting} />}
       <MeetingHeader
         meeting={meeting}
         isReadOnly={isReadOnly}

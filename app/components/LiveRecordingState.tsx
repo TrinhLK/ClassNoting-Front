@@ -1,6 +1,7 @@
 "use client";
+import { speakersFromSegments } from "../lib/realtime-protocol";
 
-import React, { useCallback, useState, useEffect, useRef } from "react";
+import React, { useCallback, useMemo, useState, useEffect, useRef } from "react";
 import { Sparkles, AlignLeft, AlertCircle } from "lucide-react";
 import { requestSegmentSummary, uploadAudioToFirebase } from "../lib/api";
 import { saveMeeting, createLiveSession, updateLiveSession, endLiveSession } from "../lib/db";
@@ -216,10 +217,22 @@ export default function LiveRecordingState({
 
   // [P0] Nhận thông báo mất kết nối VĨNH VIỄN từ hook (dùng ref để không phụ thuộc thứ tự khai báo)
   const onPermanentErrorRef = useRef<(code: number) => void>(() => {});
-  const { segments, interimContent, isListening, connectionError, startListening, stopListening, resetTranscript } = useLocalTranscription(
-    handleDeepgramFinal,
-    (code: number) => onPermanentErrorRef.current(code)
-  );
+  const localASR = useLocalTranscription(handleDeepgramFinal, (code: number) => onPermanentErrorRef.current(code));
+  const remoteFinal = useCallback(({ speaker, content }: { speaker: number; content: string }) =>
+    handleDeepgramFinal({ speaker: speaker < 0 ? -1 : speaker + 10000, content }), [handleDeepgramFinal]);
+  const remoteASR = useLocalTranscription(remoteFinal, (code: number) => onPermanentErrorRef.current(code));
+  const segments = useMemo(() => [...localASR.segments,
+    ...remoteASR.segments.map(s => ({ ...s, speaker: s.speaker < 0 ? -1 : s.speaker + 10000 }))
+  ].sort((a, b) => (a.words?.[0]?.start || 0) - (b.words?.[0]?.start || 0)), [localASR.segments, remoteASR.segments]);
+  const interimContent = [localASR.interimContent, remoteASR.interimContent].filter(Boolean).join(" · ");
+  const isListening = localASR.isListening || remoteASR.isListening;
+  const connectionError = localASR.connectionError || remoteASR.connectionError;
+  const startListening = async (stream: MediaStream, offset: number, lang: string) => {
+    await localASR.startListening(micStreamRef.current || stream, offset, lang);
+    if (sysStreamRef.current) await remoteASR.startListening(new MediaStream(sysStreamRef.current.getAudioTracks()), offset, lang);
+  };
+  const stopListening = async () => { await Promise.all([localASR.stopListening(), remoteASR.stopListening()]); };
+  const resetTranscript = () => { localASR.resetTranscript(); remoteASR.resetTranscript(); };
 
 
   useEffect(() => {
@@ -264,6 +277,7 @@ export default function LiveRecordingState({
           end: s.words?.[s.words.length - 1]?.end || 0,
           text: s.content,
           speakerId: `SPEAKER_${String(s.speaker).padStart(2, '0')}`,
+          uncertain: s.speaker < 0 || s.uncertain === true,
           words: s.words || []
         }));
 
@@ -312,7 +326,7 @@ export default function LiveRecordingState({
           duration: timer,
           segments: finalSegments,
           summary: finalSummary,
-          speakers: [{ id: "SPEAKER_00", name: "Người nói (Live)", color: "bg-indigo-50 text-indigo-700" }],
+          speakers: speakersFromSegments(finalSegments),
           isDeleted: false,
           objectives: objectives.trim() || undefined
         });
@@ -559,8 +573,8 @@ export default function LiveRecordingState({
     } catch (err) { toast.error("Lỗi Micro/Permission: " + err); }
   }, [captureSystemAudio, language, timer, user, meetingTitle, startListening, setupVisualizer, requestWakeLock, handeFullStop]);
 
-  const stopRecordingSession = useCallback(() => {
-    stopListening();
+  const stopRecordingSession = useCallback(async () => {
+    const draining = stopListening();
     releaseWakeLock();
 
     if (mediaRecorderRef.current?.state === "recording") {
@@ -569,6 +583,7 @@ export default function LiveRecordingState({
 
     if (animationRef.current) cancelAnimationFrame(animationRef.current);
     setVolume(0);
+    await draining;
   }, [stopListening, releaseWakeLock]);
 
   // [P0] Server ASR chết hẳn sau 5 lần retry -> dừng ghi nền, giữ nguyên dữ liệu, báo user bấm nút để nối lại
@@ -635,7 +650,7 @@ export default function LiveRecordingState({
     if (!user) return toast.error("Vui lòng đăng nhập!");
 
     // 1. Dừng ghi âm
-    stopRecordingSession();
+    await stopRecordingSession();
     handeFullStop();
 
     setIsUploading(true);
@@ -669,7 +684,7 @@ export default function LiveRecordingState({
       // Lấy luôn dữ liệu từ biến 'segments' và 'summaries' có sẵn trên màn hình.
 
       // Chuẩn hóa segments từ Google STT sang format của DB
-      const finalSegments = segments.map((s, idx) => ({
+      const finalSegments = latestStateRef.current.segments.map((s, idx) => ({
         id: `seg_${idx}_${Date.now()}`,
         start: s.words?.[0]?.start || 0,
         end: s.words?.[s.words.length - 1]?.end || 0,
@@ -685,8 +700,9 @@ export default function LiveRecordingState({
         .join("\n\n");
 
       // 4. Lưu vào Firestore với trạng thái COMPLETED (Xong luôn)
+      const savedMeetingId = crypto.randomUUID();
       await saveMeeting({
-        id: crypto.randomUUID(),
+        id: savedMeetingId,
         userId: user.uid,
         title: meetingTitle.trim() || fileName.replace(".mp3", ""),
         createdAt: Date.now(),
@@ -699,7 +715,7 @@ export default function LiveRecordingState({
 
         segments: finalSegments, // Lưu text live
         summary: finalSummary,   // Lưu summary live
-        speakers: [{ id: "SPEAKER_00", name: "Người nói (Live)", color: "bg-indigo-50 text-indigo-700" }],
+        speakers: speakersFromSegments(finalSegments),
         isDeleted: false,
         objectives: objectives.trim() || undefined
       });
@@ -711,6 +727,12 @@ export default function LiveRecordingState({
         console.error("Failed to delete draft:", err);
       }
 
+      // Queue the full-audio pass; failure must not discard the saved live transcript.
+      try {
+        const token = await user.getIdToken();
+        const res = await fetch(`/api/meetings/${savedMeetingId}/refine`, { method: "POST", headers: { Authorization: `Bearer ${token}` } });
+        if (!res.ok) toast.warning("Đã lưu cuộc họp. Chưa chạy được hậu xử lý; có thể thử lại trong chi tiết.");
+      } catch { toast.warning("Đã lưu cuộc họp; hậu xử lý sẽ cần thử lại."); }
       // 5. Xong -> Quay về Dashboard
       onFinish();
 

@@ -27,7 +27,7 @@ export async function POST(req: Request) {
   if (!meetingUrl) return NextResponse.json({ error: "Missing meetingUrl" }, { status: 400 });
 
   const provider = detectProvider(meetingUrl);
-  if (!provider) {
+  if (provider !== "meet") {
     return NextResponse.json(
       { error: "Link không thuộc Google Meet được hỗ trợ." },
       { status: 400 }
@@ -55,7 +55,7 @@ export async function POST(req: Request) {
       provider,
       title,
     });
-    return NextResponse.json({ sessionId: session.id, provider, reused });
+    return NextResponse.json({ sessionId: session.id, provider, reused, startedAt: session.startedAt });
   } catch (e) {
     console.error("[ext/session] create failed:", e);
     return NextResponse.json({ error: "Internal Error" }, { status: 500 });

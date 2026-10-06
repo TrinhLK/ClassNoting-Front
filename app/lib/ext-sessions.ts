@@ -2,7 +2,7 @@ import { getAdminDb } from "@/app/lib/firebase-admin";
 import type { ChatMessage, MeetingParticipant } from "@/app/lib/db";
 import type { MeetingProvider } from "@/app/lib/meeting-links";
 
-export type ExtSessionStatus = "live" | "ended";
+export type ExtSessionStatus = "live" | "finalizing" | "ended";
 
 /** Một dòng transcript live đã gán tên người nói (từ extension). */
 export interface ExtLiveSegment {
@@ -12,6 +12,11 @@ export interface ExtLiveSegment {
   start: number;
   end: number;
   uncertain?: boolean;
+  participantId?: string;
+  voiceId?: string;
+  speakerSource?: import("./mockData").Segment["speakerSource"];
+  words?: import("./mockData").Word[];
+  revision?: number;
 }
 
 export interface ExtSession {
@@ -28,6 +33,7 @@ export interface ExtSession {
   liveSegments: ExtLiveSegment[];
   /** Đường dẫn các chunk audio đã upload (Storage), để ghép khi end. */
   audioManifest: string[];
+  historyVersion?: number;
   meetingId?: string;
 }
 
@@ -41,12 +47,13 @@ export const EXT_MAX_SEGMENTS = 2000;
  * KHÔNG dùng cho link cần query như Zoom — ngoài phạm vi sản phẩm).
  */
 export function normalizeMeetingUrl(rawUrl: string): string {
-  return rawUrl
-    .trim()
-    .split("#")[0]
-    .split("?")[0]
-    .replace(/\/+$/, "")
-    .toLowerCase();
+  try {
+    const url = new URL(rawUrl.trim());
+    url.hash = "";
+    // Keep Teams context and Zoom passcodes. Meet tracking params are not identity.
+    if (url.hostname === "meet.google.com") { url.search = ""; url.pathname = url.pathname.toLowerCase(); }
+    return url.toString().replace(/\/$/, "");
+  } catch { return rawUrl.trim(); }
 }
 
 /** Khóa ngày local (YYYY-MM-DD) — bot + extension cùng ngày họp thì gộp chung biên bản. */
@@ -86,7 +93,7 @@ export function meetingIdFor(
 const db = () => getAdminDb();
 
 export async function createExtSession(
-  data: Pick<ExtSession, "ownerUid" | "meetingUrl" | "provider" | "title">
+  data: Pick<ExtSession, "ownerUid" | "meetingUrl" | "provider" | "title"> & { startedAt?: number }
 ): Promise<ExtSession> {
   const now = Date.now();
   const ref = db().collection(COLLECTION).doc();
@@ -94,12 +101,13 @@ export async function createExtSession(
     id: ref.id,
     ...data,
     status: "live",
-    startedAt: now,
+    startedAt: data.startedAt ?? now,
     updatedAt: now,
     participants: [],
     chatMessages: [],
     liveSegments: [],
     audioManifest: [],
+    historyVersion: 2,
   };
   await ref.set(session);
   return session;
@@ -130,6 +138,7 @@ export async function getOrCreateLiveSession(
     chatMessages: [],
     liveSegments: [],
     audioManifest: [],
+    historyVersion: 2,
   };
   const canonicalId = `ext_${shortHash(
     `${data.ownerUid}|${normalizeMeetingUrl(data.meetingUrl)}|${dayKey(now)}`
@@ -223,29 +232,81 @@ export async function patchExtSession(
   patch: ExtSessionPatch
 ): Promise<ExtSession | null> {
   const ref = db().collection(COLLECTION).doc(id);
-  const snap = await ref.get();
-  if (!snap.exists) return null;
-  const cur = snap.data() as ExtSession;
+  const before = (await ref.get()).data() as ExtSession | undefined;
+  if (before && before.historyVersion !== 2) {
+    // Migrate legacy inline history using create-only writes, never overwriting a newer revision.
+    const legacy = [...before.liveSegments.map(value => ({ kind: "segments", value })),
+      ...before.chatMessages.map(value => ({ kind: "chat", value }))];
+    for (let i = 0; i < legacy.length; i += 50) await Promise.all(legacy.slice(i, i + 50).map(async ({ kind, value }) => {
+      try { await ref.collection(kind).doc(encodeURIComponent(value.id)).create(stripUndefinedDeep({ ...value, revision: 1 })); }
+      catch (e) { if ((e as { code?: number }).code !== 6) throw e; }
+    }));
+    await ref.update({ historyVersion: 2 });
+  }
+  return db().runTransaction(async tx => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) return null;
+    const cur = snap.data() as ExtSession;
+    if (cur.status !== "live" && (patch.liveSegments?.length || patch.chatMessages?.length || patch.participants?.length)) throw new Error("Session ended");
+    const next: ExtSession = { ...cur, updatedAt: Date.now() };
+    if (patch.title !== undefined) next.title = patch.title;
+    if (patch.participants) {
+      const people = new Map(cur.participants.map(p => [String(p.id ?? p.name), p]));
+      patch.participants.forEach(p => people.set(String(p.id ?? p.name), p));
+      next.participants = [...people.values()];
+    }
+    // Read every prior revision before making transaction writes.
+    const candidates = [
+      ...(patch.chatMessages || []).map(value => ({ collection: "chat", value })),
+      ...(patch.liveSegments || []).map(value => ({ collection: "segments", value })),
+    ].filter(c => c.value.id && c.value.text.trim());
+    const changeMap = new Map<string, typeof candidates[number]>();
+    for (const c of candidates) {
+      const key = `${c.collection}/${c.value.id}`;
+      const old = changeMap.get(key);
+      if (!old || Number(("revision" in c.value && c.value.revision) || 1) >= Number(("revision" in old.value && old.value.revision) || 1)) changeMap.set(key, c);
+    }
+    const changes = [...changeMap.values()];
+    const prior = await Promise.all(changes.map(c => tx.get(ref.collection(c.collection).doc(encodeURIComponent(c.value.id)))));
+    changes.forEach((change, i) => {
+      const old = prior[i].data();
+      const revision = "revision" in change.value ? change.value.revision || 1 : 1;
+      if (old && (old.revision || 1) >= revision) return;
+      tx.set(prior[i].ref, stripUndefinedDeep({ ...change.value, revision }));
+    });
+    if (patch.chatMessages) {
+      const items = new Map(cur.chatMessages.map(v => [v.id, v]));
+      patch.chatMessages.forEach(v => items.set(v.id, v));
+      next.chatMessages = [...items.values()].sort((a, b) => a.timestamp - b.timestamp).slice(-EXT_MAX_CHAT);
+    }
+    if (patch.liveSegments) {
+      const items = new Map(cur.liveSegments.map(v => [v.id, v]));
+      patch.liveSegments.forEach(v => {
+        const old = items.get(v.id);
+        if (!old || (v.revision || 1) > (old.revision || 1)) items.set(v.id, v);
+      });
+      next.liveSegments = [...items.values()].sort((a, b) => a.start - b.start).slice(-EXT_MAX_SEGMENTS);
+    }
+    // The document is a bounded live preview; immutable history is in subcollections.
+    while (Buffer.byteLength(JSON.stringify(next)) > 700_000 && (next.liveSegments.length || next.chatMessages.length)) {
+      if (next.liveSegments.length > next.chatMessages.length) next.liveSegments.shift();
+      else next.chatMessages.shift();
+    }
+    if (patch.audioManifestAppend?.length) next.audioManifest = [...new Set([...cur.audioManifest, ...patch.audioManifestAppend])];
+    if (patch.status) next.status = patch.status;
+    if (patch.meetingId) next.meetingId = patch.meetingId;
+    tx.set(ref, stripUndefinedDeep(next));
+    return next;
+  });
+}
 
-  const next: ExtSession = { ...cur, updatedAt: Date.now() };
-  if (patch.title !== undefined) next.title = patch.title;
-  if (patch.participants) next.participants = patch.participants;
-  if (patch.chatMessages) {
-    const seen = new Set(cur.chatMessages.map((m) => m.id));
-    const fresh = patch.chatMessages.filter((m) => m.id && !seen.has(m.id) && m.text.trim() !== "");
-    next.chatMessages = [...cur.chatMessages, ...fresh].slice(-EXT_MAX_CHAT);
-  }
-  if (patch.liveSegments) {
-    const seen = new Set(cur.liveSegments.map((s) => s.id));
-    const fresh = patch.liveSegments.filter((s) => s.id && !seen.has(s.id) && s.text.trim() !== "");
-    next.liveSegments = [...cur.liveSegments, ...fresh].slice(-EXT_MAX_SEGMENTS);
-  }
-  if (patch.audioManifestAppend?.length) {
-    next.audioManifest = [...cur.audioManifest, ...patch.audioManifestAppend];
-  }
-  if (patch.status) next.status = patch.status;
-  if (patch.meetingId) next.meetingId = patch.meetingId;
-
-  await ref.set(stripUndefinedDeep(next));
-  return next;
+/** Full history for finalization, including legacy inline rows. */
+export async function loadExtHistory(session: ExtSession): Promise<ExtSession> {
+  const ref = db().collection(COLLECTION).doc(session.id);
+  const [segments, chat] = await Promise.all([ref.collection("segments").get(), ref.collection("chat").get()]);
+  const merge = <T extends { id: string }>(inline: T[], stored: T[]) => [...new Map([...inline, ...stored].map(v => [v.id, v])).values()];
+  return { ...session,
+    liveSegments: merge(session.liveSegments, segments.docs.map(d => d.data() as ExtLiveSegment)).sort((a, b) => a.start - b.start),
+    chatMessages: merge(session.chatMessages, chat.docs.map(d => d.data() as ChatMessage)).sort((a, b) => a.timestamp - b.timestamp),
+  };
 }

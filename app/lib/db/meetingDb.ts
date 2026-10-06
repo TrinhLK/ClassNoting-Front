@@ -1,3 +1,4 @@
+import { auth as meetingAuth } from "../firebase";
 import { db } from "../firebase";
 import {
   collection, doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc,
@@ -22,6 +23,10 @@ export interface TaskItem {
 }
 
 export interface Meeting {
+  extensionSessionId?: string;
+  contentPaged?: boolean;
+  summaryNeedsReview?: boolean;
+  refinement?: { status: string; jobId?: string; error?: string };
   id: string;
   userId: string;
   jobId?: string;
@@ -45,7 +50,7 @@ export interface Meeting {
   objectives?: string;
   // --- Meeting-bot (Ghi chú cuộc họp Google Meet) ---
   meetingUrl?: string;
-  provider?: "meet";
+  provider?: import("../meeting-links").MeetingProvider;
   botId?: string;
   participants?: MeetingParticipant[];
   chatMessages?: ChatMessage[];
@@ -65,7 +70,23 @@ const stripUndefined = (obj: Record<string, unknown>): Record<string, unknown> =
   );
 };
 
+export async function hydrateMeeting(meeting: Meeting, shareToken?: string): Promise<Meeting> {
+  if (!meeting.contentPaged) return meeting;
+  const token = shareToken ? undefined : await meetingAuth.currentUser?.getIdToken();
+  const res = await fetch(`/api/meetings/${encodeURIComponent(meeting.id)}/content${shareToken ? `?shareToken=${encodeURIComponent(shareToken)}` : ""}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) throw new Error("Không thể tải đầy đủ nội dung cuộc họp");
+  return { ...meeting, ...await res.json() };
+}
+
 export const saveMeeting = async (meeting: Meeting) => {
+  if (meeting.contentPaged) {
+    const token = await meetingAuth.currentUser?.getIdToken();
+    const res = await fetch(`/api/meetings/${encodeURIComponent(meeting.id)}/content`, { method: "PUT", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify(meeting) });
+    if (!res.ok) throw new Error("Không thể lưu nội dung cuộc họp");
+    return;
+  }
   try {
     const docRef = doc(db, COLLECTION_NAME, meeting.id);
     const cleanData = structuredClone(meeting) as unknown as Record<string, unknown>;
@@ -140,7 +161,7 @@ export const getMeetingById = async (id: string): Promise<Meeting | undefined> =
     const docRef = doc(db, COLLECTION_NAME, id);
     const docSnap = await getDoc(docRef);
     if (docSnap.exists()) {
-      return docSnap.data() as Meeting;
+      return await hydrateMeeting(docSnap.data() as Meeting);
     }
     return undefined;
   } catch (error) {
@@ -157,7 +178,7 @@ export const getMeetingByShareId = async (shareId: string): Promise<Meeting | un
     const q = query(collection(db, COLLECTION_NAME), where("shareToken", "==", shareId));
     const snapshot = await getDocs(q);
     if (!snapshot.empty) {
-      return snapshot.docs[0].data() as Meeting;
+      return await hydrateMeeting(snapshot.docs[0].data() as Meeting, shareId);
     }
     // KHÔNG fallback sang getMeetingById: nếu shareToken không match → không truy cập được.
     // Trước đây fallback này cho phép ai biết meeting ID cũng xem được meeting private.

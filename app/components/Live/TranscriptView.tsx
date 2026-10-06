@@ -44,7 +44,7 @@ export default function TranscriptView({ segments, interimContent, onClear }: Tr
               className={`flex flex-col gap-1 animate-in fade-in slide-in-from-bottom-2 ${seg.speaker === 0 ? 'items-start' : 'items-end'}`}
             >
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mx-2">
-                Speaker {seg.speaker}
+                {seg.speaker < 0 ? "Chưa xác định" : `Người nói ${seg.speaker + 1}`}
               </span>
               <div className={`p-3 rounded-2xl max-w-[85%] ${seg.speaker === 0 ? 'bg-slate-50 border border-slate-100 rounded-tl-none' : 'bg-indigo-50 border border-indigo-100 rounded-tr-none'}`}>
                 <p className="text-slate-800 leading-relaxed text-sm">

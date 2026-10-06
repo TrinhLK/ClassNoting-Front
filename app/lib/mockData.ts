@@ -8,6 +8,12 @@ export type Segment = {
   end: number;
   text: string;
   words?: Word[];
+  uncertain?: boolean;
+  speakerSource?: "diarization" | "caption" | "active-speaker" | "platform" | "unknown" | "manual";
+  participantId?: string;
+  voiceId?: string;
+  revision?: number;
+  manuallyEdited?: boolean;
 };
 
 export type Word = {
@@ -15,6 +21,9 @@ export type Word = {
   start: number;
   end: number;
   confidence?: number;
+  speaker?: number;
+  uncertain?: boolean;
+  overlap?: boolean;
 }
 
 export type Speaker = {

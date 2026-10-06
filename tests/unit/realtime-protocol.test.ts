@@ -67,7 +67,7 @@ describe("realtime-protocol — parse server message", () => {
     expect(parseServerMessage({ ...base, is_final: true })?.kind).toBe("final");
   });
 
-  it("ưu tiên alt.speaker, rồi words[0].speaker, rồi 0", () => {
+  it("ưu tiên alt.speaker, rồi words[0].speaker, rồi unknown (-1)", () => {
     const withAlt = {
       is_final: true,
       channel: { alternatives: [{ transcript: "a", speaker: 2, words: [{ word: "a", start: 0, end: 1, speaker: 1 }] }] },
@@ -84,7 +84,7 @@ describe("realtime-protocol — parse server message", () => {
       is_final: true,
       channel: { alternatives: [{ transcript: "a", words: [{ word: "a", start: 0, end: 1 }] }] },
     };
-    expect(parseServerMessage(none)?.serverSpeaker).toBe(0);
+    expect(parseServerMessage(none)?.serverSpeaker).toBe(-1);
   });
 });
 
@@ -131,7 +131,7 @@ describe("realtime-protocol — resolveSpeakerName", () => {
 
   it("gán tên theo active-speaker tại midpoint", () => {
     const r = resolveSpeakerName(2, 4, { activeSpans: spans, captionLines: [] });
-    expect(r).toEqual({ name: "Nguyen Van A", splitAt: undefined, uncertain: false });
+    expect(r).toEqual({ name: "Nguyen Van A", splitAt: undefined, uncertain: true });
   });
 
   it("phát hiện lật người nói giữa segment và trả splitAt", () => {
@@ -147,7 +147,7 @@ describe("realtime-protocol — resolveSpeakerName", () => {
       captionLines: [{ name: "Le Van C", text: "ok", start: 29, end: 33 }],
     });
     expect(r.name).toBe("Le Van C");
-    expect(r.uncertain).toBe(false);
+    expect(r.uncertain).toBe(true);
   });
 
   it("bỏ qua caption overlap quá ngắn (<0.3s)", () => {

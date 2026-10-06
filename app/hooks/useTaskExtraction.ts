@@ -1,4 +1,6 @@
 "use client";
+import { hydrateMeeting } from "../lib/db/meetingDb";
+import { meetingEvidence } from "../lib/meeting-evidence";
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Meeting, Member, updateMeetingProcess } from "../lib/db";
@@ -33,12 +35,8 @@ export function useTaskExtraction() {
     setIsProcessing(true);
 
     try {
-      const fullTranscript = meeting.segments
-        .map((seg) => {
-          const name = meeting.speakers.find((s) => s.id === seg.speakerId)?.name || seg.speakerId;
-          return `${name}: ${seg.text}`;
-        })
-        .join("\n");
+      meeting = await hydrateMeeting(meeting);
+      const fullTranscript = meetingEvidence(meeting);
 
       const uniqueDepartments = Array.from(new Set(members.map((m) => m.department).filter(Boolean)));
       const uniqueTeams = Array.from(new Set(members.map((m) => m.team).filter(Boolean)));

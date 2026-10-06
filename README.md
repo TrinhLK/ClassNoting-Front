@@ -420,3 +420,6 @@ This project is created as part of a graduation thesis (Khoá luận tốt nghi�
 ## 🔗 Related repositories
 
 - **Backend (ASR)**: [`Server-local-ai-meeting-assistant`](https://github.com/NguyenVanHung2004/Server-local-ai-meeting-assistant) — RunPod Serverless deployment với Zipformer + Pyannote
+## Speaker attribution v0.3
+
+Xem [triển khai, cấu hình và giới hạn tích hợp](./docs/speaker-attribution/README.md). Tài liệu này thay thế mô tả cũ về giao thức audio và gán người nói.

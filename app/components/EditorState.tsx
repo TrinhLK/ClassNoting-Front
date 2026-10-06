@@ -206,11 +206,11 @@ export default function EditorState({
   const handleUpdateText = useCallback((segId: string, newText: string) => {
     setSegments(prev => prev.map(s =>
       s.id === segId
-        ? { ...s, text: newText } // Xóa words: [] để giữ lại karaoke nếu người dùng hoàn tác text
+        ? { ...s, text: newText, manuallyEdited: true } // Xóa words: [] để giữ lại karaoke nếu người dùng hoàn tác text
         : s
     ));
   }, []);
-  const handleChangeSpeaker = useCallback((segId: string, newId: string) => setSegments(prev => prev.map(s => s.id === segId ? { ...s, speakerId: newId } : s)), []);
+  const handleChangeSpeaker = useCallback((segId: string, newId: string) => setSegments(prev => prev.map(s => s.id === segId ? { ...s, speakerId: newId, uncertain: false, speakerSource: "manual" as const, manuallyEdited: true } : s)), []);
 
   const handleSplitSegment = useCallback((segId: string, cursorIndex: number) => {
     const idx = segments.findIndex(s => s.id === segId);
@@ -259,6 +259,7 @@ export default function EditorState({
     // 3. Tạo Segment 1
     const newSeg1 = {
       ...original,
+      manuallyEdited: true,
       text: text1,
       end: newMidTime,
       words: words1
@@ -266,6 +267,8 @@ export default function EditorState({
 
     // 4. Tạo Segment 2
     const newSeg2 = {
+      ...original,
+      manuallyEdited: true,
       id: Date.now().toString(),
       speakerId: original.speakerId,
       start: newMidTime,
@@ -294,6 +297,7 @@ export default function EditorState({
     // 2. Tạo segment gộp
     const merged = {
       ...prev,
+      manuallyEdited: true,
       text: (prev.text + " " + current.text).trim(),
       end: current.end, // Kéo dài thời gian kết thúc
       words: [...prevWords, ...currentWords] // <--- QUAN TRỌNG: Gộp mảng words nối đuôi nhau

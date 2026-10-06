@@ -101,6 +101,8 @@ export interface ServerWord {
   end: number;
   speaker?: number;
   confidence?: number;
+  uncertain?: boolean;
+  overlap?: boolean;
 }
 
 export interface ParsedServerPacket {
@@ -110,6 +112,8 @@ export interface ParsedServerPacket {
   rawWords: ServerWord[];
   /** Index người nói do server trả (nếu có), mặc định 0. */
   serverSpeaker: number;
+  speakerScope?: string;
+  protocol?: number;
 }
 
 export function parseServerMessage(data: unknown): ParsedServerPacket | null {
@@ -132,7 +136,9 @@ export function parseServerMessage(data: unknown): ParsedServerPacket | null {
     kind: msg.is_final ? "final" : "interim",
     rawTranscript,
     rawWords,
-    serverSpeaker: fromAlt ?? fromWord ?? 0,
+    serverSpeaker: fromAlt ?? fromWord ?? -1,
+    ...(typeof msg.speaker_scope === "string" ? { speakerScope: msg.speaker_scope } : {}),
+    ...(typeof msg.protocol === "number" ? { protocol: msg.protocol } : {}),
   };
 }
 
@@ -163,6 +169,7 @@ export type TranscriptSegment = {
   content: string;
   isFinal: boolean;
   words?: Word[];
+  uncertain?: boolean;
 };
 
 export interface MergeResult {
@@ -252,7 +259,8 @@ function activeNameAt(spans: ActiveSpan[], t: number): string | null {
   // Ưu tiên span chứa t; nếu nhiều, lấy span bắt đầu gần t nhất.
   let best: ActiveSpan | null = null;
   for (const s of spans) {
-    if (t < s.start || t > s.end) continue;
+    if (t < s.start || t >= s.end) continue;
+    if (best && normalizeName(best.name) !== normalizeName(s.name)) return null;
     if (!best || s.start > best.start) best = s;
   }
   return best ? normalizeName(best.name) : null;
@@ -273,7 +281,7 @@ function captionNameOverlap(
     }
   }
   // Chỉ tin caption overlap đáng kể (>0.3s) để tránh nhiễu.
-  if (!best || bestOverlap < 0.3) return null;
+  if (!best || bestOverlap < Math.min(0.3, (end - start) / 2)) return null;
   return normalizeName(best.name);
 }
 
@@ -309,18 +317,43 @@ export function resolveSpeakerName(
     splitAt ??= mid;
   }
 
-  if (atMid) return { name: atMid, splitAt, uncertain: false };
-
   const fromCaption = captionNameOverlap(ctx.captionLines, segStart, segEnd);
-  if (fromCaption) return { name: fromCaption, uncertain: false };
+  if (atMid && fromCaption && atMid !== fromCaption) return { name: ctx.fallbackName ?? "SPEAKER_00", uncertain: true };
+  if (atMid) return { name: atMid, splitAt, uncertain: fromCaption !== atMid };
+  if (fromCaption) return { name: fromCaption, uncertain: true };
 
   if (
     ctx.prevName &&
     ctx.prevEnd !== undefined &&
-    segStart - ctx.prevEnd < 1.0
+    segStart >= ctx.prevEnd && segStart - ctx.prevEnd < 1.0
   ) {
     return { name: ctx.prevName, uncertain: true };
   }
 
   return { name: ctx.fallbackName ?? "SPEAKER_00", uncertain: true };
+}
+
+/** Split on word-level labels, preserving the whole transcript when there is no turn. */
+export function splitSpeakerTurns(packet: ParsedServerPacket): ParsedServerPacket[] {
+  const words = packet.rawWords.filter(w => Number.isFinite(w.start) && Number.isFinite(w.end) && w.end >= w.start);
+  const groups: ParsedServerPacket[] = [];
+  for (const word of words) {
+    const speaker = word.overlap ? -1 : (word.speaker ?? packet.serverSpeaker);
+    let group = groups[groups.length - 1];
+    if (!group || group.serverSpeaker !== speaker) {
+      group = { ...packet, rawTranscript: "", rawWords: [], serverSpeaker: speaker };
+      groups.push(group);
+    }
+    group.rawWords.push(word);
+    group.rawTranscript += (group.rawTranscript ? " " : "") + word.word;
+  }
+  if (groups.length <= 1) return [{ ...packet, rawWords: words, serverSpeaker: groups[0]?.serverSpeaker ?? packet.serverSpeaker }];
+  return groups;
+}
+
+export function speakersFromSegments(segments: Array<{ speakerId: string }>) {
+  return [...new Set(segments.map(s => s.speakerId))].map((id, index) => ({
+    id, name: id.includes("-1") ? "Chưa xác định" : `Người nói ${index + 1}`,
+    color: "bg-indigo-50 text-indigo-700",
+  }));
 }

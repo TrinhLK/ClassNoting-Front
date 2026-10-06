@@ -33,7 +33,7 @@ export async function POST(req: Request) {
 
         // PHẠM VI: chỉ Google Meet.
         const provider = detectProvider(meetingUrl);
-        if (!provider) {
+        if (provider !== "meet") {
             return NextResponse.json(
                 { error: "Link không hợp lệ. Chỉ hỗ trợ Google Meet." },
                 { status: 400 }

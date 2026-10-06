@@ -27,7 +27,8 @@
   function activeNameAt(spans, t) {
     let best = null;
     for (const s of spans) {
-      if (t < s.start || t > s.end) continue;
+      if (t < s.start || t >= s.end) continue;
+      if (best && normalizeName(best.name) !== normalizeName(s.name)) return null;
       if (!best || s.start > best.start) best = s;
     }
     return best ? normalizeName(best.name) : null;
@@ -43,7 +44,7 @@
         best = c;
       }
     }
-    if (!best || bestOverlap < 0.3) return null;
+    if (!best || bestOverlap < Math.min(0.3, (end - start) / 2)) return null;
     return normalizeName(best.name);
   }
 
@@ -62,10 +63,11 @@
       }
       if (splitAt === undefined) splitAt = mid;
     }
-    if (atMid) return { name: atMid, splitAt, uncertain: false };
     const fromCaption = captionNameOverlap(ctx.captionLines || [], segStart, segEnd);
-    if (fromCaption) return { name: fromCaption, uncertain: false };
-    if (ctx.prevName && ctx.prevEnd !== undefined && segStart - ctx.prevEnd < 1.0) {
+    if (atMid && fromCaption && atMid !== fromCaption) return { name: ctx.fallbackName || "SPEAKER_00", uncertain: true };
+    if (atMid) return { name: atMid, splitAt, uncertain: fromCaption !== atMid };
+    if (fromCaption) return { name: fromCaption, uncertain: true };
+    if (ctx.prevName && ctx.prevEnd !== undefined && segStart >= ctx.prevEnd && segStart - ctx.prevEnd < 1.0) {
       return { name: ctx.prevName, uncertain: true };
     }
     return { name: (ctx.fallbackName || "SPEAKER_00"), uncertain: true };

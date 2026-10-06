@@ -1,3 +1,4 @@
+import { memoryFirestore } from "@/tests/helpers/admin-firestore";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const store = new Map<string, Record<string, unknown>>();
@@ -10,19 +11,7 @@ vi.mock("@/app/lib/firebase-admin", () => ({
       throw new Error("Invalid token");
     },
   }),
-  getAdminDb: () => ({
-    collection: (name: string) => ({
-      doc: (id: string) => ({
-        get: async () => {
-          const d = store.get(`${name}/${id}`);
-          return { exists: !!d, data: () => d };
-        },
-        set: async (data: Record<string, unknown>) => {
-          store.set(`${name}/${id}`, data);
-        },
-      }),
-    }),
-  }),
+  getAdminDb: () => memoryFirestore(store),
   getAdminStorage: vi.fn(),
 }));
 

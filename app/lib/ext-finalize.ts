@@ -3,11 +3,14 @@ import { MEETING_STATUS } from "@/app/lib/constants";
 import { computeChatStats } from "@/app/lib/chat-stats";
 import {
   getExtSession,
+  loadExtHistory,
   listLiveSessions,
   meetingIdFor,
   patchExtSession,
   type ExtSession,
 } from "@/app/lib/ext-sessions";
+import { startRefinement } from "./refinement";
+import { saveMeetingContent, loadMeetingContent } from "./meeting-content";
 import { mergeMeetingDocs } from "@/app/lib/meeting-merge";
 import type { Meeting, Segment, Speaker } from "@/app/lib/db";
 
@@ -35,6 +38,8 @@ export async function finalizeExtSession(
   session: ExtSession,
   ownerUid: string
 ): Promise<FinalizeResult> {
+  await patchExtSession(session.id, { status: "finalizing" });
+  session = await loadExtHistory(session);
   const counts = {
     segments: session.liveSegments.length,
     chat: session.chatMessages.length,
@@ -49,24 +54,31 @@ export async function finalizeExtSession(
 
   const nameOrder: string[] = [];
   for (const s of session.liveSegments) {
-    if (!nameOrder.includes(s.speaker)) nameOrder.push(s.speaker);
+    const key = s.participantId ? `participant:${s.participantId}` : s.voiceId || s.speaker;
+    if (!nameOrder.includes(key)) nameOrder.push(key);
   }
   const nameToId = new Map(nameOrder.map((n, i) => [n, `SPEAKER_${String(i).padStart(2, "0")}`]));
   const speakers: Speaker[] = nameOrder.map((n, i) => ({
     id: nameToId.get(n)!,
-    name: n,
+    name: session.liveSegments.find(s => (s.participantId ? `participant:${s.participantId}` : s.voiceId || s.speaker) === n)?.speaker || n,
     color: SPEAKER_COLORS[i % SPEAKER_COLORS.length],
   }));
   const segments: Segment[] = session.liveSegments.map((s) => ({
     id: s.id,
-    speakerId: nameToId.get(s.speaker) ?? "SPEAKER_00",
+    speakerId: nameToId.get(s.participantId ? `participant:${s.participantId}` : s.voiceId || s.speaker) ?? "SPEAKER_00",
     start: s.start,
     end: s.end,
     text: s.text,
+    uncertain: s.uncertain !== false,
+    ...(s.words ? { words: s.words } : {}),
+    ...(s.voiceId ? { voiceId: s.voiceId } : {}),
+    ...(s.participantId ? { participantId: s.participantId } : {}),
+    ...(s.speakerSource ? { speakerSource: s.speakerSource } : {}),
+    revision: s.revision || 1,
   }));
 
   const meetingId =
-    session.meetingId || meetingIdFor(ownerUid, session.meetingUrl, session.startedAt);
+    session.meetingId || `ext_${session.id}`;
   const incoming: Meeting = {
     id: meetingId,
     userId: ownerUid,
@@ -79,6 +91,7 @@ export async function finalizeExtSession(
     status: MEETING_STATUS.TRANSCRIBED,
     isDeleted: false,
     source: "extension",
+    extensionSessionId: session.id,
     meetingUrl: session.meetingUrl,
     provider: session.provider,
     participants: session.participants,
@@ -91,17 +104,20 @@ export async function finalizeExtSession(
   try {
     const snap = await meetingsCol.doc(meetingId).get();
     if (snap.exists) {
-      finalMeeting = mergeMeetingDocs(snap.data() as Meeting, incoming);
+      finalMeeting = mergeMeetingDocs(await loadMeetingContent(snap.data() as Meeting), incoming);
     }
   } catch (e) {
-    console.warn("[ext/finalize] merge read failed, overwriting:", e);
+    throw e;
   }
 
   const clean = Object.fromEntries(
     Object.entries(structuredClone(finalMeeting)).filter(([, v]) => v !== undefined)
   );
-  await meetingsCol.doc(meetingId).set(clean);
+  await saveMeetingContent(clean as Meeting);
   await patchExtSession(session.id, { status: "ended", meetingId });
+  if (process.env.RUNPOD_API_KEY && process.env.RUNPOD_ENDPOINT_ID) {
+    await startRefinement(finalMeeting).catch(e => console.warn("[refinement]", e.message));
+  }
 
   return { meetingId, empty: false, counts };
 }

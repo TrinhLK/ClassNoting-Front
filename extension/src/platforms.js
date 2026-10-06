@@ -94,8 +94,8 @@
       const seen = new Set();
       const push = (name, id) => {
         const clean = meet.cleanRosterName(name);
-        if (clean && !seen.has(clean.toLowerCase())) {
-          seen.add(clean.toLowerCase());
+        if (clean && !seen.has(id || clean.toLowerCase())) {
+          seen.add(id || clean.toLowerCase());
           names.push(id ? { name: clean, id } : { name: clean });
         }
       };

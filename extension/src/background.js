@@ -5,7 +5,7 @@
  */
 // Đổi theo manifest.json mỗi build — popup/diag hiện số này để biết chắc
 // cả 3 mảnh (popup/background/content) có đồng bộ không.
-const CODE_VERSION = "0.2.2";
+const CODE_VERSION = "0.3.0";
 const DEFAULT_APP_ORIGIN = "https://smart-noting.vercel.app";
 const FLUSH_MS = 2000;
 const HEARTBEAT_TIMEOUT_MS = 2 * 60 * 1000;
@@ -59,11 +59,15 @@ async function apiFetch(path, body, method) {
 async function endSessionById(sessionId, reason) {
   for (const [tabId, t] of tabs.entries()) {
     if (t.sessionId === sessionId) {
-      tabs.delete(tabId);
+      // Keep session attached until final audio/transcripts have drained.
       try {
         chrome.tabs.sendMessage(tabId, { type: "CN_STOP" }).catch(() => {});
       } catch (e) { /* tab đã đóng */ }
-      await stopAudioCapture(tabId);
+      const stopped = await stopAudioCapture(tabId);
+      if (stopped?.archiveFailed) return { error: "audio_pending" };
+      if (t.flushing) await t.flushing;
+      while (t.queue.length) { const before = t.queue.length; await flushTab(tabId); if (t.queue.length >= before) return { error: "pending_events" }; }
+      tabs.delete(tabId);
       setBadge(tabId, "", undefined);
     }
   }
@@ -107,43 +111,32 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
 // ---- Flush batch events ----
 async function flushTab(tabId) {
   const t = tabs.get(tabId);
-  if (!t || !t.sessionId || t.queue.length === 0) return;
-  const batch = t.queue.splice(0, 100);
-  const byKind = {};
-  for (const ev of batch) (byKind[ev.kind] = byKind[ev.kind] || []).push(ev.payload);
-  const events = Object.entries(byKind).map(([kind, items]) => {
-    if (kind === "participants") return { kind, participants: items[items.length - 1] };
-    if (kind === "chat") return { kind, messages: items };
-    return { kind, segments: items };
-  });
-  try {
-    const res = await apiFetch("/api/extension/events", { sessionId: t.sessionId, events });
-    if (!res.ok) {
-      // Lỗi HTTP không-phải-401 (409 ended, 429, 5xx): ghi nhận để popup hiện,
-      // batch coi như đã xử lý phía server (409) hoặc sẽ gửi lại vòng sau.
-      t.lastFlush = { at: Date.now(), status: `http_${res.status}`, count: batch.length };
-      return;
-    }
-    t.lastFlush = { at: Date.now(), status: "ok", count: batch.length };
-  } catch (e) {
-    if (e.code === "NO_AUTH" || e.code === "UNAUTHORIZED") {
-      t.lastFlush = { at: Date.now(), status: "unauthorized", count: batch.length };
-      t.authFailCount = (t.authFailCount || 0) + 1;
-      if (!notifiedNoAuth.has(t.sessionId)) {
-        notifiedNoAuth.add(t.sessionId);
-        notifyLoginRequired();
+  if (!t) return;
+  if (t.flushing) return t.flushing;
+  t.flushing = (async () => {
+    if (!t.sessionId || !t.queue.length) return;
+    const batch = t.queue.splice(0, 100);
+    const byKind = {};
+    for (const ev of batch) (byKind[ev.kind] ||= []).push(ev.payload);
+    const events = Object.entries(byKind).map(([kind, items]) => kind === "participants"
+      ? { kind, participants: items[items.length - 1] } : kind === "chat"
+      ? { kind, messages: items } : { kind, segments: items });
+    try {
+      const res = await apiFetch("/api/extension/events", { sessionId: t.sessionId, events });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      t.lastFlush = { at: Date.now(), status: "ok", count: batch.length };
+    } catch (e) {
+      t.queue.unshift(...batch);
+      t.lastFlush = { at: Date.now(), status: String(e.message), count: batch.length };
+      if ((e.code === "NO_AUTH" || e.code === "UNAUTHORIZED") && !notifiedNoAuth.has(t.sessionId)) {
+        notifiedNoAuth.add(t.sessionId); notifyLoginRequired();
       }
-      // Giữ lại batch để thử lại sau khi có token.
-      t.queue.unshift(...batch.flatMap((ev) =>
-        ev.kind === "participants" ? [ev] : ev.payload?.map?.((p) => ({ kind: ev.kind, payload: p })) || [ev]
-      ).slice(0, 100));
-    } else {
-      // Mạng đứt / CORS / server sập: batch mất theo vòng flush này nhưng
-      // content vẫn giữ polling (roster) nên dữ liệu mới tiếp tục sinh.
-      t.lastFlush = { at: Date.now(), status: "network", count: batch.length };
     }
-  }
+    await persistTabs();
+  })();
+  try { await t.flushing; } finally { t.flushing = null; }
 }
+
 setInterval(() => {
   tabs.forEach((_, tabId) => flushTab(tabId));
 }, FLUSH_MS);
@@ -201,6 +194,7 @@ async function tryEnsureSession(tabId, info, opts) {
     }
     tabs.set(tabId, {
       sessionId: data.sessionId,
+      startedAt: data.startedAt,
       provider: data.provider || info.provider,
       url: info.url,
       lastSeen: Date.now(),
@@ -304,6 +298,7 @@ async function startAudioCapture(tabId, sessionId, provider, opts) {
       provider,
       streamId,
       wsBase: "wss://asr-live.noting.io.vn",
+      startedAt: tabs.get(tabId)?.startedAt || (await (await apiFetch(`/api/extension/live?sessionId=${sessionId}`, null, "GET")).json()).startedAt,
       appOrigin,
       idToken: auth?.idToken,
       // Để offscreen gán tiếng share-màn-hình (không ai sáng tên) cho chủ phiên.
@@ -315,8 +310,24 @@ async function startAudioCapture(tabId, sessionId, provider, opts) {
 
 async function stopAudioCapture(tabId) {
   try {
-    await chrome.runtime.sendMessage({ type: "CN_AUDIO_STOP", tabId }).catch(() => {});
+    return await chrome.runtime.sendMessage({ type: "CN_AUDIO_STOP", tabId });
   } catch (e) { /* offscreen chưa chạy */ }
+}
+
+async function stopExtraTab(tabId) {
+  const t = tabs.get(tabId);
+  if (!t) return { ok: true, extraStopped: true };
+  const stopped = await stopAudioCapture(tabId);
+  if (stopped?.archiveFailed) return { ok: false, reason: "audio_pending" };
+  if (t.flushing) await t.flushing;
+  while (t.queue.length) {
+    const before = t.queue.length;
+    await flushTab(tabId);
+    if (t.queue.length >= before) return { ok: false, reason: "pending_events" };
+  }
+  tabs.delete(tabId);
+  await persistTabs();
+  return { ok: true, extraStopped: true };
 }
 
 // ---- Kết thúc phiên của 1 tab ----
@@ -356,6 +367,8 @@ async function persistTabs() {
       sessionId: t.sessionId,
       provider: t.provider,
       url: t.url,
+      startedAt: t.startedAt,
+      queue: t.queue,
     }));
     await chrome.storage.session.set({ liveTabs: dump });
   } catch (e) { /* storage chưa sẵn — bỏ qua */ }
@@ -371,10 +384,11 @@ async function rehydrateTabs() {
       // Cho heartbeat từ content script (15s) cơ hội gắn lại trước khi sweep xét.
       tabs.set(d.tabId, {
         sessionId: d.sessionId,
+        startedAt: d.startedAt,
         provider: d.provider,
         url: d.url,
         lastSeen: now,
-        queue: [],
+        queue: d.queue || [],
         spans: [],
         captions: [],
         emptyStreak: 0,
@@ -480,6 +494,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     let gotData = false;
     for (const ev of msg.events || []) {
       if (ev.kind === "participants") {
+        t.participants = ev.participants;
         t.queue.push({ kind: "participants", payload: ev.participants });
         if ((ev.participants || []).length > 0) gotData = true;
       } else if (ev.kind === "chat") {
@@ -505,6 +520,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       t.emptyStreak = 0;
       setBadge(tabId, "REC", "#dc2626");
     }
+    persistTabs();
     if (t.queue.length >= 100) flushTab(tabId);
     sendResponse({ ok: true });
     return;
@@ -534,9 +550,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     });
     return;
   }
+  if (msg?.type === "CN_CAPTURE_CONTEXT") {
+    Promise.all([getSettings(), getAuth()]).then(([settings, auth]) => sendResponse({ appOrigin: settings.appOrigin, idToken: auth?.idToken }));
+    return true;
+  }
   if (msg?.type === "CN_GET_SPANS" && msg.tabId && tabs.has(msg.tabId)) {
     const t = tabs.get(msg.tabId);
-    sendResponse({ spans: t.spans.slice(-50), captions: t.captions.slice(-50) });
+    sendResponse({ spans: t.spans.slice(-200), captions: t.captions.slice(-200), participants: t.participants || [] });
     return;
   }
   if (msg?.type === "CN_ASR_FINAL" && msg.tabId) {
@@ -550,12 +570,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       payload: {
         id: msg.id,
         speaker: msg.speaker,
+        voiceId: msg.voiceId, participantId: msg.participantId,
+        speakerSource: msg.speakerSource, words: msg.words, revision: msg.revision,
         text: msg.text,
         start: msg.start,
         end: msg.end,
-        uncertain: msg.uncertain || undefined,
+        uncertain: msg.uncertain !== false,
       },
     });
+    persistTabs();
+    sendResponse({ ok: true });
     if (msg.splitAt) {
       // Báo split để lần sau offscreen tự tách — ở đây chỉ ghi nhận.
     }
@@ -594,10 +618,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     // Tab phụ: chỉ dừng thu của nó, giữ nguyên session.
     const extra = tabs.get(msg.tabId);
     if (extra && extra.extraTab) {
-      stopAudioCapture(msg.tabId).catch(() => {});
-      tabs.delete(msg.tabId);
-      persistTabs();
-      sendResponse({ ok: true, extraStopped: true });
+      stopExtraTab(msg.tabId).then(sendResponse).catch(() => sendResponse({ ok: false, reason: "error" }));
       return true;
     }
     endSession(msg.tabId, "bấm tay").then((r) => {
@@ -792,9 +813,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   const t = tabs.get(tabId);
   if (!t) return;
   if (t.extraTab) {
-    tabs.delete(tabId);
-    persistTabs();
-    stopAudioCapture(tabId).catch(() => {});
+    stopExtraTab(tabId).catch(() => {});
     return;
   }
   endSession(tabId, "đóng tab");
