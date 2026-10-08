@@ -44,8 +44,12 @@ export const parseInline = (text: string): InlineToken[] => {
   return tokens;
 };
 
-export const tokensToRuns = (tokens: InlineToken[]): TextRun[] =>
-  tokens.map((t) => new TextRun({ text: t.text, bold: t.bold, italics: t.italic }));
+export const tokensToRuns = (tokens: InlineToken[], size = 26): TextRun[] =>
+  tokens.map((t) => new TextRun({ text: t.text, bold: t.bold, italics: t.italic, font: "Times New Roman", size }));
+
+const BODY_SPACING = { after: 160, line: 300 };
+const LIST_SPACING = { after: 80, line: 280 };
+const HEADING_SPACING = { before: 220, after: 100, line: 280 };
 
 export const stripMarkdownMarkers = (text: string): string =>
   text.replace(/\*\*\*([^*]+)\*\*\*/g, "$1")
@@ -73,7 +77,7 @@ const buildTableCell = (text: string, isHeader: boolean): TableCell =>
   new TableCell({
     children: [
       new Paragraph({
-        children: tokensToRuns(parseInline(stripMarkdownMarkers(text))),
+        children: tokensToRuns(parseInline(text)),
       }),
     ],
     ...(isHeader ? { shading: { fill: "F1F5F9" } } : {}),
@@ -109,6 +113,11 @@ const buildTable = (headerCells: string[], dataRows: string[][]): Table => {
 
 export const parseMarkdownToDocx = (md: string): SummaryNode[] => {
   const lines = md.split(/\r?\n/);
+  const listIndents = [...new Set(lines.flatMap((line) => {
+    const match = line.match(/^(\s*)(?:[-*+]|\d+[.)])\s+/);
+    return match ? [match[1].replace(/\t/g, "  ").length] : [];
+  }))].sort((a, b) => a - b);
+  const listLevel = (indent: string) => Math.min(8, Math.max(0, listIndents.indexOf(indent.replace(/\t/g, "  ").length)));
   const children: SummaryNode[] = [];
   let listBuffer: Paragraph[] = [];
 
@@ -146,52 +155,61 @@ export const parseMarkdownToDocx = (md: string): SummaryNode[] => {
     const h1 = line.match(/^#\s+(.*)/);
     const h2 = line.match(/^##\s+(.*)/);
     const h3 = line.match(/^###\s+(.*)/);
-    const bullet = line.match(/^\s*([-*+])\s+(.*)/);
-    const numbered = line.match(/^\s*\d+[.)]\s+(.*)/);
+    const bullet = line.match(/^(\s*)[-*+]\s+(.*)/);
+    const numbered = line.match(/^(\s*)\d+[.)]\s+(.*)/);
 
     if (h1) {
       flushList();
       children.push(
         new Paragraph({
-          children: tokensToRuns(parseInline(stripMarkdownMarkers(h1[1]))),
+          children: tokensToRuns(parseInline(h1[1]), 30),
           heading: HeadingLevel.HEADING_1,
+          spacing: HEADING_SPACING,
         })
       );
     } else if (h2) {
       flushList();
       children.push(
         new Paragraph({
-          children: tokensToRuns(parseInline(stripMarkdownMarkers(h2[1]))),
+          children: tokensToRuns(parseInline(h2[1]), 28),
           heading: HeadingLevel.HEADING_2,
+          spacing: HEADING_SPACING,
         })
       );
     } else if (h3) {
       flushList();
       children.push(
         new Paragraph({
-          children: tokensToRuns(parseInline(stripMarkdownMarkers(h3[1]))),
+          children: tokensToRuns(parseInline(h3[1]), 26),
           heading: HeadingLevel.HEADING_3,
+          spacing: HEADING_SPACING,
         })
       );
     } else if (bullet) {
+      const level = listLevel(bullet[1]);
       listBuffer.push(
         new Paragraph({
-          children: tokensToRuns(parseInline(stripMarkdownMarkers(bullet[2]))),
-          bullet: { level: 0 },
+          children: tokensToRuns(parseInline(bullet[2])),
+          bullet: { level },
+          spacing: LIST_SPACING,
         })
       );
     } else if (numbered) {
+      const level = listLevel(numbered[1]);
       listBuffer.push(
         new Paragraph({
-          children: tokensToRuns(parseInline(stripMarkdownMarkers(numbered[1]))),
-          numbering: { reference: "summary-list", level: 0 },
+          children: tokensToRuns(parseInline(numbered[2])),
+          numbering: { reference: "summary-list", level },
+          spacing: LIST_SPACING,
         })
       );
     } else {
       flushList();
       children.push(
         new Paragraph({
-          children: tokensToRuns(parseInline(stripMarkdownMarkers(line))),
+          children: tokensToRuns(parseInline(line)),
+          alignment: AlignmentType.JUSTIFIED,
+          spacing: BODY_SPACING,
         })
       );
     }
@@ -206,12 +224,12 @@ const INLINE_TAGS = new Set([
   "strong", "b", "em", "i", "u", "code", "br", "span", "mark", "small", "sub", "sup",
 ]);
 
-const collectInlineRuns = (node: Node): TextRun[] => {
+const collectInlineRuns = (node: Node, size = 26): TextRun[] => {
   const runs: TextRun[] = [];
   const walk = (n: Node): void => {
     if (n.nodeType === Node.TEXT_NODE) {
       const text = (n.textContent || "");
-      if (text) runs.push(new TextRun({ text }));
+      if (text) runs.push(new TextRun({ text, font: "Times New Roman", size }));
       return;
     }
     if (n.nodeType !== Node.ELEMENT_NODE) return;
@@ -220,14 +238,14 @@ const collectInlineRuns = (node: Node): TextRun[] => {
     switch (tag) {
       case "strong":
       case "b":
-        runs.push(new TextRun({ text: el.textContent || "", bold: true }));
+        runs.push(new TextRun({ text: el.textContent || "", bold: true, font: "Times New Roman", size }));
         return;
       case "em":
       case "i":
-        runs.push(new TextRun({ text: el.textContent || "", italics: true }));
+        runs.push(new TextRun({ text: el.textContent || "", italics: true, font: "Times New Roman", size }));
         return;
       case "code":
-        runs.push(new TextRun({ text: el.textContent || "", font: "Consolas" }));
+        runs.push(new TextRun({ text: el.textContent || "", font: "Times New Roman", size }));
         return;
       case "br":
         runs.push(new TextRun({ break: 1 }));
@@ -257,7 +275,7 @@ const flattenCellChildren = (el: HTMLElement, bold: boolean): Paragraph[] => {
     if (node.nodeType === Node.TEXT_NODE) {
       const text = (node.textContent || "").trim();
       if (text) {
-        const tokens = parseInline(stripMarkdownMarkers(text)).map((t) =>
+        const tokens = parseInline(text).map((t) =>
           bold ? { ...t, bold: true } : t
         );
         paragraphs.push(new Paragraph({ children: tokensToRuns(tokens) }));
@@ -270,7 +288,7 @@ const flattenCellChildren = (el: HTMLElement, bold: boolean): Paragraph[] => {
     if (tag === "p" || /^h[1-6]$/.test(tag)) {
       const text = child.textContent?.trim() || "";
       if (text) {
-        const tokens = parseInline(stripMarkdownMarkers(text)).map((t) =>
+        const tokens = parseInline(text).map((t) =>
           bold ? { ...t, bold: true } : t
         );
         paragraphs.push(new Paragraph({ children: tokensToRuns(tokens) }));
@@ -287,7 +305,7 @@ const flattenCellChildren = (el: HTMLElement, bold: boolean): Paragraph[] => {
   if (paragraphs.length === 0) {
     const text = el.textContent?.trim() || "";
     if (text) {
-      const tokens = parseInline(stripMarkdownMarkers(text)).map((t) =>
+      const tokens = parseInline(text).map((t) =>
         bold ? { ...t, bold: true } : t
       );
       paragraphs.push(new Paragraph({ children: tokensToRuns(tokens) }));
@@ -408,13 +426,38 @@ export const parseHtmlToDocx = (html: string): SummaryNode[] => {
   const body = doc.body;
   const children: SummaryNode[] = [];
 
+  const appendHtmlList = (list: HTMLElement, level = 0): void => {
+    const ordered = list.tagName.toLowerCase() === "ol";
+    const depth = Math.min(8, level);
+    for (const item of Array.from(list.children).filter((child) => child.tagName.toLowerCase() === "li") as HTMLElement[]) {
+      const runs: TextRun[] = [];
+      const nestedLists: HTMLElement[] = [];
+      for (const child of Array.from(item.childNodes)) {
+        if (child.nodeType === Node.ELEMENT_NODE && ["ul", "ol"].includes((child as HTMLElement).tagName.toLowerCase())) {
+          nestedLists.push(child as HTMLElement);
+        } else {
+          runs.push(...collectInlineRuns(child));
+        }
+      }
+      if (runs.length > 0) {
+        children.push(new Paragraph({
+          children: runs,
+          ...(ordered ? { numbering: { reference: "summary-list", level: depth } } : { bullet: { level: depth } }),
+          spacing: LIST_SPACING,
+        }));
+      }
+      nestedLists.forEach((nested) => appendHtmlList(nested, depth + 1));
+    }
+  };
+
   const walk = (node: ChildNode): void => {
     if (node.nodeType === Node.TEXT_NODE) {
       const text = (node.textContent || "").trim();
       if (text) {
         children.push(
           new Paragraph({
-            children: tokensToRuns(parseInline(stripMarkdownMarkers(text))),
+            children: tokensToRuns(parseInline(text)),
+            spacing: BODY_SPACING,
           })
         );
       }
@@ -443,28 +486,19 @@ export const parseHtmlToDocx = (html: string): SummaryNode[] => {
         };
         const inlineRuns = collectInlineRuns(el);
         if (inlineRuns.length > 0) {
-          children.push(new Paragraph({ children: inlineRuns, heading: levelMap[tag] }));
+          const size = tag === "h1" ? 30 : tag === "h2" ? 28 : 26;
+          children.push(new Paragraph({ children: collectInlineRuns(el, size), heading: levelMap[tag], spacing: HEADING_SPACING }));
         }
         return;
       }
       case "p":
         if (text) {
-          children.push(new Paragraph({ children: collectInlineRuns(el) }));
+          children.push(new Paragraph({ children: collectInlineRuns(el), alignment: AlignmentType.JUSTIFIED, spacing: BODY_SPACING }));
         }
         return;
       case "li": {
-        const parentTag = el.parentElement?.tagName.toLowerCase();
-        const prefix = parentTag === "ol" ? "1. " : "• ";
-        if (text) {
-          children.push(
-            new Paragraph({
-              children: [
-                new TextRun({ text: prefix }),
-                ...collectInlineRuns(el),
-              ],
-              bullet: parentTag === "ul" ? { level: 0 } : undefined,
-            })
-          );
+        if (text && el.parentElement && ["ul", "ol"].includes(el.parentElement.tagName.toLowerCase())) {
+          appendHtmlList(el.parentElement);
         }
         return;
       }
@@ -473,9 +507,10 @@ export const parseHtmlToDocx = (html: string): SummaryNode[] => {
           children.push(
             new Paragraph({
               children: [
-                new TextRun({ text, italics: true }),
+                new TextRun({ text, italics: true, font: "Times New Roman", size: 26 }),
               ],
               indent: { left: 400 },
+              spacing: BODY_SPACING,
             })
           );
         }
@@ -486,7 +521,7 @@ export const parseHtmlToDocx = (html: string): SummaryNode[] => {
         return;
       case "ul":
       case "ol":
-        el.childNodes.forEach(walk);
+        appendHtmlList(el);
         return;
       case "table":
         children.push(buildHtmlTable(el));
@@ -506,7 +541,9 @@ export const parseHtmlToDocx = (html: string): SummaryNode[] => {
         } else if (text) {
           children.push(
             new Paragraph({
-              children: tokensToRuns(parseInline(stripMarkdownMarkers(text))),
+              children: tokensToRuns(parseInline(text)),
+              alignment: AlignmentType.JUSTIFIED,
+              spacing: BODY_SPACING,
             })
           );
         }
@@ -542,14 +579,13 @@ export const buildSummaryDocx = async (
       config: [
         {
           reference: "summary-list",
-          levels: [
-            {
-              level: 0,
-              format: "decimal",
-              text: "%1.",
-              alignment: AlignmentType.LEFT,
-            },
-          ],
+          levels: Array.from({ length: 9 }, (_, level) => ({
+            level,
+            format: "decimal" as const,
+            text: `${Array.from({ length: level + 1 }, (_unused, index) => `%${index + 1}`).join(".")}.`,
+            alignment: AlignmentType.LEFT,
+            style: { paragraph: { indent: { left: 720 * (level + 1), hanging: 360 } } },
+          })),
         },
       ],
     },
@@ -557,9 +593,16 @@ export const buildSummaryDocx = async (
       {
         properties: {},
         children: [
-          new Paragraph({ text: title, heading: HeadingLevel.HEADING_1 }),
-          new Paragraph({ text: meta, alignment: AlignmentType.CENTER }),
-          new Paragraph({ text: "" }),
+          new Paragraph({
+            children: [new TextRun({ text: title, bold: true, font: "Times New Roman", size: 32 })],
+            alignment: AlignmentType.CENTER,
+            spacing: { after: 100, line: 280 },
+          }),
+          new Paragraph({
+            children: [new TextRun({ text: meta, font: "Times New Roman", size: 22 })],
+            alignment: AlignmentType.CENTER,
+            spacing: { after: 320, line: 260 },
+          }),
           ...children,
         ],
       },

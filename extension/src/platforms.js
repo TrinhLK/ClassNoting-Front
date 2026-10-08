@@ -177,6 +177,10 @@
       // Panel chat (label VI + EN). QUAN TRỌNG: loại nút bấm — selector
       // '[aria-label*="Chat"]' từng vớ nhầm nút mở panel (BUTTON.VYBDae...)
       // khiến observer gắn vào cái nút và không bao giờ thấy tin nhắn.
+      // Meet có thể render aria-live/role=log cho nội dung khác; nếu composer
+      // đang có mặt thì panel tìm được từ ô nhập là neo chính xác nhất.
+      const anchored = meet.chatRootFromAnchor();
+      if (anchored) return anchored;
       const candidates = allMatches([
         '[role="log"]',
         '[aria-label*="tin nhắn trong cuộc gọi" i]',
@@ -195,10 +199,15 @@
           if (el.querySelector('[role="listitem"], li, [data-message-id]')) return el;
         } catch (e) { /* bỏ qua */ }
       }
-      if (candidates[0]) return candidates[0];
-      // Tuyến cuối: tìm panel từ ô nhập tin nhắn (neo aria-label ổn định).
-      // Ca diag thật: panel "In-call messages" mở mà mọi selector trên đều trượt.
-      return meet.chatRootFromAnchor();
+      // Chỉ chọn root chung khi tìm được block parse được; không gắn nhầm
+      // observer vào log khác (ví dụ captions/notice "Continuous chat is off").
+      for (const el of candidates) {
+        try {
+          const blocks = meet.findChatBlocks(el);
+          if (blocks.some((block) => meet.parseChatBlock(block, [], "Bạn"))) return el;
+        } catch (e) { /* thử ứng viên khác */ }
+      }
+      return null;
     },
     // Token UI của Meet — không bao giờ là nội dung tin nhắn.
     CHAT_UI_TOKENS: [
@@ -213,27 +222,47 @@
     // chatRootFromAnchor và diag — khỏi lệch nhau.
     findChatAnchor() {
       try {
-        const all = document.querySelectorAll("textarea, input, [role='textbox'], [contenteditable='true'], *");
+        const all = document.querySelectorAll("textarea, input, [role='textbox'], [contenteditable='true'], [aria-label], [placeholder], [title]");
+        let hiddenFallback = null;
         for (const el of all) {
           if (!el.getAttribute) continue;
           const label = el.getAttribute("aria-label") || "";
           const holder = el.getAttribute("placeholder") || "";
           const title = el.getAttribute("title") || "";
-          if (/send a message|gửi tin nhắn/i.test(label + " " + holder + " " + title)) return el;
+          if (!/send a message|gửi tin nhắn/i.test(label + " " + holder + " " + title)) continue;
+          let hidden = false;
+          try {
+            hidden = !!el.closest('[aria-hidden="true"]');
+            let ancestor = el;
+            while (!hidden && ancestor && ancestor !== document.body) {
+              const style = global.getComputedStyle ? global.getComputedStyle(ancestor) : null;
+              hidden = !!(style && (style.display === "none" || style.visibility === "hidden"));
+              ancestor = ancestor.parentElement;
+            }
+          } catch (e) { /* thiếu layout engine: coi là chưa biết */ }
+          if (!hidden) return el;
+          if (!hiddenFallback) hiddenFallback = el;
         }
+        return hiddenFallback;
       } catch (e) { /* bỏ qua */ }
       return null;
     },
     chatRootFromAnchor() {
       try {
         if (meet._anchor && !meet._anchor.isConnected) meet._anchor = null;
-        if (meet._chatPanel && meet._chatPanel.isConnected) return meet._chatPanel;
-        let anchor = meet._anchor && meet._anchor.isConnected ? meet._anchor : null;
-        if (!anchor) {
-          anchor = meet.findChatAnchor();
-          meet._anchor = anchor || null;
-        }
+        // Re-resolve the visible composer each poll: Meet may leave the old
+        // input mounted but hidden after the user closes/reopens the panel.
+        let anchor = meet.findChatAnchor();
+        if (anchor) meet._anchor = anchor;
+        else anchor = meet._anchor && meet._anchor.isConnected ? meet._anchor : null;
         if (!anchor) return null;
+        // Meet can keep a hidden/stale composer mounted while replacing the
+        // visible chat panel. Never reuse a cached panel unless it still owns
+        // the current composer anchor.
+        if (meet._chatPanel && meet._chatPanel.isConnected && meet._chatPanel.contains(anchor)) {
+          return meet._chatPanel;
+        }
+        meet._chatPanel = null;
         let el = anchor.parentElement;
         for (let i = 0; i < 8 && el && el.tagName && el.tagName !== "BODY"; i++) {
           let composerKid = null;
@@ -414,16 +443,13 @@
             let el = node.parentElement;
             let depth = 0;
             while (el && el !== root && depth < 8) {
-              let full = "";
-              try {
-                full = visibleText(el);
-              } catch (e) { /* bỏ qua */ }
-              const nonTime = full.replace(/\d{1,2}:\d{2}\s*[AP]M/gi, "").replace(/\s+/g, " ").trim();
-              if (nonTime.length >= 2 && full.length <= 600) {
+              const cleanFull = meet.chatTextWithoutUi(el);
+              const nonTime = cleanFull.replace(/\d{1,2}:\d{2}\s*[AP]M/gi, "").replace(/\s+/g, " ").trim();
+              if (nonTime.length >= 2 && cleanFull.length <= 600) {
                 take(el);
                 break;
               }
-              if (full.length > 600) break;
+              if (cleanFull.length > 600) break;
               el = el.parentElement;
               depth++;
             }
@@ -467,7 +493,7 @@
             t = visibleText(el);
           } catch (e) { /* bỏ qua */ }
           if (!t || t.length < 2 || t.length > 400) continue;
-          if (meet.CHAT_BLOCKLIST.some((b) => t.toLowerCase().includes(b))) continue;
+          if (meet.chatTextWithoutUi(el).trim().length < 2) continue;
           take(el);
         }
       } catch (e) { /* bỏ qua */ }
@@ -482,6 +508,34 @@
       "in-call messages", "continuous chat", "let participants send",
       "pin a message", "send a message",
     ],
+    // Meet sometimes places a system notice next to the timestamp inside the
+    // same wrapper as a message. Remove the smallest notice-only subtree so
+    // its text cannot cause the real message to be rejected as UI.
+    chatTextWithoutUi(block) {
+      if (!block || block.nodeType !== 1) return "";
+      let copy;
+      try { copy = block.cloneNode(true); } catch (e) { return visibleText(block); }
+      try {
+        const rootText = visibleText(copy).toLowerCase();
+        const rootHasUi = meet.CHAT_BLOCKLIST.some((token) => rootText.includes(token));
+        const childHasUiAtAll = [...copy.querySelectorAll("*")].some((el) => {
+          const text = visibleText(el).toLowerCase();
+          return meet.CHAT_BLOCKLIST.some((token) => text.includes(token));
+        });
+        if (rootHasUi && !childHasUiAtAll) return "";
+        const nodes = [...copy.querySelectorAll("*")].reverse();
+        for (const el of nodes) {
+          const text = visibleText(el).toLowerCase();
+          if (!text || !meet.CHAT_BLOCKLIST.some((token) => text.includes(token))) continue;
+          const childHasUi = [...(el.children || [])].some((child) => {
+            const childText = visibleText(child).toLowerCase();
+            return meet.CHAT_BLOCKLIST.some((token) => childText.includes(token));
+          });
+          if (!childHasUi) el.remove();
+        }
+      } catch (e) { /* keep best-effort text */ }
+      return visibleText(copy);
+    },
     parseChatBlock(block, rosterNames, selfName) {
       if (!block || block.nodeType !== 1) return null;
       try {
@@ -492,7 +546,7 @@
       const TIME_RE = /\d{1,2}:\d{2}\s*[AP]M/i;
       let text = "";
       try {
-        text = visibleText(block);
+        text = meet.chatTextWithoutUi(block);
       } catch (e) {
         return null;
       }

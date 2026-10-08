@@ -93,6 +93,15 @@ describe("parseMarkdownToDocx — markdown thông thường", () => {
     expect(extractVisibleText(xml)).toContain("B");
   });
 
+  it("giữ chữ đậm, cấp bullet con và khoảng cách dòng/đoạn", async () => {
+    const nodes = parseMarkdownToDocx("- **Chủ đề:** Đánh giá\n        - **Nội dung chi tiết:** Rà soát số liệu.");
+    const xml = await packAndReadXml(nodes);
+    expect(xml).toContain("<w:b/>");
+    expect(xml).toContain('<w:ilvl w:val="1"/>');
+    expect(xml).toContain('w:after="80"');
+    expect(xml).toContain('w:line="280"');
+  });
+
   it("render paragraph thường", async () => {
     const nodes = parseMarkdownToDocx("Đoạn văn thường");
     expect(nodes).toHaveLength(1);
@@ -179,6 +188,14 @@ describe("parseHtmlToDocx", () => {
     const xml = await packAndReadXml(nodes);
     expect(extractVisibleText(xml)).toContain("A");
     expect(extractVisibleText(xml)).toContain("B");
+  });
+
+  it("giữ cấp danh sách lồng nhau trong HTML summary", async () => {
+    const nodes = parseHtmlToDocx("<ul><li><strong>Chủ đề:</strong><ul><li>Nội dung</li></ul></li></ul>");
+    const xml = await packAndReadXml(nodes);
+    expect(xml).toContain("<w:b/>");
+    expect(xml).toContain('<w:ilvl w:val="1"/>');
+    expect(extractVisibleText(xml)).toContain("Nội dung");
   });
 
   it("render <strong> trong <p>", async () => {

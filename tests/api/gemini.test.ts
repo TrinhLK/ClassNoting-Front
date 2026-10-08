@@ -135,7 +135,7 @@ describe("POST /api/gemini — retry + validate (bug unknown, test logic mới)"
     expect(prompt).toContain("| STT | Hạng mục |");
   });
 
-  it("prompt chứa rule chống contamination ngôn ngữ (chỉ tiếng Việt)", async () => {
+  it("prompt yêu cầu văn phong tiếng Việt hành chính, trung tính", async () => {
     fetchMock.mockResolvedValueOnce({
       ok: true,
       json: async () => ({ choices: [{ message: { content: "ok" } }] }),
@@ -147,8 +147,9 @@ describe("POST /api/gemini — retry + validate (bug unknown, test logic mới)"
     const [, opts] = fetchMock.mock.calls[0];
     const body = JSON.parse(opts.body);
     const prompt: string = body.messages[0].content;
-    expect(prompt).toContain("CHỈ sử dụng tiếng Việt");
-    expect(prompt).toContain("TUYỆT ĐỐI KHÔNG trộn từ ngữ tiếng Trung");
+    expect(prompt).toContain("Văn phong hành chính, trung tính");
+    expect(prompt).toContain("không cường điệu");
+    expect(prompt).toContain("Không đưa mã kỹ thuật như [segment:...]");
   });
 
   it("prompt full mode chứa thời gian bắt đầu + duration khi client gửi createdAt", async () => {

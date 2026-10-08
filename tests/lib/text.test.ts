@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { stripCjk, stripThinking, stripTimestamps } from "@/app/lib/text";
+import { normalizeMinuteMarkdown, stripCjk, stripEvidenceReferences, stripThinking, stripTimestamps } from "@/app/lib/text";
 
 describe("stripCjk", () => {
   it("input rỗng trả về rỗng", () => {
@@ -166,5 +166,33 @@ describe("stripTimestamps", () => {
 
   it("trim whitespace đầu cuối", () => {
     expect(stripTimestamps("   content thường   ")).toBe("content thường");
+  });
+});
+
+describe("stripEvidenceReferences", () => {
+  it("xóa id segment đơn, danh sách id và tiền tố evidence", () => {
+    const input = "Nội dung [seg11791373185438]. Mốc khác [seg_2_1791373185438, seg_11_1791373185438].";
+    expect(stripEvidenceReferences(input)).toBe("Nội dung. Mốc khác.");
+    expect(stripEvidenceReferences("Việc cần làm [segment:seg_1_123456].")).toBe("Việc cần làm.");
+    expect(stripEvidenceReferences("Tin nhắn [chat:chat_123_abc].")).toBe("Tin nhắn.");
+  });
+
+  it("giữ nguyên ngoặc vuông mang ý nghĩa nội dung", () => {
+    expect(stripEvidenceReferences("Mục tiêu [đề xuất] và phiên bản [v3.0].")).toBe(
+      "Mục tiêu [đề xuất] và phiên bản [v3.0]."
+    );
+  });
+});
+
+describe("normalizeMinuteMarkdown", () => {
+  it("đưa các bullet chi tiết dưới chủ đề thành ý con", () => {
+    const input = "## Chủ đề\n- **[Đánh giá dự án]:**\n- **Nội dung chi tiết:** Nộp qua GitHub.\n- **Kết luận:** Rà soát mã nguồn.\n- **[Trao giải]:** Danh sách phần thưởng.";
+    expect(normalizeMinuteMarkdown(input)).toBe(
+      "## Chủ đề\n- **[Đánh giá dự án]:**\n  - **Nội dung chi tiết:** Nộp qua GitHub.\n  - **Kết luận:** Rà soát mã nguồn.\n- **[Trao giải]:** Danh sách phần thưởng."
+    );
+  });
+
+  it("không sửa summary HTML", () => {
+    expect(normalizeMinuteMarkdown("<p>Giữ nguyên</p>")).toBe("<p>Giữ nguyên</p>");
   });
 });

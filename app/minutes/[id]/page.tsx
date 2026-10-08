@@ -24,6 +24,7 @@ import ErrorBoundary from "@/app/components/ErrorBoundary";
 import DocsFillModal from "@/app/components/DocsFillModal";
 import { sanitizeHtml } from "@/app/lib/sanitizeHtml";
 import { parseMarkdown } from "@/app/lib/minuteMarkdown";
+import { normalizeMinuteMarkdown, stripEvidenceReferences } from "@/app/lib/text";
 import { FileType } from "lucide-react";
 
 
@@ -159,9 +160,10 @@ function MinuteDetailPage() {
                 if (data) {
                     setMeeting(data);
                     // Convert Markdown to HTML for editing if it's not already HTML
-                    const contentForEdit = data.summary?.startsWith('<')
-                        ? data.summary
-                        : parseMarkdown(data.summary || "");
+                    const readerSummary = normalizeMinuteMarkdown(stripEvidenceReferences(data.summary || ""));
+                    const contentForEdit = readerSummary.startsWith('<')
+                        ? readerSummary
+                        : parseMarkdown(readerSummary);
                     setEditContent(contentForEdit);
                 } else {
                     toast.error("Không tìm thấy biên bản");
@@ -260,6 +262,8 @@ function MinuteDetailPage() {
     if (!meeting) {
         return null;
     }
+
+    const readerSummary = normalizeMinuteMarkdown(stripEvidenceReferences(meeting.summary || ""));
 
     return (
         <div className="min-h-screen bg-slate-50 font-sans">
@@ -500,9 +504,9 @@ function MinuteDetailPage() {
                                     className="summary-text"
                                     dangerouslySetInnerHTML={{
                                         __html: sanitizeHtml(getHighlightedContent(
-                                            meeting.summary && meeting.summary.trim().startsWith("<")
-                                                ? meeting.summary
-                                                : parseMarkdown(meeting.summary || ""),
+                                            readerSummary.trim().startsWith("<")
+                                                ? readerSummary
+                                                : parseMarkdown(readerSummary),
                                             highlightQuery
                                         ))
                                     }}
@@ -586,7 +590,7 @@ function MinuteDetailPage() {
                 isOpen={showDocsFill}
                 onClose={() => setShowDocsFill(false)}
                 context={{
-                    summary: meeting?.summary || undefined,
+                    summary: stripEvidenceReferences(meeting?.summary || "") || undefined,
                     speakers: (meeting?.speakers || []).map((s: { name: string }) => s.name),
                     objectives: meeting?.objectives || undefined,
                 }}

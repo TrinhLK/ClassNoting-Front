@@ -65,6 +65,11 @@ export const parseMarkdown = (text: string): string => {
   if (!text) return "";
 
   const lines = text.split(/\r?\n/);
+  const listIndents = [...new Set(lines.flatMap((line) => {
+    const match = line.match(/^(\s*)(?:[-*+]|\d+[.)])\s+/);
+    return match ? [match[1].replace(/\t/g, "  ").length] : [];
+  }))].sort((a, b) => a - b);
+  const listLevel = (indent: string) => Math.min(8, Math.max(0, listIndents.indexOf(indent.replace(/\t/g, "  ").length)));
   const out: string[] = [];
   let listOpen: "ul" | "ol" | null = null;
 
@@ -107,8 +112,8 @@ export const parseMarkdown = (text: string): string => {
     const h1 = line.match(/^#\s+(.*)/);
     const h2 = line.match(/^##\s+(.*)/);
     const h3 = line.match(/^###\s+(.*)/);
-    const bullet = line.match(/^\s*[-*+]\s+(.*)/);
-    const numbered = line.match(/^\s*\d+[.)]\s+(.*)/);
+    const bullet = line.match(/^(\s*)[-*+]\s+(.*)/);
+    const numbered = line.match(/^(\s*)\d+[.)]\s+(.*)/);
 
     if (h1) {
       closeList();
@@ -121,10 +126,15 @@ export const parseMarkdown = (text: string): string => {
       out.push(`<h3>${inlineMarkdownToHtml(h3[1])}</h3>`);
     } else if (bullet) {
       openList("ul");
-      out.push(`<li>${inlineMarkdownToHtml(bullet[1])}</li>`);
+      const level = listLevel(bullet[1]);
+      const marker = level === 0 ? "disc" : level % 2 ? "circle" : "square";
+      const style = level === 0 ? "" : ` style="margin-left:${level * 24}px;list-style-type:${marker};"`;
+      out.push(`<li${style}>${inlineMarkdownToHtml(bullet[2])}</li>`);
     } else if (numbered) {
       openList("ol");
-      out.push(`<li>${inlineMarkdownToHtml(numbered[1])}</li>`);
+      const level = listLevel(numbered[1]);
+      const style = level === 0 ? "" : ` style="margin-left:${level * 24}px;list-style-type:lower-alpha;"`;
+      out.push(`<li${style}>${inlineMarkdownToHtml(numbered[2])}</li>`);
     } else {
       closeList();
       out.push(`<p>${inlineMarkdownToHtml(line)}</p>`);

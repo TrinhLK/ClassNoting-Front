@@ -115,7 +115,7 @@ export const renderHtmlSummary = (html: string): string => {
     if (node.nodeType === Node.TEXT_NODE) {
       const text = (node.textContent || "").trim();
       if (text) {
-        out.push(`<p style="margin:6px 0;">${escapeHtml(text)}</p>`);
+          out.push(`<p style="margin:0 0 10px;">${escapeHtml(text)}</p>`);
       }
       return;
     }
@@ -126,13 +126,13 @@ export const renderHtmlSummary = (html: string): string => {
 
     switch (tag) {
       case "h1":
-        out.push(`<h1 style="font-size:20px;font-weight:700;color:#0f172a;margin:20px 0 10px;border-bottom:2px solid #e2e8f0;padding-bottom:6px;">${el.innerHTML}</h1>`);
+        out.push(`<h1 style="font-size:20px;font-weight:700;color:#111827;margin:20px 0 10px;border-bottom:1px solid #9ca3af;padding-bottom:6px;">${el.innerHTML}</h1>`);
         return;
       case "h2":
-        out.push(`<h2 style="font-size:16px;font-weight:700;color:#4338ca;margin:16px 0 8px;">${el.innerHTML}</h2>`);
+        out.push(`<h2 style="font-size:16px;font-weight:700;color:#1f2937;margin:18px 0 8px;">${el.innerHTML}</h2>`);
         return;
       case "h3":
-        out.push(`<h3 style="font-size:14px;font-weight:700;color:#1e293b;margin:14px 0 6px;">${el.innerHTML}</h3>`);
+        out.push(`<h3 style="font-size:14px;font-weight:700;color:#374151;margin:14px 0 6px;">${el.innerHTML}</h3>`);
         return;
       case "h4":
       case "h5":
@@ -141,15 +141,15 @@ export const renderHtmlSummary = (html: string): string => {
         return;
       case "p":
         if (text) {
-          out.push(`<p style="margin:6px 0;">${el.innerHTML}</p>`);
+          out.push(`<p style="margin:0 0 10px;">${el.innerHTML}</p>`);
         }
         return;
       case "ul":
       case "ol":
-        out.push(`<${tag} style="margin:8px 0;padding-left:24px;">${el.innerHTML}</${tag}>`);
+        out.push(`<${tag} style="margin:0 0 12px;padding-left:26px;">${el.innerHTML}</${tag}>`);
         return;
       case "li":
-        out.push(`<li style="margin:3px 0;">${el.innerHTML}</li>`);
+        out.push(`<li style="margin:0 0 8px;">${el.innerHTML}</li>`);
         return;
       case "blockquote":
         out.push(`<blockquote style="border-left:4px solid #cbd5e1;padding:4px 12px;margin:8px 0;color:#475569;font-style:italic;">${el.innerHTML}</blockquote>`);
@@ -183,6 +183,11 @@ export const summaryToHtml = (summary: string): string => {
   }
 
   const lines = summary.split(/\r?\n/);
+  const listIndents = [...new Set(lines.flatMap((line) => {
+    const match = line.match(/^(\s*)(?:[-*+]|\d+[.)])\s+/);
+    return match ? [match[1].replace(/\t/g, "  ").length] : [];
+  }))].sort((a, b) => a - b);
+  const listLevel = (indent: string) => Math.min(8, Math.max(0, listIndents.indexOf(indent.replace(/\t/g, "  ").length)));
   const out: string[] = [];
   let listType: "ul" | "ol" | null = null;
 
@@ -226,31 +231,34 @@ export const summaryToHtml = (summary: string): string => {
     const h1 = line.match(/^#\s+(.*)/);
     const h2 = line.match(/^##\s+(.*)/);
     const h3 = line.match(/^###\s+(.*)/);
-    const bullet = line.match(/^\s*([-*+])\s+(.*)/);
-    const numbered = line.match(/^\s*(\d+)[.)]\s+(.*)/);
+    const bullet = line.match(/^(\s*)[-*+]\s+(.*)/);
+    const numbered = line.match(/^(\s*)(\d+)[.)]\s+(.*)/);
     const quote = line.match(/^\s*>\s+(.*)/);
 
     if (h1) {
       closeList();
-      out.push(`<h1 style="font-size:20px;font-weight:700;color:#0f172a;margin:20px 0 10px;border-bottom:2px solid #e2e8f0;padding-bottom:6px;">${inlineMarkdownToHtml(h1[1])}</h1>`);
+        out.push(`<h1 style="font-size:20px;font-weight:700;color:#111827;margin:20px 0 10px;border-bottom:1px solid #9ca3af;padding-bottom:6px;">${inlineMarkdownToHtml(h1[1])}</h1>`);
     } else if (h2) {
       closeList();
-      out.push(`<h2 style="font-size:16px;font-weight:700;color:#4338ca;margin:16px 0 8px;">${inlineMarkdownToHtml(h2[1])}</h2>`);
+      out.push(`<h2 style="font-size:16px;font-weight:700;color:#1f2937;margin:18px 0 8px;">${inlineMarkdownToHtml(h2[1])}</h2>`);
     } else if (h3) {
       closeList();
-      out.push(`<h3 style="font-size:14px;font-weight:700;color:#1e293b;margin:14px 0 6px;">${inlineMarkdownToHtml(h3[1])}</h3>`);
+      out.push(`<h3 style="font-size:14px;font-weight:700;color:#374151;margin:14px 0 6px;">${inlineMarkdownToHtml(h3[1])}</h3>`);
     } else if (bullet) {
       openList("ul");
-      out.push(`<li style="margin:3px 0;">${inlineMarkdownToHtml(bullet[2])}</li>`);
+      const level = listLevel(bullet[1]);
+      const bulletStyle = level === 0 ? "disc" : level % 2 ? "circle" : "square";
+      out.push(`<li style="margin:0 0 8px ${level * 24}px;list-style-type:${bulletStyle};">${inlineMarkdownToHtml(bullet[2])}</li>`);
     } else if (numbered) {
       openList("ol");
-      out.push(`<li style="margin:3px 0;">${inlineMarkdownToHtml(numbered[2])}</li>`);
+      const level = listLevel(numbered[1]);
+      out.push(`<li style="margin:0 0 8px ${level * 24}px;list-style-type:${level === 0 ? "decimal" : "lower-alpha"};">${inlineMarkdownToHtml(numbered[3])}</li>`);
     } else if (quote) {
       closeList();
       out.push(`<blockquote style="border-left:4px solid #cbd5e1;padding:4px 12px;margin:8px 0;color:#475569;font-style:italic;">${inlineMarkdownToHtml(quote[1])}</blockquote>`);
     } else {
       closeList();
-      out.push(`<p style="margin:6px 0;">${inlineMarkdownToHtml(line)}</p>`);
+      out.push(`<p style="margin:0 0 10px;">${inlineMarkdownToHtml(line)}</p>`);
     }
     i++;
   }

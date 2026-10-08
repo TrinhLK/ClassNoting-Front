@@ -5,7 +5,7 @@ import { Meeting } from "../lib/db";
 import { escapeHtml, summaryToHtml } from "../lib/docx/pdfRenderer";
 import { buildSummaryDocx, parseSummaryToDocx } from "../lib/docx/parser";
 import { formatTime, formatDate } from "../lib/format";
-import { stripTimestamps } from "../lib/text";
+import { normalizeMinuteMarkdown, stripEvidenceReferences, stripTimestamps } from "../lib/text";
 
 export function useExport(
   meeting: Meeting,
@@ -37,7 +37,7 @@ export function useExport(
 
   const exportDocx = useCallback(async () => {
     try {
-      const cleanSummary = stripTimestamps(meeting.summary || "");
+      const cleanSummary = normalizeMinuteMarkdown(stripTimestamps(stripEvidenceReferences(meeting.summary || "")));
       const nodes = parseSummaryToDocx(cleanSummary);
       const blob = await buildSummaryDocx(
         meeting.title,
@@ -59,16 +59,16 @@ export function useExport(
         return;
       }
       const html2pdf = (await import("html2pdf.js")).default;
-      const cleanSummary = stripTimestamps(meeting.summary);
+      const cleanSummary = normalizeMinuteMarkdown(stripTimestamps(stripEvidenceReferences(meeting.summary)));
 
       overlay = document.createElement("div");
       overlay.id = "meeting-summary-pdf-export";
       overlay.style.cssText =
         "position:fixed;inset:0;background:#e2e8f0;z-index:99999;overflow:auto;display:flex;justify-content:center;padding:24px;";
       overlay.innerHTML = `
-        <div id="meeting-summary-pdf-content" style="width:794px;background:#ffffff;padding:40px 48px;box-sizing:border-box;font-family:Inter,ui-sans-serif,system-ui,sans-serif;line-height:1.7;color:#1e293b;font-size:13px;">
-          <h1 style="font-size:22px;font-weight:700;color:#0f172a;border-bottom:2px solid #e2e8f0;padding-bottom:10px;margin:0 0 6px;">${escapeHtml(meeting.title)}</h1>
-          <p style="text-align:center;color:#64748b;font-size:12px;margin:4px 0 24px;">Ngày: ${formatDate(meeting.createdAt)} | Thời lượng: ${formatTime(meeting.duration)}</p>
+        <div id="meeting-summary-pdf-content" style="width:794px;background:#ffffff;padding:40px 52px;box-sizing:border-box;font-family:'Times New Roman',serif;line-height:1.4;color:#111827;font-size:13px;">
+          <h1 style="font-size:20px;font-weight:700;text-align:center;color:#111827;padding:0;margin:0 0 4px;">${escapeHtml(meeting.title)}</h1>
+          <p style="text-align:center;color:#374151;font-size:12px;margin:0 0 22px;">Ngày: ${formatDate(meeting.createdAt)} | Thời lượng: ${formatTime(meeting.duration)}</p>
           <div>${summaryToHtml(cleanSummary)}</div>
         </div>
       `;

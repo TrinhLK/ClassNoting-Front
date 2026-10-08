@@ -160,8 +160,9 @@ describe("useMeetingDetail — share + summarize hook", () => {
 
       const [calledMeeting, fullText] = onSummarize.mock.calls[0];
       expect(calledMeeting.id).toBe(meeting.id);
-      expect(fullText).toContain("[00:00] [An]: Xin chào [segment:");
-      expect(fullText).toContain("[01:15] [Bình]: Tôi khỏe [segment:");
+      expect(fullText).toContain("[00:00] [An]: Xin chào");
+      expect(fullText).toContain("[01:15] [Bình]: Tôi khỏe");
+      expect(fullText).not.toContain("[segment:");
     });
 
     it("fullText phải chứa [mm:ss] ở đầu mỗi dòng — AI phụ thuộc vào đây để chèn timestamp", () => {
@@ -200,7 +201,8 @@ describe("useMeetingDetail — share + summarize hook", () => {
       });
 
       const [, fullText] = onSummarize.mock.calls[0];
-      expect(fullText).toContain("[00:42] [Chưa xác định]: Hello [segment:");
+      expect(fullText).toContain("[00:42] [Chưa xác định]: Hello");
+      expect(fullText).not.toContain("[segment:");
     });
 
     it("fallback 'Speaker {split_part}' khi speakerId không có format SPEAKER_XX", () => {
@@ -217,7 +219,8 @@ describe("useMeetingDetail — share + summarize hook", () => {
       });
 
       const [, fullText] = onSummarize.mock.calls[0];
-      expect(fullText).toContain("[00:00] [Chưa xác định]: Hi [segment:");
+      expect(fullText).toContain("[00:00] [Chưa xác định]: Hi");
+      expect(fullText).not.toContain("[segment:");
     });
 
     it("truyền template.structure cho onSummarize", () => {

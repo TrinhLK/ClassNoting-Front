@@ -21,6 +21,12 @@ describe("parseMarkdown — markdown thông thường", () => {
     expect(html).toContain("</ul>");
   });
 
+  it("giữ bullet con có thụt lề sau chuẩn hóa biên bản", () => {
+    const html = parseMarkdown("- **[Chủ đề]:** Đánh giá\n  - **Nội dung:** Rà soát dữ liệu");
+    expect(html).toContain("margin-left:24px");
+    expect(html).toContain("<strong>Nội dung:</strong>");
+  });
+
   it("render numbered list ol", () => {
     const html = parseMarkdown("1. A\n2. B");
     expect(html).toContain("<ol>");

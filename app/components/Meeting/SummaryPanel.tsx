@@ -8,6 +8,7 @@ import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { sanitizeHtml } from "@/app/lib/sanitizeHtml";
+import { normalizeMinuteMarkdown, stripEvidenceReferences } from "@/app/lib/text";
 import {
   Sparkles, FileText, AlignLeft, Edit3, Check
 } from "lucide-react";
@@ -131,6 +132,8 @@ export default function SummaryPanel({
     return `${m.toString().padStart(2, "0")}:${sec.toString().padStart(2, "0")}`;
   };
 
+  const readerSummary = normalizeMinuteMarkdown(stripEvidenceReferences(meeting.summary || ""));
+
   return (
     <div className={`lg:w-2/5 md:w-[350px] bg-slate-50 flex flex-col shrink-0 ${activeTab === "summary" ? "flex flex-1" : "hidden md:flex"}`}>
       <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 pb-32">
@@ -160,14 +163,14 @@ export default function SummaryPanel({
                 }
               }}
             >
-              {meeting.summary.startsWith("<") ? (
+              {readerSummary.startsWith("<") ? (
                 <div
                   className="text-sm text-slate-700 leading-relaxed text-justify"
-                  dangerouslySetInnerHTML={{ __html: formatHtmlSummary(sanitizeHtml(meeting.summary)) }}
+                  dangerouslySetInnerHTML={{ __html: formatHtmlSummary(sanitizeHtml(readerSummary)) }}
                 />
               ) : (
                 <div className="text-sm text-slate-700 leading-relaxed text-justify">
-                  <ReactMarkdown components={MarkdownComponents} remarkPlugins={[remarkGfm]}>{meeting.summary}</ReactMarkdown>
+                  <ReactMarkdown components={MarkdownComponents} remarkPlugins={[remarkGfm]}>{readerSummary}</ReactMarkdown>
                 </div>
               )}
             </div>

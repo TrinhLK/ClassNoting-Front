@@ -65,3 +65,42 @@ export const stripTimestamps = (text: string): string => {
     .replace(/^[ \t]+/gm, "")
     .trim();
 };
+
+/** Remove internal transcript/chat evidence IDs from reader-facing minutes. */
+export const stripEvidenceReferences = (text: string): string => {
+  if (!text) return "";
+  const id = String.raw`(?:segment\s*:\s*seg(?:ment)?[_:-]?\d[A-Za-z0-9_-]*|chat\s*:\s*chat[_:-]?[A-Za-z0-9_-]+|seg(?:ment)?[_:-]?\d[A-Za-z0-9_-]*)`;
+  return text
+    // IDs can be emitted alone or as a comma-separated evidence list.
+    .replace(new RegExp(String.raw`\[(?:\s*${id}\s*,?)+\]`, "gi"), "")
+    // Also remove the machine-readable prefix when the model placed it outside brackets.
+    .replace(new RegExp(String.raw`\b(?:segment\s*:\s*seg(?:ment)?[_:-]?\d[A-Za-z0-9_-]*|chat\s*:\s*chat[_:-]?[A-Za-z0-9_-]+)\b`, "gi"), "")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/[ \t]+([,.;:!?])/g, "$1")
+    .replace(/[ \t]+(?=\n)/g, "")
+    .replace(/\n[ \t]*\n(?:[ \t]*\n)+/g, "\n\n")
+    .trim();
+};
+
+/** Restore the topic → detail hierarchy when a model flattened Markdown bullets. */
+export const normalizeMinuteMarkdown = (text: string): string => {
+  if (!text || text.trimStart().startsWith("<")) return text;
+  let topicIndent: number | null = null;
+  return text.split(/\r?\n/).map((line) => {
+    const topic = line.match(/^(\s*)[-*+]\s+\*\*?\[[^\]]+\]\s*:?\*\*?/);
+    if (topic) {
+      topicIndent = topic[1].replace(/\t/g, "  ").length;
+      return line;
+    }
+    if (/^\s*#{1,6}\s+/.test(line)) {
+      topicIndent = null;
+      return line;
+    }
+    const bullet = line.match(/^(\s*)([-*+])\s+(.*)$/);
+    if (topicIndent !== null && bullet) {
+      const indent = bullet[1].replace(/\t/g, "  ").length;
+      if (indent <= topicIndent) return `  ${line}`;
+    }
+    return line;
+  }).join("\n");
+};

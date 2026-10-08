@@ -64,6 +64,13 @@ describe("summaryToHtml — Markdown", () => {
     expect(html).toContain("</ul>");
   });
 
+  it("tạo điểm nhấn và thụt lề cho bullet con", () => {
+    const html = summaryToHtml("- **Chủ đề:** Đánh giá\n    - **Nội dung:** Kiểm tra số liệu");
+    expect(html).toContain("<strong>Chủ đề:</strong>");
+    expect(html).toContain("<strong>Nội dung:</strong>");
+    expect(html).toContain("margin:0 0 8px 24px");
+  });
+
   it("render bảng markdown thành <table> HTML", () => {
     const md = "| Tên | Trạng thái |\n|---|---|\n| An | Xong |\n| Bình | Đang làm |";
     const html = summaryToHtml(md);

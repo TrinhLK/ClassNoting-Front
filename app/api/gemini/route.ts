@@ -1,7 +1,7 @@
 // app/api/gemini/route.ts
 import { NextResponse } from "next/server";
 import { checkRateLimit } from "@/app/lib/rate-limit";
-import { stripCjk, stripThinking } from "@/app/lib/text";
+import { stripCjk, stripEvidenceReferences, stripThinking } from "@/app/lib/text";
 import { parseAiJson } from "@/app/lib/json-parser";
 import { isValidAiSessionId } from "@/app/lib/ai-session";
 
@@ -386,9 +386,9 @@ export async function POST(req: Request) {
       const isVeryLongMeeting = durationMinutes >= 45;
 
       const durationHint = isVeryLongMeeting
-        ? `\n📌 CUỘC HỌP DÀI (${durationMinutes} PHÚT): Đây là cuộc họp rất dài. Bạn PHẢI viết biên bản CHI TIẾT, bao quát TẤT CẢ các chủ đề đã được thảo luận. KHÔNG được bỏ sót bất kỳ ý chính nào. Mỗi chủ đề phải có phần diễn giải cụ thể, ghi rõ ai nói gì, số liệu bao nhiêu, quyết định cuối cùng là gì.`
+        ? `\n📌 CUỘC HỌP DÀI (${durationMinutes} PHÚT): Bao quát các chủ đề chính và quyết định có bằng chứng trong transcript. Giữ nội dung đủ để người đọc hiểu, nhưng không lặp ý hoặc bổ sung chi tiết không được nêu.`
         : isLongMeeting
-          ? `\n📌 CUỘC HỌP DÀI (${durationMinutes} PHÚT): Bạn cần viết biên bản chi tiết, bao quát đầy đủ các chủ đề. Mỗi chủ đề nên có diễn giải cụ thể, không được tóm tắt quá ngắn gọn.`
+          ? `\n📌 CUỘC HỌP DÀI (${durationMinutes} PHÚT): Tóm tắt đầy đủ các chủ đề chính, phân biệt rõ nội dung trao đổi với kết luận đã thống nhất; không lặp ý hoặc suy diễn.`
         : "";
 
       const objectivesPrompt = meetingObjectives
@@ -418,7 +418,7 @@ export async function POST(req: Request) {
         : dateContext || "không rõ";
 
       prompt = `
-      Bạn là Thư Ký Cấp Cao chuyên nghiệp. Nhiệm vụ của bạn là tổng hợp BIÊN BẢN CHI TIẾT cuộc họp từ văn bản thô (transcript), đảm bảo tính chính xác tuyệt đối của thông tin.
+      Bạn là thư ký cuộc họp. Hãy lập biên bản tóm tắt bằng tiếng Việt theo văn phong hành chính: khách quan, rõ ý, mạch lạc, tiết chế; không cường điệu hoặc đưa nhận định chủ quan.
       ${durationHint}
       ${objectivesPrompt}
       THÔNG TIN CUỘC HỌP:
@@ -429,9 +429,9 @@ export async function POST(req: Request) {
       (Dùng thời gian bắt đầu để quy đổi các cụm từ chỉ thời gian tương đối trong transcript như "ngày mai", "thứ 2 tới", "tuần sau" thành ngày cụ thể.)
 
       NGUYÊN TẮC TƯ DUY (KHÔNG IN RA):
-      1. Đọc TOÀN BỘ transcript. Liệt kê ra giấy (hoặc trong đầu) tất cả các chủ đề đã được nhắc đến.
-      2. Với mỗi chủ đề, xác định: Ai nói? Nói gì cụ thể? Có số liệu nào không? Quyết định cuối cùng là gì?
-      3. Kiểm tra lại: Có chủ đề nào bị bỏ sót không? Có số liệu nào cần trích xuất chính xác không?
+      1. Đọc transcript và xác định các chủ đề chính, ý kiến, kết luận và việc cần làm có căn cứ.
+      2. Phân biệt nội dung được đề xuất, đang xem xét và đã thống nhất; không biến trao đổi thành quyết định.
+      3. Kiểm tra số liệu, đơn vị và mốc thời gian trực tiếp với transcript; nếu không rõ, ghi là chưa xác định.
 
       YÊU CẦU CỐT LÕI (XỬ LÝ DỮ LIỆU):
       1.  **Bảo toàn nguyên vẹn số liệu:** Mọi dữ kiện định lượng (con số, ngày tháng, thời gian, chi phí, số lượng, phần trăm...) phải được trích xuất CHÍNH XÁC TUYỆT ĐỐI như trong transcript.
@@ -439,10 +439,12 @@ export async function POST(req: Request) {
         Ví dụ: năm hai không hai tư -> nên chuyển thành 2024; phiên bản vê một -> nên chuyển thành phiên bản v1.
           * *Tuyệt đối không* tự ý làm tròn số (trừ khi được yêu cầu trong văn bản).
           * *Tuyệt đối không* suy đoán hay tự điền số liệu nếu transcript không nhắc đến.
-      2.  **Viết chi tiết, đầy đủ:** KHÔNG viết tóm tắt quá ngắn gọn. Mỗi chủ đề thảo luận phải có diễn giải cụ thể với các ý chính, luận điểm, và kết luận. Phải bao quát được TOÀN BỘ nội dung cuộc họp, không được bỏ sót chủ đề.
+      2.  **Viết khách quan, có mức độ:** Chỉ nêu thông tin có căn cứ trong transcript. Không phóng đại mức độ đồng thuận, kết quả, tác động hoặc tính chắc chắn; không lặp lại cùng một ý ở nhiều mục. Nếu không thể xác minh, ghi "Chưa xác định" hoặc "Chưa có kết luận".
       3.  **Gắn mốc thời gian (Timestamp):** Đây là yêu cầu BẮT BUỘC. Hãy chèn mốc thời gian bắt đầu của ý kiến hoặc chủ đề đó theo định dạng [mm:ss] (ví dụ: [01:23], [10:05]) vào đầu mỗi gạch đầu dòng hoặc tiêu đề mục lục nếu có thể. Điều này giúp người dùng dễ dàng đối chiếu với bản ghi âm.
       4.  **Ghi rõ người nói:** Khi một ý kiến hoặc quyết định được đưa ra, PHẢI ghi rõ ai là người nói (nếu transcript có tên/vai trò). Ví dụ: "[Anh Minh]: Dự án sẽ hoàn thành vào tháng 3."
-      ${meetingObjectives ? `5.  **Định hướng nội dung theo mục tiêu:** Ưu tiên trích xuất và làm sâu sắc thêm các chi tiết liên quan đến "MỤC TIÊU CUỘC HỌP" đã nêu trên.` : ""}
+      5.  **Bảo vệ dữ liệu nguồn:** Không đưa mã kỹ thuật như [segment:...], [seg_...], [chat:...] hoặc ID nội bộ vào biên bản.
+      6.  **Phân cấp nội dung:** Mỗi chủ đề là một gạch đầu dòng cấp chính; nội dung, số liệu, kết luận và người trình bày là gạch đầu dòng con. Dùng chữ đậm cho nhãn ngắn cần định hướng, không bôi đậm cả đoạn.
+      ${meetingObjectives ? `7.  **Định hướng nội dung theo mục tiêu:** Ưu tiên làm rõ các chi tiết liên quan trực tiếp đến "MỤC TIÊU CUỘC HỌP" đã nêu trên.` : ""}
 
       DỮ LIỆU ĐẦU VÀO:
       "${text}"
@@ -457,19 +459,20 @@ export async function POST(req: Request) {
          Nếu template chứa bảng Markdown (có dòng phân cách dạng | --- | --- |), BẮT BUỘC xuất bảng ở đúng vị trí đó — KHÔNG được thay bằng bullet hay danh sách.
       2. **Dòng "Thời gian:" trong template**: Nếu template có dòng bắt đầu bằng "- **Thời gian:**", BẮT BUỘC thay bằng đúng chuỗi thời gian đã chuẩn bị ở THÔNG TIN CUỘC HỌP (đã có sẵn trong prompt). KHÔNG giữ nguyên giá trị ví dụ/placeholder trong template. KHÔNG tự ý bịa thời gian.
       3. **Chỉ thay nội dung placeholder**: thay các chỗ có ngoặc vuông [...] hoặc chỗ trống (...) bằng nội dung thực tế từ transcript. Không tự ý thêm/bớt heading hay bullet ngoài template.
-      4. **CHỈ sử dụng tiếng Việt** trong toàn bộ output. TUYỆT ĐỐI KHÔNG trộn từ ngữ tiếng Trung, tiếng Anh hay bất kỳ ngôn ngữ nào khác (trừ tên riêng, thuật ngữ kỹ thuật phổ biến như "API", "CDN").
-      5. **KHÔNG được viết quá ngắn gọn.** Mỗi mục trong template phải có nội dung chi tiết, cụ thể. Nếu một mục không có thông tin relevant thì ghi "Không có" thay vì bỏ trống.
+      4. **Ngôn ngữ:** Viết bằng tiếng Việt, giữ nguyên tên riêng và thuật ngữ chuyên ngành cần thiết.
+      5. **Không tự điền nội dung mẫu:** Chỉ ghi mục có thông tin được transcript hỗ trợ; nếu template bắt buộc có mục nhưng transcript không đề cập, ghi "Không có thông tin trong bản ghi".
 
       LƯU Ý TRÌNH BÀY:
-      - Văn phong khách quan, chuyên nghiệp.
+      - Văn phong hành chính, trung tính, chuyên nghiệp; câu ngắn vừa phải, tránh khẩu ngữ, từ cảm thán và nhận định cường điệu.
       - Tuân thủ chặt chẽ cấu trúc đề bài (các mục H1, H2...).
       - Mỗi ý chính hoặc mục thảo luận nên có mốc thời gian [mm:ss] đi kèm.
       - Nếu transcript có thông tin mâu thuẫn (VD: Lúc đầu nói A, sau sửa thành B), hãy ghi nhận thông tin cuối cùng đã được chốt lại (B).
-      - Cuộc họp dài có nhiều chủ đề → Phải liệt kê TẤT CẢ các chủ đề, không được tóm gộp quá nhiều vào một mục duy nhất.
+      - Sắp xếp ý theo chủ đề; tách đoạn và dùng gạch đầu dòng con cho nội dung chi tiết, không dồn nhiều ý độc lập vào một đoạn.
       `;
     }
 
-    const summary = stripCjk(await generateWithFallback(prompt, chosenModels, mode, sessionId, requestId));
+    const generated = stripCjk(await generateWithFallback(prompt, chosenModels, mode, sessionId, requestId));
+    const summary = mode === "full" ? stripEvidenceReferences(generated) : generated;
     return NextResponse.json({ summary });
 
   } catch (error: any) {

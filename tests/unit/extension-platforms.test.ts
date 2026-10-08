@@ -141,6 +141,47 @@ describe("extension platforms.js — chat (Meet)", () => {
     expect(root!.getAttribute("role")).toBe("log");
   });
 
+  it("chatRoot: ưu tiên panel In-call messages khi Meet hiển thị notice Continuous chat off", () => {
+    setBody(`
+      <div role="log" id="other-log"><div>Caption update 2:46 PM</div></div>
+      <aside class="call-chat-panel" aria-label="In-call messages">
+        <div class="notice">Continuous chat is turned off</div>
+        <div class="message-list">
+          <div class="message" id="own-message">
+            <span>Đức Anh có nghe không?</span><span>2:47 PM</span>
+          </div>
+        </div>
+        <div class="composer"><div role="textbox" aria-label="Send a message">Send a message</div></div>
+      </aside>`);
+    const root = meet.chatRoot() as HTMLElement | null;
+    expect(root?.className).toBe("call-chat-panel");
+    const blocks = meet.findChatBlocks(root!) as Element[];
+    expect(blocks.map((block) => block.id)).toContain("own-message");
+    const parse = meet.parseChatBlock as (
+      block: Element,
+      roster?: string[],
+      self?: string
+    ) => { text: string; sender: string } | null;
+    expect(parse(document.querySelector("#own-message")!, [], "Lê Khánh Trinh")).toEqual({
+      text: "Đức Anh có nghe không?",
+      sender: "Lê Khánh Trinh",
+    });
+  });
+
+  it("chatRoot: bỏ qua composer bị ẩn còn sót lại khi mở panel mới", () => {
+    setBody(`
+      <section id="old-panel" style="display:none">
+        <div class="messages">tin cũ trong panel</div>
+        <div role="textbox" aria-label="Send a message"></div>
+      </section>
+      <aside id="current-panel" aria-label="In-call messages">
+        <div class="messages"><div class="message" id="current-message">tin mới 3:09 PM</div></div>
+        <div role="textbox" aria-label="Send a message"></div>
+      </aside>`);
+    const root = meet.chatRoot() as HTMLElement | null;
+    expect(root?.id).toBe("current-panel");
+  });
+
   it("parseChatNode: loại rác UI, giữ tin nhắn thật", () => {
     const parse = meet.parseChatNode as (n: Element) => { text: string; sender: string } | null;
     setBody(`
@@ -289,6 +330,30 @@ describe("extension platforms.js — chat blocks theo timestamp", () => {
     setBody(PANEL);
     const blocks = meet.findChatBlocks(document.querySelector("#chatpanel")!) as Element[];
     expect(blocks.map((b) => b.id).sort()).toEqual(["m1", "m2"]);
+  });
+
+  it("vẫn lấy bubble khi thông báo Continuous chat nằm chung row với timestamp", () => {
+    setBody(`
+      <aside id="chatpanel">
+        <div class="row" id="own-row">
+          <div class="notice">Continuous chat is turned off. Messages will not be saved for meeting participants when the call ends.</div>
+          <div class="time">3:08 PM</div>
+          <div class="bubble">alo tôi đây</div>
+        </div>
+        <div class="composer"><div role="textbox" aria-label="Send a message">Send a message</div></div>
+      </aside>`);
+    const panel = document.querySelector("#chatpanel")!;
+    const blocks = meet.findChatBlocks(panel) as Element[];
+    expect(blocks.map((b) => b.id)).toContain("own-row");
+    const parse = meet.parseChatBlock as (
+      b: Element,
+      roster?: string[],
+      self?: string
+    ) => { text: string; sender: string } | null;
+    expect(parse(document.querySelector("#own-row")!, [], "Trịnh Lê Khánh")).toEqual({
+      text: "alo tôi đây",
+      sender: "Trịnh Lê Khánh",
+    });
   });
 
   it("parseChatBlock: tin có tên + tin của mình (không tên) + loại composer", () => {

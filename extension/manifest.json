@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ClassNoting — Ghi chú cuộc họp tự động",
-  "version": "0.3.4",
+  "version": "0.3.6",
   "description": "Tự phát hiện phòng họp Google Meet đang mở, ghi chú người tham gia + chat + transcript live về ClassNoting.",
   "minimum_chrome_version": "116",
   "permissions": ["tabs", "activeTab", "tabCapture", "storage", "notifications", "alarms", "offscreen", "scripting"],
