@@ -10,6 +10,7 @@ interface SegmentListProps {
   onTogglePlay: () => void;
   onSeek: (time: number) => void;
   onTextChange: (id: string, text: string) => void;
+  onRenameSpeaker: (id: string, name: string) => void;
   onSpeakerChange: (id: string, spkId: string) => void;
   onSplit: (id: string, cursor: number) => void;
   onMerge: (id: string) => void;
@@ -20,7 +21,7 @@ interface SegmentListProps {
 export default function SegmentList({
   segments, speakers, currentTime, isPlaying,
   onTogglePlay, onSeek, onTextChange, onSpeakerChange,
-  onSplit, onMerge, onAddRow, onTimeChange
+  onSplit, onMerge, onAddRow, onTimeChange, onRenameSpeaker
 }: SegmentListProps) {
   const getActiveWordIndex = (seg: Segment) => {
     if (!isPlaying || !seg.words) return -1;
@@ -45,6 +46,7 @@ export default function SegmentList({
             onSeek={onSeek}
             onTextChange={onTextChange}
             onSpeakerChange={onSpeakerChange}
+            onRenameSpeaker={onRenameSpeaker}
             onSplit={onSplit}
             onMerge={onMerge}
             onAddRow={onAddRow}

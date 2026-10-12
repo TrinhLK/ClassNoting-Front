@@ -18,6 +18,7 @@ import TemplateManagerModal from "./TemplateManagerModal";
 import SegmentList from "./Editor/SegmentList";
 import EditorHeader from "./Editor/Header";
 import EditorAudioPlayer from "./Editor/AudioPlayer";
+import { completeSpeakers } from "../lib/speakers";
 import SpeakerSidebar from "./Editor/SpeakerSidebar";
 import Breadcrumb from "./Breadcrumb";
 
@@ -37,7 +38,7 @@ export default function EditorState({
   // --- STATE ---
   const [showIntroModal, setShowIntroModal] = useState(true);
   const [segments, setSegments] = useState(initialData.segments);
-  const [speakers, setSpeakers] = useState(initialData.speakers);
+  const [speakers, setSpeakers] = useState(() => completeSpeakers(initialData.speakers || [], initialData.segments || []));
 
   // Edit Title
   const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -558,6 +559,7 @@ export default function EditorState({
                 onSeek={seekTo}
                 onTextChange={handleUpdateText}
                 onSpeakerChange={handleChangeSpeaker}
+                onRenameSpeaker={handleUpdateSpeakerName}
                 onSplit={handleSplitSegment}
                 onMerge={handleMergeSegment}
                 onAddRow={handleAddRow}

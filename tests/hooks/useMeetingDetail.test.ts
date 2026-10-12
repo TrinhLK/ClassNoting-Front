@@ -75,7 +75,7 @@ describe("useMeetingDetail — share + summarize hook", () => {
       clipboardSpy.mockRestore();
     });
 
-    it("fallback dùng meeting.id khi generateShareToken fail", async () => {
+    it("báo lỗi và không copy link khi generateShareToken fail", async () => {
       generateMeetingShareTokenMock.mockRejectedValueOnce(new Error("DB down"));
 
       const writeTextMock = vi.fn(async () => "");
@@ -93,9 +93,8 @@ describe("useMeetingDetail — share + summarize hook", () => {
         await result.current.handleShare();
       });
 
-      expect(writeTextMock).toHaveBeenCalledWith(
-        expect.stringContaining("/share/fallback-id")
-      );
+      expect(writeTextMock).not.toHaveBeenCalled();
+      expect(toast.error).toHaveBeenCalled();
       expect(consoleSpy).toHaveBeenCalled();
 
       consoleSpy.mockRestore();

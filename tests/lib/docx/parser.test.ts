@@ -334,3 +334,14 @@ describe("regression — không vỡ summary không có bảng", () => {
     expect(xml).not.toContain("<w:tbl");
   });
 });
+
+// Exercise the actual export preprocessing, not only the parser.
+import { stripCjk, stripTimestamps, stripEvidenceReferences, normalizeMinuteMarkdown } from "@/app/lib/text";
+it("preserves parent-child bullet levels through export cleanup", async () => {
+  const source = "- Nội dung chi tiết:\n  - **Hội trại:** Nội dung [01:23] [seg_1]\n    - Cháu\n  - Anh em\n- Mục tiếp theo";
+  const cleaned = normalizeMinuteMarkdown(stripTimestamps(stripEvidenceReferences(stripCjk(source))));
+  const blob = await buildSummaryDocx("Title", "Meta", parseSummaryToDocx(cleaned));
+  const zip = await JSZip.loadAsync(await blob.arrayBuffer());
+  const xml = await zip.file("word/document.xml")!.async("string");
+  expect([...xml.matchAll(/<w:ilvl w:val="(\d+)"/g)].map(m => Number(m[1]))).toEqual([0, 1, 2, 1, 0]);
+});

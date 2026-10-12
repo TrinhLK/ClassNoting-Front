@@ -1,3 +1,10 @@
+// Collapse prose whitespace without flattening Markdown list nesting.
+const cleanWhitespace = (text: string): string => text.split(/\r?\n/).map(line => {
+  const list = line.match(/^([ \t]*)(?=(?:[-*+]|\d+[.)])\s+)/);
+  const indent = list?.[1] || "";
+  return indent + line.slice(indent.length).replace(/[ \t]{2,}/g, " ").trim();
+}).join("\n").replace(/^\n+|\n+$/g, "");
+
 /**
  * CJK (Chinese/Japanese/Korean) — bao gồm Hiragana, Katakana,
  * CJK Unified Ideographs (BMP), CJK Extension A, CJK Compatibility,
@@ -15,12 +22,7 @@ const CJK_REGEX = /[\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\uAC00-\
 
 export const stripCjk = (text: string): string => {
   if (!text) return "";
-  return text
-    .replace(CJK_REGEX, "")
-    .replace(/[ \t]{2,}/g, " ")
-    .replace(/[ \t]+(?=\n)/g, "")
-    .replace(/^[ \t]+/gm, "")
-    .trim();
+  return cleanWhitespace(text.replace(CJK_REGEX, ""));
 };
 
 /**
@@ -59,27 +61,21 @@ export const stripThinking = (text: string): string => {
  */
 export const stripTimestamps = (text: string): string => {
   if (!text) return "";
-  return text
-    .replace(/\[\d{1,2}:\d{2}(?::\d{2})?\]\s*/g, "")
-    .replace(/[ \t]{2,}/g, " ")
-    .replace(/^[ \t]+/gm, "")
-    .trim();
+  return cleanWhitespace(text.replace(/\[\d{1,2}:\d{2}(?::\d{2})?\][ \t]*/g, ""));
 };
 
 /** Remove internal transcript/chat evidence IDs from reader-facing minutes. */
 export const stripEvidenceReferences = (text: string): string => {
   if (!text) return "";
   const id = String.raw`(?:segment\s*:\s*seg(?:ment)?[_:-]?\d[A-Za-z0-9_-]*|chat\s*:\s*chat[_:-]?[A-Za-z0-9_-]+|seg(?:ment)?[_:-]?\d[A-Za-z0-9_-]*)`;
-  return text
+  return cleanWhitespace(text
     // IDs can be emitted alone or as a comma-separated evidence list.
     .replace(new RegExp(String.raw`\[(?:\s*${id}\s*,?)+\]`, "gi"), "")
     // Also remove the machine-readable prefix when the model placed it outside brackets.
     .replace(new RegExp(String.raw`\b(?:segment\s*:\s*seg(?:ment)?[_:-]?\d[A-Za-z0-9_-]*|chat\s*:\s*chat[_:-]?[A-Za-z0-9_-]+)\b`, "gi"), "")
-    .replace(/[ \t]{2,}/g, " ")
     .replace(/[ \t]+([,.;:!?])/g, "$1")
     .replace(/[ \t]+(?=\n)/g, "")
-    .replace(/\n[ \t]*\n(?:[ \t]*\n)+/g, "\n\n")
-    .trim();
+    .replace(/\n[ \t]*\n(?:[ \t]*\n)+/g, "\n\n"));
 };
 
 /** Restore the topic → detail hierarchy when a model flattened Markdown bullets. */

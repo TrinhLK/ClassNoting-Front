@@ -25,7 +25,8 @@ export function useMeetingDetail(
         setMeeting({ ...meeting, shareToken: shareId });
       } catch (e) {
         console.error("Lỗi sinh share token", e);
-        shareId = meeting.id;
+        toast?.error("Không thể tạo link chia sẻ. Vui lòng thử lại.");
+        return;
       }
     }
     const shareUrl = `${window.location.origin}/share/${shareId}`;

@@ -175,14 +175,10 @@ export const getMeetingById = async (id: string): Promise<Meeting | undefined> =
 
 export const getMeetingByShareId = async (shareId: string): Promise<Meeting | undefined> => {
   try {
-    const q = query(collection(db, COLLECTION_NAME), where("shareToken", "==", shareId));
-    const snapshot = await getDocs(q);
-    if (!snapshot.empty) {
-      return await hydrateMeeting(snapshot.docs[0].data() as Meeting, shareId);
-    }
-    // KHÔNG fallback sang getMeetingById: nếu shareToken không match → không truy cập được.
-    // Trước đây fallback này cho phép ai biết meeting ID cũng xem được meeting private.
-    return undefined;
+    const response = await fetch(`/api/share/${encodeURIComponent(shareId)}`, { cache: "no-store" });
+    if (response.status === 404) return undefined;
+    if (!response.ok) throw new Error("Không thể tải cuộc họp được chia sẻ");
+    return await response.json() as Meeting;
   } catch (error) {
     console.error("Lỗi lấy từ share link:", error);
     return undefined;
@@ -215,7 +211,7 @@ export const updateMeetingFolder = async (meetingId: string, folderId: string | 
 };
 
 export const generateMeetingShareToken = async (id: string) => {
-  const token = Math.random().toString(36).substring(2, 10) + '-' + Math.random().toString(36).substring(2, 10);
+  const token = crypto.randomUUID();
   const docRef = doc(db, COLLECTION_NAME, id);
   await updateDoc(docRef, { shareToken: token });
   return token;

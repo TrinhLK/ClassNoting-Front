@@ -173,27 +173,22 @@ describe("getMeetingById / getMeetingByShareId — error handling", () => {
     expect(result).toBeUndefined();
   });
 
-  it("getMeetingByShareId ưu tiên query shareToken trước", async () => {
-    getDocsMock.mockResolvedValue({
-      empty: false,
-      docs: [{ data: () => mockMeeting({ id: "from_share" }) }],
-    });
-
+  it("loads public meeting through the token API without Firestore access", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify(mockMeeting({ id: "from_share" }))));
     const result = await getMeetingByShareId("token_xyz");
     expect(result?.id).toBe("from_share");
+    expect(fetchSpy).toHaveBeenCalledWith("/api/share/token_xyz", { cache: "no-store" });
+    fetchSpy.mockRestore();
   });
 
-  it("getMeetingByShareId KHÔNG fallback sang getMeetingById (security fix)", async () => {
-    getDocsMock.mockResolvedValue({ empty: true, docs: [] });
-    getDocMock.mockResolvedValue({
-      exists: () => true,
-      data: () => mockMeeting({ id: "private_meeting_id" }),
-    });
-
-    const result = await getMeetingByShareId("private_meeting_id");
-    expect(result).toBeUndefined();
+  it("does not fall back to a private meeting ID", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("", { status: 404 }));
+    getDocMock.mockClear();
+    expect(await getMeetingByShareId("private_meeting_id")).toBeUndefined();
     expect(getDocMock).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
   });
+
 });
 
 describe("updateMeetingProcess — strip undefined", () => {

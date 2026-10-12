@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { completeSpeakers } from "../lib/speakers";
 import RefinementControl from "./Meeting/RefinementControl";
 import { Sparkles, FileText as FileIcon, Share2, AlignLeft, MessageSquare, AlertTriangle, History } from "lucide-react";
-import { Meeting, updateMeetingProcess } from "../lib/db";
+import { Meeting, saveMeeting, updateMeetingProcess } from "../lib/db";
 import type { Segment, Speaker, ChatMessage } from "../lib/db";
 import { MEETING_STATUS } from "../lib/constants";
 import { getReprocessBackup, clearReprocessBackup } from "../lib/reprocessBackup";
@@ -102,7 +103,7 @@ export default function MeetingDetailState({
   const formatDuration = useCallback((sec: number) => formatTime(sec), [formatTime]);
 
   const segments = meeting.segments || [];
-  const speakers = meeting.speakers || [];
+  const speakers = completeSpeakers(meeting.speakers || [], segments);
   const chatMessages = useMemo(() => meeting.chatMessages || [], [meeting.chatMessages]);
   const hasChat = chatMessages.length > 0;
 
@@ -280,6 +281,16 @@ export default function MeetingDetailState({
                       onTogglePlay={togglePlay}
                       onSeek={seekTo}
                       onTextChange={() => {}}
+                      onRenameSpeaker={isReadOnly ? undefined : async (id, name) => {
+                        try {
+                          const updated = { ...meeting, speakers: speakers.map(s => s.id === id ? { ...s, name } : s) };
+                          await saveMeeting(updated);
+                          setMeeting(updated);
+                          toast.success("Đã lưu tên người nói");
+                        } catch {
+                          toast.error("Không thể lưu tên người nói. Vui lòng thử lại.");
+                        }
+                      }}
                       onSpeakerChange={() => {}}
                       onSplit={() => {}}
                       onMerge={() => {}}

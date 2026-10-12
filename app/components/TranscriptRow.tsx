@@ -15,6 +15,7 @@ interface TranscriptRowProps {
   onTogglePlay: () => void;
   onSeek: (time: number) => void;
   onTextChange: (id: string, text: string) => void;
+  onRenameSpeaker?: (id: string, name: string) => void;
   onSpeakerChange: (id: string, spkId: string) => void;
   onSplit: (id: string, cursor: number) => void;
   onMerge: (id: string) => void;
@@ -26,7 +27,7 @@ function TranscriptRow({
   segment, speaker, allSpeakers, isActive,
   isAudioPlaying, activeWordIndex, onTogglePlay,
   onSeek, onTextChange, onSpeakerChange, onSplit, onMerge,
-  onAddRow, onTimeChange
+  onAddRow, onTimeChange, onRenameSpeaker
 }: TranscriptRowProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -255,6 +256,18 @@ function TranscriptRow({
 
               {/* Dropdown Menu */}
               <div className="absolute top-full left-0 mt-1 w-48 bg-white border rounded-lg shadow-xl z-50 py-1 max-h-60 overflow-y-auto animate-in fade-in zoom-in-95 duration-100">
+                {onRenameSpeaker && (
+                  <form className="p-2 border-b" onSubmit={(event) => {
+                    event.preventDefault();
+                    const name = String(new FormData(event.currentTarget).get("name") || "").trim();
+                    if (!name) return;
+                    onRenameSpeaker(speaker.id, name);
+                    setShowSpeakerMenu(false);
+                  }}>
+                    <input name="name" aria-label="Tên người nói" defaultValue={speaker.name} required className="w-full border rounded px-2 py-1 text-sm" />
+                    <button type="submit" className="mt-2 text-xs text-indigo-700">Lưu tên người nói</button>
+                  </form>
+                )}
                 {allSpeakers.map((spk: Speaker) => (
                   <div
                     key={spk.id}
