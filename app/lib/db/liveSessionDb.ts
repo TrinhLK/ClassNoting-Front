@@ -1,6 +1,6 @@
 import { db } from "../firebase";
 import {
-  doc, setDoc, getDoc, updateDoc, onSnapshot
+  doc, setDoc, updateDoc, onSnapshot, deleteField
 } from "firebase/firestore";
 import { Segment } from "../mockData";
 
@@ -20,7 +20,7 @@ const LIVE_COLLECTION = "live_sessions";
 export const createLiveSession = async (session: LiveSession) => {
   try {
     const docRef = doc(db, LIVE_COLLECTION, session.id);
-    const cleanData = { ...structuredClone(session), expireAt: new Date(Date.now() + 24 * 60 * 60 * 1000) };
+    const cleanData = structuredClone(session);
     await setDoc(docRef, cleanData);
   } catch (error) {
     console.error("Lỗi tạo Live Session:", error);
@@ -34,7 +34,8 @@ export const updateLiveSession = async (sessionId: string, segments: Segment[], 
     const cleanSegments = structuredClone(segments);
     await updateDoc(docRef, {
       segments: cleanSegments,
-      summary: summary
+      summary: summary,
+      expireAt: deleteField()
     });
   } catch (error) {
     console.warn("⚠️ Lỗi cập nhật Live Session (có thể do limit 1MB). Đang thử giảm dung lượng...", error);
@@ -47,7 +48,8 @@ export const updateLiveSession = async (sessionId: string, segments: Segment[], 
       const cleanLightSegments = structuredClone(lightSegments);
       await updateDoc(docRef, {
         segments: cleanLightSegments,
-        summary: summary
+        summary: summary,
+      expireAt: deleteField()
       });
     } catch (fallbackError) {
       console.error("Vẫn lỗi sau khi giảm dung lượng Live Session:", fallbackError);
@@ -59,13 +61,13 @@ export const endLiveSession = async (sessionId: string) => {
   if (!sessionId) return;
   try {
     const docRef = doc(db, LIVE_COLLECTION, sessionId);
-    await updateDoc(docRef, { status: "ended" });
+    await updateDoc(docRef, { status: "ended", expireAt: deleteField() });
   } catch (error) {
     console.error("Lỗi kết thúc Live Session:", error);
   }
 };
 
-export const subscribeToLiveSession = (sessionId: string, onUpdate: (data: LiveSession | null) => void) => {
+export const subscribeToLiveSession = (sessionId: string, onUpdate: (data: LiveSession | null) => void, onError?: (error: Error) => void) => {
   const docRef = doc(db, LIVE_COLLECTION, sessionId);
   return onSnapshot(docRef, (docSnap) => {
     if (docSnap.exists()) {
@@ -75,6 +77,6 @@ export const subscribeToLiveSession = (sessionId: string, onUpdate: (data: LiveS
     }
   }, (error) => {
     console.error("Lỗi lắng nghe Live Session:", error);
-    onUpdate(null);
+    onError?.(error);
   });
 };

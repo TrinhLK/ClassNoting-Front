@@ -1,11 +1,17 @@
 "use client";
 
 import React, { useEffect, useState, useRef } from "react";
+import { useAuth } from "../../context/AuthContext";
+import { useGlobalUI } from "../../context/GlobalUIProvider";
 import { useParams } from "next/navigation";
-import { LiveSession, subscribeToLiveSession } from "../../lib/db";
+import { LiveSession } from "../../lib/db";
 import { Loader2, Radio, AlertCircle, AlignLeft, Sparkles } from "lucide-react";
 
 export default function LiveViewerPage() {
+  const { user } = useAuth();
+  const { confirm, toast } = useGlobalUI();
+  const [error, setError] = useState("");
+  const [deleting, setDeleting] = useState(false);
   const params = useParams();
   const id = params?.id as string;
   const [session, setSession] = useState<LiveSession | null | undefined>(undefined);
@@ -13,15 +19,46 @@ export default function LiveViewerPage() {
   const transcriptEndRef = useRef<HTMLDivElement>(null);
   const summariesEndRef = useRef<HTMLDivElement>(null);
 
-  // Lắng nghe dữ liệu realtime từ Firebase
   useEffect(() => {
     if (!id) return;
-    const unsubscribe = subscribeToLiveSession(id, (data) => {
-      setSession(data);
-    });
-    // Cleanup khi unmount
-    return () => unsubscribe();
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    setSession(undefined);
+    setError("");
+    const refresh = async () => {
+      try {
+        const response = await fetch(`/api/live/${encodeURIComponent(id)}`, {
+          cache: "no-store",
+        });
+        const data = await response.json();
+        if (cancelled) return;
+        if (response.status === 404) { setSession(null); setError(""); return; }
+        if (!response.ok) throw new Error(data.error || "Không thể tải phiên live.");
+        setSession(data);
+        setError("");
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Không thể tải phiên live.");
+      }
+      if (!cancelled) timer = setTimeout(refresh, 3000);
+    };
+    void refresh();
+    return () => { cancelled = true; clearTimeout(timer); };
   }, [id]);
+
+  const handleDelete = async () => {
+    if (!user || !session || session.hostId !== user.uid) return;
+    if (!await confirm({ title: "Xóa phiên live?", message: "Nội dung phiên live sẽ bị xóa và link này sẽ không còn truy cập được.", confirmText: "Xóa phiên", type: "danger" })) return;
+    setDeleting(true);
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch(`/api/live/${encodeURIComponent(id)}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+      if (!response.ok) throw new Error("Không thể xóa phiên live.");
+      setSession(null);
+      toast.success("Đã xóa phiên live.");
+    } catch {
+      toast.error("Không thể xóa phiên live. Vui lòng thử lại.");
+    } finally { setDeleting(false); }
+  };
 
   // Tự động cuộn xuống dưới cùng khi có chữ mới
   useEffect(() => {
@@ -31,6 +68,13 @@ export default function LiveViewerPage() {
   useEffect(() => {
     summariesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [session?.summary]);
+
+  if (error) return (
+    <div className="min-h-screen flex flex-col items-center justify-center gap-4 p-6 text-center">
+      <AlertCircle className="w-12 h-12 text-amber-500" />
+      <p role="alert">{error}</p>
+    </div>
+  );
 
   // UI Đang tải
   if (session === undefined) {
@@ -76,6 +120,11 @@ export default function LiveViewerPage() {
             </div>
           </div>
         </div>
+        {user?.uid === session.hostId && (
+          <button onClick={handleDelete} disabled={deleting} className="text-red-600 text-sm px-3 py-2 border border-red-200 rounded-lg disabled:opacity-50">
+            {deleting ? "Đang xóa…" : "Xóa phiên live"}
+          </button>
+        )}
       </div>
 
       {/* BODY */}
