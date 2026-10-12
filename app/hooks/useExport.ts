@@ -5,7 +5,7 @@ import { Meeting } from "../lib/db";
 import { escapeHtml, summaryToHtml } from "../lib/docx/pdfRenderer";
 import { buildSummaryDocx, parseSummaryToDocx } from "../lib/docx/parser";
 import { formatTime, formatDate } from "../lib/format";
-import { normalizeMinuteMarkdown, stripEvidenceReferences, stripTimestamps } from "../lib/text";
+import { stripLeadingCommas, normalizeMinuteMarkdown, stripEvidenceReferences, stripTimestamps } from "../lib/text";
 
 export function useExport(
   meeting: Meeting,
@@ -37,7 +37,7 @@ export function useExport(
 
   const exportDocx = useCallback(async () => {
     try {
-      const cleanSummary = normalizeMinuteMarkdown(stripTimestamps(stripEvidenceReferences(meeting.summary || "")));
+      const cleanSummary = normalizeMinuteMarkdown(stripLeadingCommas(stripTimestamps(stripEvidenceReferences(meeting.summary || ""))));
       const nodes = parseSummaryToDocx(cleanSummary);
       const blob = await buildSummaryDocx(
         meeting.title,
@@ -59,7 +59,7 @@ export function useExport(
         return;
       }
       const html2pdf = (await import("html2pdf.js")).default;
-      const cleanSummary = normalizeMinuteMarkdown(stripTimestamps(stripEvidenceReferences(meeting.summary)));
+      const cleanSummary = normalizeMinuteMarkdown(stripLeadingCommas(stripTimestamps(stripEvidenceReferences(meeting.summary))));
 
       overlay = document.createElement("div");
       overlay.id = "meeting-summary-pdf-export";

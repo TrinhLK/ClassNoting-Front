@@ -100,3 +100,18 @@ export const normalizeMinuteMarkdown = (text: string): string => {
     return line;
   }).join("\n");
 };
+
+/** Remove orphan commas at block starts after timestamps/evidence have been stripped. */
+export const stripLeadingCommas = (text: string): string => {
+  if (text.trimStart().startsWith("<")) {
+    // Preserve markup, including emphasis around an otherwise orphan comma.
+    return text.replace(/(<(?:p|li|h[1-6]|blockquote)\b[^>]*>)([\s\S]*?)(?=<\/(?:p|li|h[1-6]|blockquote)>|<(?:p|li|ul|ol)\b|$)/gi,
+      (_match, open: string, content: string) => open + content.replace(/^((?:\s*<(?:strong|b|em|i|span)\b[^>]*>)*)\s*,[\s,]*/i, "$1"));
+  }
+  return text.split(/\r?\n/).map(line => {
+    const match = line.match(/^([ \t]*)([-*+]|\d+[.)]|#{1,6}|>)([ \t]+|(?=,))(.*)$/);
+    const prefix = match ? `${match[1]}${match[2]}${match[3] || " "}` : "";
+    const content = match ? match[4] : line;
+    return prefix + content.replace(/^([ \t]*(?:(?:\*\*|__|\*|_)[ \t]*)?),[ \t,]*/, "$1");
+  }).join("\n");
+};

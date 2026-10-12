@@ -336,7 +336,7 @@ describe("regression — không vỡ summary không có bảng", () => {
 });
 
 // Exercise the actual export preprocessing, not only the parser.
-import { stripCjk, stripTimestamps, stripEvidenceReferences, normalizeMinuteMarkdown } from "@/app/lib/text";
+import { stripLeadingCommas, stripCjk, stripTimestamps, stripEvidenceReferences, normalizeMinuteMarkdown } from "@/app/lib/text";
 it("preserves parent-child bullet levels through export cleanup", async () => {
   const source = "- Nội dung chi tiết:\n  - **Hội trại:** Nội dung [01:23] [seg_1]\n    - Cháu\n  - Anh em\n- Mục tiếp theo";
   const cleaned = normalizeMinuteMarkdown(stripTimestamps(stripEvidenceReferences(stripCjk(source))));
@@ -344,4 +344,20 @@ it("preserves parent-child bullet levels through export cleanup", async () => {
   const zip = await JSZip.loadAsync(await blob.arrayBuffer());
   const xml = await zip.file("word/document.xml")!.async("string");
   expect([...xml.matchAll(/<w:ilvl w:val="(\d+)"/g)].map(m => Number(m[1]))).toEqual([0, 1, 2, 1, 0]);
+});
+
+it.each([
+  "- Nội dung:\n  - [01:23], Mốc thời gian 25/10/2026; tháng 12/2026.\n  - [seg_1], Sĩ số 3.400 - 4.000, khoảng 80 chuyến.\n  - **, Đại học:** 5 - 7 hội thảo.",
+  "<ul><li>Nội dung:<ul><li><p>[01:23], Mốc thời gian 25/10/2026; tháng 12/2026.</p></li><li>[seg_1], Sĩ số 3.400 - 4.000, khoảng 80 chuyến.</li><li><strong>, Đại học:</strong> 5 - 7 hội thảo.</li></ul></li></ul>",
+])("removes orphan leading commas in exported paragraphs and preserves content", async source => {
+  const clean = stripLeadingCommas(stripTimestamps(stripEvidenceReferences(source)));
+  const blob = await buildSummaryDocx("Title", "Meta", parseSummaryToDocx(clean));
+  const zip = await JSZip.loadAsync(await blob.arrayBuffer());
+  const xml = await zip.file("word/document.xml")!.async("string");
+  const doc = new DOMParser().parseFromString(xml, "application/xml");
+  const paragraphs = Array.from(doc.getElementsByTagName("w:p")).map(p => Array.from(p.getElementsByTagName("w:t")).map(t => t.textContent).join(""));
+  expect(paragraphs.some(p => /^\s*,/.test(p))).toBe(false);
+  expect(paragraphs).toContain("Mốc thời gian 25/10/2026; tháng 12/2026.");
+  expect(paragraphs).toContain("Sĩ số 3.400 - 4.000, khoảng 80 chuyến.");
+  expect(paragraphs).toContain("Đại học: 5 - 7 hội thảo.");
 });
