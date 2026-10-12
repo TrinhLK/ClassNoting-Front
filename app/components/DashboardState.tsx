@@ -74,6 +74,8 @@ export default function DashboardState({
   const hasShownDraftWarning = useRef(false);
   const [uploadLanguage, setUploadLanguage] = useState<"vi" | "en">("vi");
   const [liveLanguage, setLiveLanguage] = useState<"vi" | "en">("vi");
+  const bulkLock = useRef(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [selectedFileForUpload, setSelectedFileForUpload] = useState<File | null>(null);
   const [uploadTitle, setUploadTitle] = useState("");
@@ -234,55 +236,41 @@ export default function DashboardState({
     }
   }, [meetings, confirm, loadMeetings]);
 
-  const handleDeleteSelected = useCallback(async () => {
-    if (selectedIds.length === 0) return;
-    const isConfirmed = await confirm({
-      title: `Xóa ${selectedIds.length} mục đã chọn?`,
-      message: "Hành động này không thể hoàn tác.",
-      confirmText: "Xóa",
-      type: "danger",
-    });
-    if (isConfirmed) {
-      for (const id of selectedIds) {
-        const m = meetings.find(meeting => meeting.id === id);
-        if (m) {
-          if (m.status === MEETING_STATUS.DRAFT) {
-            const { deleteDraft } = await import("../lib/indexedDB");
-            await deleteDraft(m.id);
-          } else {
-            await deleteMeetingPermanent(m.id);
-          }
-        }
+  const deleteSelectedMeetings = useCallback(async (permanent: boolean) => {
+    if (bulkLock.current || !selectedIds.length) return;
+    const targets = meetings.filter(m => selectedIds.includes(m.id));
+    if (!targets.length) return;
+    bulkLock.current = true;
+    setBulkDeleting(true);
+    try {
+      const hasDrafts = targets.some(m => m.status === MEETING_STATUS.DRAFT);
+      if (!await confirm({
+        title: `${permanent ? "Xóa vĩnh viễn" : "Xóa"} ${targets.length} cuộc họp đã chọn?`,
+        message: permanent ? "Hành động này không thể hoàn tác." : `Các cuộc họp sẽ được chuyển vào thùng rác.${hasDrafts ? " Bản nháp trên máy sẽ bị xóa vĩnh viễn." : ""}`,
+        confirmText: "Xóa", type: "danger",
+      })) return;
+      const removed = new Set<string>();
+      for (let i = 0; i < targets.length; i += 4) {
+        await Promise.all(targets.slice(i, i + 4).map(async m => {
+          try {
+            if (m.status === MEETING_STATUS.DRAFT) {
+              const { deleteDraft } = await import("../lib/indexedDB");
+              await deleteDraft(m.id);
+            } else if (permanent) await deleteMeetingPermanent(m.id);
+            else await toggleTrashMeeting(m.id, true);
+            removed.add(m.id);
+          } catch { /* Preserve failed selections for retry. */ }
+        }));
       }
-      setSelectedIds([]);
+      setSelectedIds(ids => ids.filter(id => !removed.has(id)));
+      if (removed.size) toast.success(`Đã xóa ${removed.size} cuộc họp.`);
+      const failed = targets.filter(m => !removed.has(m.id));
+      if (failed.length) toast.error(`Không thể xóa: ${failed.map(m => m.title).join(", ")}. Vui lòng thử lại.`);
       loadMeetings();
-    }
-  }, [selectedIds, meetings, confirm, loadMeetings]);
-
-  const handleMoveSelectedToTrash = useCallback(async () => {
-    if (selectedIds.length === 0) return;
-    const isConfirmed = await confirm({
-      title: `Chuyển ${selectedIds.length} mục vào thùng rác?`,
-      message: "Các cuộc họp này sẽ được chuyển vào thùng rác.",
-      confirmText: "Chuyển",
-      type: "danger",
-    });
-    if (isConfirmed) {
-      for (const id of selectedIds) {
-        const m = meetings.find(meeting => meeting.id === id);
-        if (m) {
-          if (m.status === MEETING_STATUS.DRAFT) {
-            const { deleteDraft } = await import("../lib/indexedDB");
-            await deleteDraft(m.id);
-          } else {
-            await toggleTrashMeeting(m.id, true);
-          }
-        }
-      }
-      setSelectedIds([]);
-      loadMeetings();
-    }
-  }, [selectedIds, meetings, confirm, loadMeetings]);
+    } finally { bulkLock.current = false; setBulkDeleting(false); }
+  }, [selectedIds, meetings, confirm, toast, loadMeetings]);
+  const handleDeleteSelected = () => deleteSelectedMeetings(true);
+  const handleMoveSelectedToTrash = () => deleteSelectedMeetings(false);
 
   // --- FILTERING ---
   const filteredMeetings = useMemo(() => meetings.filter((m) => {
@@ -340,8 +328,12 @@ export default function DashboardState({
             />
           )}
 
-          {currentTab === "all" && <LiveSessionManager refreshSignal={refreshSignal} />}
+          <div className={currentTab === "all" ? "grid grid-cols-1 lg:grid-cols-2 gap-5 items-start" : ""}>
+          <section aria-label="Cuộc họp của tôi" className="min-w-0">
+          <h2 className="font-bold text-slate-800 mb-4">{currentTab === "all" ? "Cuộc họp của tôi" : "Thùng rác"}</h2>
           {loadError && <p role="alert" className="mb-4 text-red-600">{loadError}</p>}
+          <fieldset disabled={bulkDeleting} className="min-w-0" aria-busy={bulkDeleting}>
+          {bulkDeleting && <p role="status" className="mb-2 text-sm text-slate-500">Đang xử lý xóa cuộc họp…</p>}
           <MeetingListView
             meetings={filteredMeetings}
             currentTab={currentTab}
@@ -386,6 +378,10 @@ export default function DashboardState({
               setShowLiveSetupModal(true);
             }}
           />
+          </fieldset>
+          </section>
+          {currentTab === "all" && <div className="min-w-0"><LiveSessionManager refreshSignal={refreshSignal} /></div>}
+          </div>
       </div>
 
       <RecordSetupModal

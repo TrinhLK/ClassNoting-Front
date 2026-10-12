@@ -20,8 +20,8 @@ export default function MeetingListFilter({
   onSearchChange, onSortChange, onStatusFilterChange
 }: MeetingListFilterProps) {
   return (
-    <div className="flex flex-col md:flex-row gap-3 mb-4">
-      <div className="flex-1">
+    <div className="grid grid-cols-2 gap-3 mb-4">
+      <div className="col-span-2 min-w-0">
         <Input
           placeholder="Tìm kiếm cuộc họp..."
           value={search}
@@ -29,7 +29,7 @@ export default function MeetingListFilter({
           leftIcon={<Search className="w-4 h-4" />}
         />
       </div>
-      <div className="md:w-48">
+      <div className="min-w-0">
         <Select
           value={statusFilter}
           onChange={(e) => onStatusFilterChange(e.target.value as StatusFilter)}
@@ -42,7 +42,7 @@ export default function MeetingListFilter({
           ]}
         />
       </div>
-      <div className="md:w-48">
+      <div className="min-w-0">
         <Select
           value={sortBy}
           onChange={(e) => onSortChange(e.target.value as SortBy)}

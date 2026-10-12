@@ -4,7 +4,6 @@ import type { Meeting } from "@/app/lib/db";
 import { Calendar, Search, Trash2 } from "lucide-react";
 import MeetingCard from "./MeetingCard";
 import MeetingListFilter, { type SortBy, type StatusFilter } from "./MeetingListFilter";
-import BulkActionBar from "@/app/components/ui/BulkActionBar";
 import EmptyState from "@/app/components/ui/EmptyState";
 import Button from "@/app/components/ui/Button";
 
@@ -114,10 +113,31 @@ export default function MeetingListView({
           search={search}
           sortBy={sortBy}
           statusFilter={statusFilter}
-          onSearchChange={setSearch}
+          onSearchChange={value => { setSearch(value); onClearSelection(); }}
           onSortChange={setSortBy}
-          onStatusFilterChange={setStatusFilter}
+          onStatusFilterChange={value => { setStatusFilter(value); onClearSelection(); }}
         />
+      )}
+
+      {filteredMeetings.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3 mb-3 text-sm">
+          <label className="flex items-center gap-2">
+            <input type="checkbox" aria-label="Chọn tất cả cuộc họp đang hiển thị"
+              checked={filteredMeetings.every(m => selectedIds.includes(m.id))}
+              ref={el => { if (el) el.indeterminate = filteredMeetings.some(m => selectedIds.includes(m.id)) && !filteredMeetings.every(m => selectedIds.includes(m.id)); }}
+              onChange={e => {
+                filteredMeetings.forEach(m => { if (selectedIds.includes(m.id) !== e.target.checked) onToggleSelect(m.id); });
+              }} />
+            Chọn tất cả kết quả
+          </label>
+          <span>Đã chọn {selectedIds.length}</span>
+          {selectedIds.length > 0 && <>
+            <button onClick={onClearSelection} className="text-slate-600">Bỏ chọn</button>
+            <button onClick={currentTab === "all" ? onMoveSelectedToTrash : onDeleteSelected} className="text-red-600 border border-red-200 rounded-lg px-3 py-2 ml-auto">
+              {currentTab === "all" ? `Xóa ${selectedIds.length} cuộc họp đã chọn` : `Xóa vĩnh viễn ${selectedIds.length} cuộc họp`}
+            </button>
+          </>}
+        </div>
       )}
 
       {filteredMeetings.length === 0 ? (
@@ -178,18 +198,6 @@ export default function MeetingListView({
             />
           ))}
         </div>
-      )}
-
-      {selectedIds.length > 0 && (
-        <BulkActionBar
-          selectedCount={selectedIds.length}
-          actions={
-            currentTab === "all"
-              ? [{ label: "Xóa đã chọn", icon: <Trash2 className="w-4 h-4" />, onClick: onMoveSelectedToTrash, intent: "danger" }]
-              : [{ label: "Xóa vĩnh viễn", icon: <Trash2 className="w-4 h-4" />, onClick: onDeleteSelected, intent: "danger" }]
-          }
-          onClear={onClearSelection}
-        />
       )}
 
       {hasMore && currentTab === "all" && (
