@@ -2,12 +2,8 @@
 
 import React, { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { QueryDocumentSnapshot, onSnapshot, query, where, collection } from "firebase/firestore";
-import { db } from "../lib/firebase";
+import { useDashboardMeetings } from "../hooks/useDashboardMeetings";
 import {
-  PAGE_SIZE,
-  getMeetingsPaginated,
-  getAllMeetings,
   Meeting,
   toggleTrashMeeting,
   deleteMeetingPermanent,
@@ -71,13 +67,8 @@ export default function DashboardState({
   const { toast, confirm } = useGlobalUI();
   const searchParams = useSearchParams();
   const router = useRouter();
-  const [meetings, setMeetings] = useState<Meeting[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
   const [isFinalizing, setIsFinalizing] = useState<string | null>(null);
   const currentTab = (searchParams.get("tab") === "trash" ? "trash" : "all") as DashboardTab;
-  const [lastDoc, setLastDoc] = useState<QueryDocumentSnapshot | null>(null);
-  const [hasMore, setHasMore] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const hasShownDraftWarning = useRef(false);
   const [uploadLanguage, setUploadLanguage] = useState<"vi" | "en">("vi");
@@ -94,43 +85,12 @@ export default function DashboardState({
   const [isLiveLoading, setIsLiveLoading] = useState(false);
   const [liveLanguageState, setLiveLanguageState] = useState<"vi" | "en">("vi");
 
-  const COLLECTION_NAME = "meetings"; // matches the Firestore collection name
-
-  // Real-time snapshot listener for cloud meetings
-  useEffect(() => {
-    if (!user) return;
-    const q = query(
-      collection(db, COLLECTION_NAME),
-      where("userId", "==", user.uid)
-    );
-    const unsubscribe = onSnapshot(q, async () => {
-      try {
-        const { getAllDraftsMeta } = await import("../lib/indexedDB");
-        const [allCloud, localDrafts] = await Promise.all([
-          getAllMeetings(user.uid),
-          getAllDraftsMeta(user.uid),
-        ]);
-        const cloudActive = allCloud.filter(m => !m.isDeleted && !m.isMinuteOnly);
-        const cloudTrash = allCloud.filter(m => m.isDeleted);
-        const all = [...localDrafts, ...cloudActive, ...cloudTrash].sort((a, b) => b.createdAt - a.createdAt);
-        setMeetings(all);
-        setHasMore(false);
-        setLoading(false);
-
-        if (localDrafts.length > 0 && !hasShownDraftWarning.current) {
-          toast.info(`Bạn có ${localDrafts.length} bản nháp chưa lưu lên Cloud`);
-          hasShownDraftWarning.current = true;
-        }
-      } catch (innerError) {
-        console.error("Error loading meetings in snapshot callback:", innerError);
-        setLoading(false);
-      }
-    }, (error) => {
-      console.error("Snapshot error:", error);
-      setLoading(false);
-    });
-    return () => unsubscribe();
-  }, [user, toast]);
+  const { meetings, loading, updateTitle, error: loadError, refresh: loadMeetings } = useDashboardMeetings(user?.uid, refreshSignal, count => {
+    if (!hasShownDraftWarning.current) {
+      toast.info(`Bạn có ${count} bản nháp chưa lưu lên Cloud`);
+      hasShownDraftWarning.current = true;
+    }
+  });
 
   const handleTabChange = useCallback((tab: DashboardTab) => {
     setSelectedIds([]);
@@ -139,54 +99,6 @@ export default function DashboardState({
     else params.set("tab", "trash");
     router.replace(`/?${params.toString()}`);
   }, [searchParams, router]);
-
-  const loadMeetings = useCallback(async () => {
-    if (user) {
-      setLoading(true);
-      try {
-        const paginated = await getMeetingsPaginated(user.uid, undefined, false);
-        const cloudActive = paginated.meetings.filter(m => !m.isMinuteOnly);
-        const allCloud = await getAllMeetings(user.uid);
-        const cloudTrash = allCloud.filter(m => m.isDeleted);
-        const { getAllDraftsMeta } = await import("../lib/indexedDB");
-        const localDrafts = await getAllDraftsMeta(user.uid);
-        const all = [...localDrafts, ...cloudActive, ...cloudTrash].sort((a, b) => b.createdAt - a.createdAt);
-        setMeetings(all);
-        setLastDoc(paginated.lastDoc);
-        setHasMore(paginated.hasMore);
-        if (localDrafts.length > 0 && !hasShownDraftWarning.current) {
-          toast.info(`Bạn có ${localDrafts.length} bản nháp chưa lưu lên Cloud`);
-          hasShownDraftWarning.current = true;
-        }
-      } catch (error) {
-        console.error("Error loading meetings:", error);
-      } finally {
-        setLoading(false);
-      }
-    } else {
-      setMeetings([]);
-    }
-  }, [user, toast]);
-
-  const loadMoreMeetings = useCallback(async () => {
-    if (!user || !lastDoc || !hasMore || loadingMore) return;
-    setLoadingMore(true);
-    try {
-      const { meetings: moreMeetings, lastDoc: newLastDoc, hasMore: newHasMore } = await getMeetingsPaginated(user.uid, lastDoc, false);
-      const filteredMore = moreMeetings.filter(m => !m.isMinuteOnly);
-      setMeetings(prev => {
-        const existingIds = new Set(prev.map(m => m.id));
-        const uniqueNew = filteredMore.filter(m => !existingIds.has(m.id));
-        return [...prev, ...uniqueNew];
-      });
-      setLastDoc(newLastDoc);
-      setHasMore(newHasMore);
-    } catch (error) {
-      console.error("Error loading more meetings:", error);
-    } finally {
-      setLoadingMore(false);
-    }
-  }, [user, lastDoc, hasMore, loadingMore]);
 
   // --- ACTIONS ---
   const handleMoveToTrash = useCallback(async (id: string) => {
@@ -282,7 +194,7 @@ export default function DashboardState({
     const trimmed = newTitle.trim();
     if (!trimmed || trimmed === m.title) return;
     const previousTitle = m.title;
-    setMeetings(prev => prev.map(x => x.id === m.id ? { ...x, title: trimmed } : x));
+    updateTitle(m.id, trimmed);
     try {
       if (m.status === MEETING_STATUS.DRAFT) {
         const { getDraftFull, saveDraftMeta } = await import("../lib/indexedDB");
@@ -294,10 +206,10 @@ export default function DashboardState({
       }
       toast.success("Đã đổi tên cuộc họp");
     } catch (err) {
-      setMeetings(prev => prev.map(x => x.id === m.id ? { ...x, title: previousTitle } : x));
+      updateTitle(m.id, previousTitle);
       toast.error("Lỗi đổi tên: " + (err as Error).message);
     }
-  }, [toast]);
+  }, [toast, updateTitle]);
 
   const handleEmptyTrash = useCallback(async () => {
     const isConfirmed = await confirm({
@@ -427,15 +339,16 @@ export default function DashboardState({
             />
           )}
 
+          {loadError && <p role="alert" className="mb-4 text-red-600">{loadError}</p>}
           <MeetingListView
             meetings={filteredMeetings}
             currentTab={currentTab}
             selectedIds={selectedIds}
             loading={loading}
-            loadingMore={loadingMore}
+            loadingMore={false}
             isFinalizing={isFinalizing}
-            hasMore={hasMore}
-            onLoadMore={loadMoreMeetings}
+            hasMore={false}
+            onLoadMore={() => {}}
             onToggleSelect={toggleSelect}
             onToggleSelectAll={toggleSelectAll}
             onOpenMeeting={onOpenMeeting}
