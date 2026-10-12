@@ -24,7 +24,7 @@ async function handle(req: Request, ctx: Context, remove: boolean) {
       return { status: 200, body: {
         id: snap.id, hostId: data.hostId, title: data.title,
         language: data.language, segments: data.segments || [],
-        summary: data.summary || "", status: data.status, startedAt: data.startedAt,
+        summary: data.summary || "", fullSummary: data.fullSummary || "", summarizedAt: data.summarizedAt || null, status: data.status, startedAt: data.startedAt,
       } };
     });
     return NextResponse.json(result.body, { status: result.status, headers: { "Cache-Control": "no-store" } });

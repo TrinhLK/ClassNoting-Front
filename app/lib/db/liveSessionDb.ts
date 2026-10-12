@@ -11,6 +11,8 @@ export interface LiveSession {
   language?: "vi" | "en";
   segments: Segment[];
   summary: string;
+  fullSummary?: string;
+  summarizedAt?: number;
   status: "live" | "ended";
   startedAt: number;
 }

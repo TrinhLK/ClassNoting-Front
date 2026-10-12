@@ -1,5 +1,7 @@
 "use client";
 
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import React, { useEffect, useState, useRef } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useGlobalUI } from "../../context/GlobalUIProvider";
@@ -11,6 +13,8 @@ export default function LiveViewerPage() {
   const { user } = useAuth();
   const { confirm, toast } = useGlobalUI();
   const [error, setError] = useState("");
+  const [summarizing, setSummarizing] = useState(false);
+  const [showInsights, setShowInsights] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const params = useParams();
   const id = params?.id as string;
@@ -44,6 +48,24 @@ export default function LiveViewerPage() {
     void refresh();
     return () => { cancelled = true; clearTimeout(timer); };
   }, [id]);
+
+  const handleSummarize = async () => {
+    if (!user || session?.hostId !== user.uid || summarizing) return;
+    setSummarizing(true);
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch(`/api/live/${encodeURIComponent(id)}/summarize`, {
+        method: "POST", headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Không thể tóm tắt phiên live.");
+      setSession(current => current ? { ...current, ...data } : current);
+      setShowInsights(false);
+      toast.success("Đã lưu bản tóm tắt toàn phiên.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Không thể tóm tắt phiên live.");
+    } finally { setSummarizing(false); }
+  };
 
   const handleDelete = async () => {
     if (!user || !session || session.hostId !== user.uid) return;
@@ -175,11 +197,28 @@ export default function LiveViewerPage() {
         <div className="md:w-1/3 bg-white rounded-2xl border shadow-sm flex flex-col min-h-0 overflow-hidden">
           <div className="p-4 border-b bg-indigo-50 flex items-center gap-2 shrink-0">
             <Sparkles className="w-5 h-5 text-indigo-600" />
-            <span className="text-sm font-bold text-indigo-800 uppercase">Tóm tắt (Real-time)</span>
+            <span className="text-sm font-bold text-indigo-800 uppercase">Tóm tắt</span>
+            {user?.uid === session.hostId && (
+              <button onClick={handleSummarize} disabled={summarizing || deleting || !session.segments?.some(s => s.text?.trim())}
+                className="ml-auto text-sm text-indigo-700 border border-indigo-200 rounded px-2 py-1 disabled:opacity-50">
+                {summarizing ? "Đang tóm tắt…" : "Tóm tắt lại"}
+              </button>
+            )}
           </div>
           
+          {session.fullSummary && (
+            <div className="flex gap-3 px-4 py-2 border-b text-sm">
+              <button onClick={() => setShowInsights(false)} aria-pressed={!showInsights}>Tóm tắt toàn phiên</button>
+              <button onClick={() => setShowInsights(true)} aria-pressed={showInsights}>Live insights</button>
+            </div>
+          )}
           <div className="flex-1 overflow-y-auto p-6 bg-indigo-50/10 scroll-smooth">
-            {session.summary ? (
+            {session.fullSummary && !showInsights ? (
+              <div className="prose prose-sm max-w-none">
+                {session.status === "live" && <p className="text-xs text-slate-500">Bản tóm tắt gồm nội dung đến lần tóm tắt gần nhất.</p>}
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{session.fullSummary}</ReactMarkdown>
+              </div>
+            ) : session.summary ? (
               <div className="prose prose-sm prose-slate max-w-none">
                 {session.summary.split('\n\n').map((para, i) => (
                   <p key={i} className="text-slate-700 leading-relaxed bg-white p-4 rounded-xl border border-slate-100 shadow-sm mb-4 animate-in fade-in slide-in-from-bottom-2">
