@@ -13,6 +13,7 @@ import { useGlobalUI } from "../context/GlobalUIProvider";
 import { useAuth } from "../context/AuthContext";
 import RecordSetupModal from "./Dashboard/RecordSetupModal";
 import Header from "./Dashboard/Header";
+import LiveSessionManager from "./Dashboard/LiveSessionManager";
 import ExtLiveBanner from "./Dashboard/ExtLiveBanner";
 import StatsCards from "./Dashboard/StatsCards";
 import MeetingListView from "./Dashboard/MeetingListView";
@@ -339,6 +340,7 @@ export default function DashboardState({
             />
           )}
 
+          {currentTab === "all" && <LiveSessionManager refreshSignal={refreshSignal} />}
           {loadError && <p role="alert" className="mb-4 text-red-600">{loadError}</p>}
           <MeetingListView
             meetings={filteredMeetings}
