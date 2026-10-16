@@ -43,7 +43,7 @@ export default function TaskList({ meetings, loading, isProcessing, selectedMeet
     <div className="space-y-3">
       {meetings.map((meeting) => {
         const hasData = meeting.actionItems && meeting.actionItems.length > 0;
-        const statusKey = meeting.actionStatus === ("send" as any) ? "send" : "draft";
+        const statusKey = meeting.actionStatus === "sent" ? "send" : "draft";
         const config = hasData
           ? { label: statusKey === "send" ? "Đã gửi mail" : "Đã xử lý", className: "bg-emerald-50 text-emerald-700 border-emerald-200", icon: statusKey === "send" ? Mail : CheckCircle }
           : STATUS_CONFIG[statusKey];

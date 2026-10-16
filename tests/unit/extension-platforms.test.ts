@@ -454,3 +454,24 @@ describe("extension platforms.js — describe() (chẩn đoán)", () => {
     expect(anchor.found).toBe(false);
   });
 });
+
+describe("Meet structured chat records", () => {
+  it("reads sibling message body instead of stopping at sender/timestamp header", () => {
+    document.body.innerHTML = `<aside id="panel"><div data-message-id="m1" data-sender-name="Lan"><div>Lan <span>14:30</span></div><div data-message-text>Xin chào</div></div><textarea aria-label="Message everyone"></textarea></aside>`;
+    const platform = loadPlatforms() as any;
+    const root = platform.chatRoot();
+    expect(root.id).toBe("panel");
+    const blocks = platform.findChatBlocks(root);
+    expect(blocks).toHaveLength(1);
+    expect(platform.parseChatBlock(blocks[0], [], "Bạn")).toEqual({ sender: "Lan", text: "Xin chào" });
+    expect(platform.parseChatNode(blocks[0].querySelector("span"), root, [])).toEqual({ sender: "Lan", text: "Xin chào" });
+  });
+  it("preserves short and long messages and never reads the composer", () => {
+    const message = "Nội dung ".repeat(300);
+    document.body.innerHTML = `<aside><div data-message-id="1"><span data-sender-name="Minh"></span><div data-message-text>👍</div></div><div data-message-id="2"><span data-sender-name="Lan"></span><div data-message-text>${message}</div></div><textarea aria-label="Gửi một tin nhắn">chưa gửi</textarea></aside>`;
+    const platform = loadPlatforms() as any;
+    const root = platform.chatRoot();
+    const parsed = platform.findChatBlocks(root).map((b: Element) => platform.parseChatBlock(b, [], "Bạn"));
+    expect(parsed).toEqual([{ sender: "Minh", text: "👍" }, { sender: "Lan", text: message.trim() }]);
+  });
+});

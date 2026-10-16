@@ -13,6 +13,8 @@ import { MeetingTemplate } from "../templates";
 import { MEETING_STATUS, MeetingStatus, ActionItemStatus } from "../constants";
 
 export interface TaskItem {
+  completed?: boolean;
+  completedAt?: number | null;
   id: number;
   task: string;
   assigneeName: string;

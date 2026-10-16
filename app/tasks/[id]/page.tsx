@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import AddAssignee from "@/app/components/Tasks/AddAssignee";
+import React, { useState, useEffect, useRef } from "react";
 import { useRouter, useParams } from "next/navigation"; // Lấy ID từ URL
 import Link from "next/link";
 import {
@@ -32,6 +33,9 @@ export default function ActionItemPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
 
+  const [savingTasks, setSavingTasks] = useState(false);
+  const saveLock = useRef(false);
+  const [pageError, setPageError] = useState("");
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
@@ -50,6 +54,11 @@ export default function ActionItemPage() {
 
         // B. Lấy Meeting
         const meeting = await getMeetingById(id as string);
+        if (!meeting || meeting.userId !== user.uid) {
+          setPageError("Không tìm thấy cuộc họp hoặc bạn không có quyền quản lý.");
+          setLoading(false);
+          return;
+        }
         if (meeting) {
           setMeetingTitle(meeting.title);
 
@@ -85,7 +94,7 @@ export default function ActionItemPage() {
             // Ngược lại -> Giữ nguyên email cũ, chỉ dùng autoEmails nếu cũ bị rỗng
             const isVague = !t.assigneeName || ["chưa rõ", "team", "mọi người", "cả phòng", "nhóm"].some(k => normalize(t.assigneeName).includes(k));
 
-            if (isVague && autoEmails.length > 0) {
+            if (currentEmails.length === 0 && isVague && autoEmails.length > 0) {
               // Ghi đè bằng danh sách phòng ban
               currentEmails = autoEmails;
             } else if (currentEmails.length === 0 && autoEmails.length > 0) {
@@ -190,11 +199,26 @@ export default function ActionItemPage() {
     toast.success("Đã tải file lịch (.ics). Hãy mở nó để Import!");
   };
 
-  // 2. Hàm Lưu lại (Save Draft)
-  const handleSave = async () => {
-    await updateMeetingProcess(id as string, { actionItems: tasks });
-    toast.success("Đã lưu nháp thành công!");
+  const addAssignee = (index: number, member: Member) => {
+    setMembers(previous => previous.some(m => m.id === member.id) ? previous : [...previous, member]);
+    setTasks(previous => previous.map((task, i) => i !== index ? task : {
+      ...task, email: [...new Set([...task.email, member.email])],
+      assigneeName: task.email.length ? `${task.assigneeName || ""}, ${member.name}` : member.name,
+    }));
   };
+
+  const persistTasks = async (next: TaskItem[]) => {
+    if (saveLock.current || !user) return;
+    saveLock.current = true; setSavingTasks(true);
+    try {
+      await updateMeetingProcess(id as string, { actionItems: next });
+      setTasks(next);
+      toast.success("Đã lưu nhiệm vụ.");
+    } catch { toast.error("Không thể lưu nhiệm vụ. Vui lòng thử lại."); }
+    finally { saveLock.current = false; setSavingTasks(false); }
+  };
+  const handleSave = () => persistTasks(tasks);
+  const toggleComplete = (taskId: number, completed: boolean) => persistTasks(tasks.map(t => t.id === taskId ? { ...t, completed, completedAt: completed ? Date.now() : null } : t));
 
   // 3. Hàm Gửi Mail
   const handleSendMail = async () => {
@@ -227,6 +251,7 @@ export default function ActionItemPage() {
 
     try {
       // Gọi helper gửi mail (tự đính kèm Firebase ID token)
+      await updateMeetingProcess(id as string, { actionItems: tasks });
       const data = await sendTaskEmails(validTasks, meetingTitle);
       toast.success(`Đã gửi thành công cho ${data.count} người!`);
 
@@ -256,6 +281,8 @@ export default function ActionItemPage() {
   };
   if (loading)
     return <div className="p-10 text-center">Đang tải dữ liệu...</div>;
+
+  if (pageError) return <p role="alert" className="p-8">{pageError}</p>;
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
@@ -291,6 +318,7 @@ export default function ActionItemPage() {
 
           <button
             onClick={handleSave}
+            disabled={savingTasks || isSendingMail}
             className="px-4 py-2 text-slate-600 bg-white border border-slate-300 font-medium rounded-lg hover:bg-slate-50 flex items-center gap-2"
           >
             <Save className="w-4 h-4" />{" "}
@@ -298,7 +326,7 @@ export default function ActionItemPage() {
           </button>
           <button
             onClick={handleSendMail}
-            disabled={isSendingMail} // Disable khi đang gửi
+            disabled={isSendingMail || savingTasks} // Disable khi đang gửi
             className="px-4 py-2 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 shadow-md shadow-indigo-200 flex items-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
           >
             {isSendingMail ? (
@@ -317,6 +345,18 @@ export default function ActionItemPage() {
 
       {/* BODY - RESPONSIVE */}
       <div className="flex-1 max-w-6xl mx-auto w-full p-4 md:p-8">
+        <section aria-label="Checklist nhiệm vụ" className="mb-6 p-4 rounded-xl border bg-white">
+          <h2 className="font-bold mb-2">Tiến độ nhiệm vụ: {tasks.filter(t => t.completed).length}/{tasks.length} hoàn thành</h2>
+          <p className="text-sm text-slate-500 mb-3">Đánh dấu để xác nhận hoàn thành. Trạng thái được lưu tự động.</p>
+          {tasks.filter(t => t.email.length > 0).map(task => <label key={task.id} className="flex gap-3 py-3 border-t items-start">
+            <input type="checkbox" checked={!!task.completed} disabled={savingTasks || isSendingMail} onChange={e => toggleComplete(task.id, e.target.checked)} aria-label={`Hoàn thành: ${task.task}`} className="mt-1" />
+            <span className="min-w-0"><span className={task.completed ? "line-through text-slate-400" : "text-slate-800"}>{task.task}</span>
+              <span className="block text-xs text-slate-500 mt-1">{task.email.map(email => members.find(m => m.email === email)?.name || email).join(", ")}{task.deadline ? ` · Hạn: ${task.deadline.replace("T", " ")}` : ""}</span>
+            </span>
+          </label>)}
+          {!tasks.some(t => t.email.length) && <p className="text-sm text-slate-500">Thêm người nhận bên dưới để quản lý nhiệm vụ bằng checklist.</p>}
+        </section>
+        <fieldset disabled={savingTasks || isSendingMail} className="min-w-0">
         {/* DESKTOP TABLE */}
         <div className="hidden md:block bg-white rounded-xl shadow-sm border overflow-hidden">
           <table className="w-full text-sm text-left">
@@ -421,6 +461,8 @@ export default function ActionItemPage() {
                         ))}
                       </select>
 
+                      {user && <AddAssignee userId={user.uid} members={members} onAdd={member => addAssignee(idx, member)} />}
+                      {members.length === 0 && <p className="text-xs text-slate-500">Danh bạ trống. Nhập người mới để phân công.</p>}
                       {/* Text gợi ý AI */}
                       {task.assigneeName && (
                         <p
@@ -569,6 +611,7 @@ export default function ActionItemPage() {
                     ))}
                   </select>
 
+                  {user && <AddAssignee userId={user.uid} members={members} onAdd={member => addAssignee(idx, member)} />}
                   {/* AI Suggestion */}
                   {task.assigneeName && (
                     <p className="text-[10px] text-slate-400 mt-1 italic">
@@ -629,6 +672,7 @@ export default function ActionItemPage() {
         >
           <Plus className="w-5 h-5" /> Thêm nhiệm vụ thủ công
         </button>
+        </fieldset>
       </div>
     </div>
   );

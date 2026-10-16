@@ -229,7 +229,7 @@
           const label = el.getAttribute("aria-label") || "";
           const holder = el.getAttribute("placeholder") || "";
           const title = el.getAttribute("title") || "";
-          if (!/send a message|gửi tin nhắn/i.test(label + " " + holder + " " + title)) continue;
+          if (!/send (?:a )?message|gửi (?:một )?tin nhắn|message everyone|nhắn tin cho mọi người/i.test(label + " " + holder + " " + title)) continue;
           let hidden = false;
           try {
             hidden = !!el.closest('[aria-hidden="true"]');
@@ -263,6 +263,14 @@
           return meet._chatPanel;
         }
         meet._chatPanel = null;
+        // Prefer the ancestor containing actual message records over a composer toolbar.
+        let candidate = anchor.parentElement;
+        for (let depth = 0; candidate && candidate !== document.body && depth < 12; depth++, candidate = candidate.parentElement) {
+          if (candidate.querySelector('[data-message-id], [data-message-text], [data-message-content]')) {
+            meet._chatPanel = candidate;
+            return candidate;
+          }
+        }
         let el = anchor.parentElement;
         for (let i = 0; i < 8 && el && el.tagName && el.tagName !== "BODY"; i++) {
           let composerKid = null;
@@ -292,6 +300,8 @@
       try {
         if (node.closest('button, [role="button"], [role="menu"], [role="menuitem"], [role="tooltip"], [aria-hidden="true"]')) return null;
       } catch (e) { /* closest lỗi — tiếp tục */ }
+      const record = node.closest('[data-message-id]');
+      if (record && (!root || root.contains(record))) return meet.parseChatBlock(record, rosterNames, "Bạn");
       // Cấp block khi biết root: leo từ leaf lên tới con trực tiếp của root.
       // Không root (đường cũ) thì parse ngay tại node.
       let block = node;
@@ -428,6 +438,13 @@
           blocks.push(el);
         }
       };
+      // Structured message records must win over timestamp/header heuristics.
+      // A sender and time can live in a sibling header; parsing leaves loses the body.
+      const records = root.querySelectorAll('[data-message-id]');
+      if (records.length) {
+        records.forEach(record => { if (!record.querySelector('[data-message-id]')) take(record); });
+        return blocks;
+      }
       // Tuyến 1: leo từ node giờ lên container hẹp nhất còn ≤600 ký tự.
       const TIME_RE = /\d{1,2}:\d{2}\s*[AP]M/i;
       try {
@@ -543,6 +560,14 @@
         // Block chứa ô nhập = composer, không phải tin nhắn.
         if (block.querySelector('textarea, input, [role="textbox"], [contenteditable="true"]')) return null;
       } catch (e) { /* tiếp tục */ }
+      const messageBody = block.querySelector('[data-message-text], [data-message-content]');
+      if (messageBody) {
+        const text = visibleText(messageBody);
+        if (!text) return null;
+        const senderElement = block.matches('[data-sender-name]') ? block : block.querySelector('[data-sender-name]');
+        const sender = senderElement && (senderElement.getAttribute('data-sender-name') || visibleText(senderElement));
+        return { text, sender: sender || meet.senderOfChatText(meet.chatTextWithoutUi(block), rosterNames) || "Chưa xác định" };
+      }
       const TIME_RE = /\d{1,2}:\d{2}\s*[AP]M/i;
       let text = "";
       try {

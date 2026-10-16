@@ -8,7 +8,7 @@
 
   // Đồng bộ với manifest.json — hiện trong ô chẩn đoán để biết tab đang
   // chạy content bản nào (tránh cãi nhau chuyện reload chưa).
-  const CODE_VERSION = "0.3.6";
+  const CODE_VERSION = "0.3.7";
 
   const shared = globalThis.ClassNotingShared;
   const platforms = globalThis.ClassNotingPlatforms;
@@ -191,6 +191,10 @@
           continue;
         }
         m.addedNodes.forEach((n) => {
+          if (n.nodeType === 3) {
+            if (n.parentElement) handle(n.parentElement);
+            return;
+          }
           if (n.nodeType !== 1) return;
           if (n.children.length === 0) handle(n);
           else n.querySelectorAll("*").forEach((c) => {
