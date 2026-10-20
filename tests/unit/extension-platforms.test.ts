@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -52,6 +52,18 @@ const setBody = (html: string) => {
 };
 
 describe("extension shared.js — gộp câu ASR (chống vụn đây/đây/đây)", () => {
+  it("uses local caption evidence for mic and never assigns remote audio to a local caption", () => {
+    const resolve = loadShared().resolveAudioSpeaker as (...args: any[]) => any;
+    const ctx = { fallbackName: 'Chưa xác định', activeSpans: [], captionLines: [
+      {name: 'Chủ phòng', text: 'Xin chào', start: 1, end: 4, isSelf: true},
+      {name: 'Khách', text: 'Chào bạn', start: 5, end: 8, isSelf: false},
+    ] };
+    expect(resolve('mic', 2, 3, ctx)).toMatchObject({name: 'Chủ phòng', uncertain: true, speakerSource: 'caption'});
+    expect(resolve('tab', 2, 3, ctx).name).toBe('Chưa xác định');
+    expect(resolve('mic', 6, 7, ctx).name).toBe('Chưa xác định');
+    expect(resolve('tab', 6, 7, ctx).name).toBe('Khách');
+    expect(resolve('mic', 9, 10, ctx).name).toBe('Chưa xác định');
+  });
   it("shouldMergeSeg: cùng người + gap nhỏ thì gộp, khác người/gap lớn thì tách", () => {
     const shared = loadShared();
     const shouldMergeSeg = shared.shouldMergeSeg as (
@@ -129,6 +141,60 @@ describe("extension platforms.js — roster (Meet)", () => {
 });
 
 describe("extension platforms.js — chat (Meet)", () => {
+  it("waits for ownership metadata on an optimistic native Meet message", () => {
+    setBody('<div data-message-id="temporary"><div jsname="dTKtvb">Xin chào</div></div>');
+    expect(meet.parseChatBlock(document.querySelector('[data-message-id]')!, [], 'An')).toBeNull();
+    document.querySelector('[data-message-id]')!.innerHTML = '<div class="chmVPb"><div jsname="dTKtvb">Xin chào</div></div>';
+    expect(meet.parseChatBlock(document.querySelector('[data-message-id]')!, [], 'An')).toEqual({sender:'An',text:'Xin chào'});
+  });
+  it("reads microphone controls after Meet moves them to Picture-in-Picture", () => {
+    setBody('');
+    const pip = document.implementation.createHTMLDocument('Meet PiP');
+    pip.body.innerHTML = '<button aria-label="Turn off microphone"></button>';
+    vi.stubGlobal('documentPictureInPicture', {window:{document:pip}});
+    try {
+      expect(meet.microphoneMuted()).toBe(false);
+      pip.querySelector('button')!.setAttribute('aria-label', 'Turn on microphone');
+      expect(meet.microphoneMuted()).toBe(true);
+    } finally { vi.unstubAllGlobals(); }
+    expect(meet.microphoneMuted()).toBeNull();
+  });
+  it("does not emit empty-panel UI or partially rendered anonymous bubbles in current Meet", () => {
+    setBody(`<div class="WUFI9b"><h2>In-call messages</h2><button><div>arrow_backBack</div></button>
+      <div>No chat messages yet</div><div class="beTDc"><div jsname="dTKtvb">Tin đang render</div></div>
+      <textarea aria-label="Send a message"></textarea></div>`);
+    expect(meet.findChatBlocks(document.querySelector('.WUFI9b')!)).toEqual([]);
+  });
+  it("parses caption speaker and content from the same row, excluding neighboring speakers and controls", () => {
+    setBody(`<div aria-label="Captions"><div class="nMcdL"><span class="NWpY1d">An</span><div class="ygicle">Chào Bình</div></div>
+      <div class="nMcdL"><span class="NWpY1d">Bình</span><div class="ygicle" id="words">Chào An</div></div><button>Jump to bottom</button></div>`);
+    expect(meet.parseCaptionNode(document.querySelector('#words')!, [])).toEqual({name:'Bình',text:'Chào An'});
+    expect(meet.parseCaptionNode(document.querySelector('[aria-label="Captions"]')!, [])).toEqual({name:'Bình',text:'Chào An'});
+  });
+  it("reads current Meet records instead of nested pin buttons and keeps grouped senders", () => {
+    setBody(`<section id="live-chat">
+      <div class="aops0b"><div class="HNucUd">9:26 PM</div><div>
+        <div data-message-id="own"><div class="chmVPb"><div jsname="dTKtvb">Xin chào</div>
+          <div>Hover over a message to pin it</div><button data-message-id="own">keep</button></div></div>
+      </div></div>
+      <div class="aops0b"><div class="HNucUd">Nguyễn An 9:27 PM</div><div>
+        <div data-message-id="remote"><div jsname="dTKtvb">Kế hoạch: kiểm thử</div><button data-message-id="remote">keep</button></div>
+        <div data-message-id="remote2"><div jsname="dTKtvb">Kế hoạch: kiểm thử</div></div>
+      </div></div></section>`);
+    const blocks = meet.findChatBlocks(document.querySelector('#live-chat')!) as Element[];
+    expect(blocks.map(el => el.getAttribute('data-message-id'))).toEqual(['own', 'remote', 'remote2']);
+    const parse = meet.parseChatBlock as (el: Element, roster: string[], self: string) => unknown;
+    expect(parse(blocks[0], [], 'Chủ phòng')).toEqual({sender: 'Chủ phòng', text: 'Xin chào'});
+    expect(parse(blocks[1], [], 'Chủ phòng')).toEqual({sender: 'Nguyễn An', text: 'Kế hoạch: kiểm thử'});
+    expect(parse(blocks[2], [], 'Chủ phòng')).toEqual({sender: 'Nguyễn An', text: 'Kế hoạch: kiểm thử'});
+  });
+
+  it("reads the current Meet name overlay while excluding hidden icons", () => {
+    setBody(`<div data-participant-id="p1"><button>More options</button>
+      <span class="notranslate" aria-hidden="true">mic_off</span>
+      <span class="notranslate">Nguyễn An</span></div>`);
+    expect(meet.scrapeRoster()).toEqual([{id:'p1', name:'Nguyễn An'}]);
+  });
   it("chatRoot: bỏ qua nút mở panel, ưu tiên container có tin nhắn", () => {
     setBody(`
       <button aria-label="Chat with everyone">Chat</button>
@@ -164,7 +230,7 @@ describe("extension platforms.js — chat (Meet)", () => {
     ) => { text: string; sender: string } | null;
     expect(parse(document.querySelector("#own-message")!, [], "Lê Khánh Trinh")).toEqual({
       text: "Đức Anh có nghe không?",
-      sender: "Lê Khánh Trinh",
+      sender: "Chưa xác định",
     });
   });
 
@@ -352,7 +418,7 @@ describe("extension platforms.js — chat blocks theo timestamp", () => {
     ) => { text: string; sender: string } | null;
     expect(parse(document.querySelector("#own-row")!, [], "Trịnh Lê Khánh")).toEqual({
       text: "alo tôi đây",
-      sender: "Trịnh Lê Khánh",
+      sender: "Chưa xác định",
     });
   });
 
@@ -368,10 +434,10 @@ describe("extension platforms.js — chat blocks theo timestamp", () => {
       text: "có ok không",
       sender: "Trình Lê Khánh",
     });
-    // Tin của chính mình không hiện tên → gán selfName
+    // Thiếu tên không đủ bằng chứng để gán cho chủ tài khoản
     expect(parse(document.querySelector("#m2")!, ["Trình Lê Khánh"], "Bạn")).toEqual({
       text: "test",
-      sender: "Bạn",
+      sender: "Chưa xác định",
     });
     // Composer không bao giờ thành tin nhắn
     expect(parse(document.querySelector(".composer")!, ["Trình Lê Khánh"], "Bạn")).toBeNull();
@@ -393,7 +459,7 @@ describe("extension platforms.js — chat blocks không timestamp (ca bubble tr�
     expect(blocks.map((b) => b.id).sort()).toEqual(["b1", "b2"]);
   });
 
-  it("parseChatBlock bubble trơn gán selfName, loại notice/composer", () => {
+  it("parseChatBlock bubble thiếu bằng chứng người gửi giữ Chưa xác định, loại notice/composer", () => {
     const parse = meet.parseChatBlock as (
       b: Element,
       roster?: string[],
@@ -403,7 +469,7 @@ describe("extension platforms.js — chat blocks không timestamp (ca bubble tr�
     const panel = document.querySelector("#chatpanel2")!;
     expect(parse(document.querySelector("#b1")!, [], "Bạn")).toEqual({
       text: "tes thử",
-      sender: "Bạn",
+      sender: "Chưa xác định",
     });
     expect(parse(panel.querySelector(".notice")!, [], "Bạn")).toBeNull();
     expect(parse(panel.querySelector(".composer")!, [], "Bạn")).toBeNull();
@@ -473,5 +539,32 @@ describe("Meet structured chat records", () => {
     const root = platform.chatRoot();
     const parsed = platform.findChatBlocks(root).map((b: Element) => platform.parseChatBlock(b, [], "Bạn"));
     expect(parsed).toEqual([{ sender: "Minh", text: "👍" }, { sender: "Lan", text: message.trim() }]);
+  });
+});
+
+describe("chat sender attribution regression", () => {
+  it("does not treat a message prefix as a name or assume unnamed messages are mine", () => {
+    const platform = loadPlatforms() as any;
+    const block = document.createElement("div");
+    block.textContent = "Chốt họp với VNExpress: 2h chiều thứ 2 ngày 19/10/2026";
+    expect(platform.parseChatBlock(block, [], "Lê Khánh Trình")).toEqual({ sender: "Chưa xác định", text: block.textContent });
+  });
+  it("reads Lien's link and resolves explicit You to the owner without losing the colon", () => {
+    const platform = loadPlatforms() as any;
+    document.body.innerHTML = `<div id="chat"><div data-message-id="link" data-sender-name="Lien Nguyen"><div data-message-text>https://docs.google.com/document/d/example</div></div><div data-message-id="close" data-sender-name="You"><div data-message-text>Chốt họp với VNExpress: 2h chiều thứ 2 ngày 19/10/2026</div></div></div>`;
+    const parsed = platform.findChatBlocks(document.querySelector("#chat")).map((block: Element) => platform.parseChatBlock(block, [], "Lê Khánh Trình"));
+    expect(parsed).toEqual([{ sender: "Lien Nguyen", text: "https://docs.google.com/document/d/example" }, { sender: "Lê Khánh Trình", text: "Chốt họp với VNExpress: 2h chiều thứ 2 ngày 19/10/2026" }]);
+  });
+});
+
+
+describe("Meet real UI chat panel regression", () => {
+  it("ignores the send button and excludes the chat live region from captions", () => {
+    const platform = loadPlatforms() as any;
+    document.body.innerHTML = `<section id="panel"><h2>In-call messages</h2><div aria-live="polite"><div>1:55 PM <span>[TEST] Chốt họp: thứ hai</span></div></div><div><button aria-label="Send a message">Send a message</button><textarea aria-label="Send a message"></textarea></div></section>`;
+    expect(platform.findChatAnchor().tagName).toBe("TEXTAREA");
+    expect(platform.chatRoot().id).toBe("panel");
+    expect(platform.findChatBlocks(platform.chatRoot()).length).toBeGreaterThan(0);
+    expect(platform.captionRoot()).toBeNull();
   });
 });

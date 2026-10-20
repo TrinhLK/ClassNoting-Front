@@ -6,9 +6,14 @@
 (function () {
   "use strict";
 
+  // Declarative injection and the onUpdated recovery can race on a fresh tab.
+  // Only one collector may own observers/timers in this isolated world.
+  if (globalThis.__classNotingCollectorLoaded) return;
+  globalThis.__classNotingCollectorLoaded = true;
+
   // Đồng bộ với manifest.json — hiện trong ô chẩn đoán để biết tab đang
   // chạy content bản nào (tránh cãi nhau chuyện reload chưa).
-  const CODE_VERSION = "0.3.7";
+  const CODE_VERSION = "0.3.14";
 
   const shared = globalThis.ClassNotingShared;
   const platforms = globalThis.ClassNotingPlatforms;
@@ -38,14 +43,14 @@
         // Dự phòng: background trả sessionId qua response khi tab gắn lại
         // session cũ (F5) mà message CN_SESSION không tới kịp.
         if (msg && msg.type === "CN_MEETING_STATE" && res && res.sessionId && !sessionId) {
-          sessionId = res.sessionId;
+          activateSession(res.sessionId);
         }
       });
     } catch (e) { /* background chưa sẵn sàng */ }
   }
 
   function flush() {
-    if (eventQueue.length === 0) return;
+    if (!sessionId || eventQueue.length === 0) return;
     const batch = eventQueue.splice(0, 100);
     // Nhóm theo kind để khớp API /api/extension/events.
     const byKind = {};
@@ -67,6 +72,7 @@
   setInterval(flush, 2000);
 
   function queue(kind, payload) {
+    if (!sessionId) return;
     eventQueue.push({ kind, payload });
     if (eventQueue.length >= 100) flush();
   }
@@ -75,31 +81,32 @@
     return sender + "\n" + text;
   }
 
-  function handleChatNode(node, root) {
-    let parsed = null;
-    try {
-      parsed = platform.parseChatNode(node, root || null, lastRosterNames);
-    } catch (e) { /* DOM lạ */ }
-    if (!parsed || !parsed.text) return;
-    const key = chatKey(parsed.sender, parsed.text);
-    if (seenChat.has(key)) return;
-    seenChat.add(key);
-    if (seenChat.size > 1000) {
-      const first = seenChat.values().next().value;
-      seenChat.delete(first);
-    }
-    queue("chat", {
-      id: "chat_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8),
-      sender: parsed.sender,
-      text: parsed.text,
-      timestamp: Date.now(),
-    });
+  let chatScanTimer = null;
+  function handleChatNode() {
+    // Coalesce DOM mutations and use the same complete-message parser as polling.
+    // Leaf/header parsing previously emitted a second copy with a different sender.
+    if (chatScanTimer) clearTimeout(chatScanTimer);
+    chatScanTimer = setTimeout(pollChatBlocks, 150);
   }
 
   // Caption Meet chảy từng ký tự (characterData) — debounce: chỉ gửi khi câu
   // đứng yên CAPTION_SETTLE_MS, nếu không mỗi ký tự thành 1 segment (flood).
   const CAPTION_SETTLE_MS = 1500;
   let pendingCaption = null;
+  let lastCaptionSnapshot = "";
+  let lastCaptionContextAt = 0;
+  const captionClocks = new WeakMap();
+
+  function publishCaptionContext(p, force) {
+    if (!p || !sessionId || (!force && Date.now() - lastCaptionContextAt < 250)) return;
+    lastCaptionContextAt = Date.now();
+    // Identity metadata must reach audio fusion while speech is still growing,
+    // rather than waiting indefinitely for a pause in continuous speech.
+    send({ type: "CN_EVENTS", sessionId, events: [{ kind: "caption", captions: [{
+      id: p.id, speaker: p.name || "", text: p.text, isSelf: p.isSelf === true,
+      start: p.firstSeen, end: p.lastSeen,
+    }] }] });
+  }
 
   function flushPendingCaption() {
     const p = pendingCaption;
@@ -115,13 +122,7 @@
     const now = Date.now() / 1000;
     // Caption chỉ phục vụ fusion tên cho ASR (kind riêng, background không
     // đẩy lên API) — transcript lấy từ audio qua model STT.
-    queue("caption", {
-      id: "cap_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8),
-      speaker: p.name || "",
-      text: p.text,
-      start: p.firstSeen,
-      end: p.lastSeen,
-    });
+    publishCaptionContext(p, true);
   }
 
   // Tên tài khoản thật (background gửi kèm CN_SESSION) để map "You"/"Bạn"
@@ -130,6 +131,7 @@
   function normalizeSelfName(name) {
     const n = String(name || "").trim();
     if (!n) return "";
+    try { selfName = platform.selfName?.() || selfName; } catch { /* keep known identity */ }
     if (/^(you|bạn)$/i.test(n) && selfName) return selfName;
     return n;
   }
@@ -140,12 +142,19 @@
   }
 
   function handleCaptionNode(node) {
+    if (!sessionId || !running) return;
     let parsed = null;
     try {
       parsed = platform.parseCaptionNode(node, lastRosterNames);
     } catch (e) { /* DOM lạ */ }
     if (!parsed || !parsed.text) return;
+    const snapshot = parsed.name + "\n" + parsed.text;
+    if (snapshot === lastCaptionSnapshot) return;
+    lastCaptionSnapshot = snapshot;
     const speaker = normalizeSelfName(parsed.name);
+    const isSelf = /^(you|bạn)$/i.test(parsed.name || "");
+    const row = node.closest?.('.nMcdL') || [...(node.querySelectorAll?.('.nMcdL') || [])].at(-1) || node;
+    if (!captionClocks.has(row)) captionClocks.set(row, Date.now() / 1000);
     const body = captionBody(parsed.text);
     if (!body) return;
     if (
@@ -158,19 +167,26 @@
         pendingCaption.text = body;
       }
       if (speaker) pendingCaption.name = speaker;
+      pendingCaption.isSelf = isSelf;
       pendingCaption.lastSeen = Date.now() / 1000;
     } else {
       flushPendingCaption();
       pendingCaption = {
+        id: "cap_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8),
         name: speaker,
+        isSelf,
         text: body,
-        firstSeen: Date.now() / 1000,
+        // Google revises earlier words as it recognizes a sentence. Those
+        // revisions must not reset the speaker interval to its last word.
+        firstSeen: captionClocks.get(row),
         lastSeen: Date.now() / 1000,
         timer: setTimeout(flushPendingCaption, CAPTION_SETTLE_MS),
       };
+      publishCaptionContext(pendingCaption, true);
       return;
     }
     pendingCaption.timer = setTimeout(flushPendingCaption, CAPTION_SETTLE_MS);
+    publishCaptionContext(pendingCaption, false);
   }
 
   function observeSubtree(root, onAdd) {
@@ -266,12 +282,15 @@
   // Quét block tin nhắn theo timestamp (neo ổn định hơn selector class của
   // Meet). Tin nhắn tồn tại trong DOM nên poll bắt được cả khi observer trượt.
   function handleChatBlock(block) {
+    if (!sessionId) return;
+    try { selfName = platform.selfName?.() || selfName; } catch { /* keep known identity */ }
     let parsed = null;
     try {
       parsed = platform.parseChatBlock(block, lastRosterNames, selfName || "Bạn");
     } catch (e) { /* DOM lạ */ }
     if (!parsed || !parsed.text) return;
-    const key = chatKey(parsed.sender, parsed.text);
+    const messageId = block.getAttribute("data-message-id");
+    const key = messageId ? "message:" + messageId : chatKey(parsed.sender, parsed.text);
     if (seenChat.has(key)) return;
     seenChat.add(key);
     if (seenChat.size > 1000) {
@@ -279,7 +298,7 @@
       seenChat.delete(first);
     }
     queue("chat", {
-      id: "chat_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8),
+      id: messageId ? "meet_" + messageId : "chat_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8),
       sender: parsed.sender,
       text: parsed.text,
       timestamp: Date.now(),
@@ -299,7 +318,7 @@
 
   // Roster: quét mỗi 5s, chỉ gửi khi thay đổi.
   function pollRoster() {
-    if (!running) return;
+    if (!running || !sessionId) return;
     let roster = [];
     try {
       roster = platform.scrapeRoster() || [];
@@ -313,6 +332,21 @@
   }
   pollRoster();
   setInterval(pollRoster, 5000);
+
+  function activateSession(id) {
+    if (!id || (sessionId === id && running)) return;
+    sessionId = id;
+    running = true;
+    seenChat.clear();
+    seenCaption.clear();
+    lastCaptionSnapshot = "";
+    lastRosterKey = "";
+    pollRoster();
+    pollChatBlocks();
+    pollCaption();
+    lastMicMuted = undefined;
+    reportMicState();
+  }
 
   // Active-speaker: lấy mẫu mỗi 500ms → span {name,start,end}, gửi kèm heartbeat.
   setInterval(() => {
@@ -388,8 +422,8 @@
       return;
     }
     if (msg?.type === "CN_SESSION") {
-      sessionId = msg.sessionId;
       if (msg.ownerDisplayName) selfName = String(msg.ownerDisplayName);
+      activateSession(msg.sessionId);
     }
     if (msg?.type === "CN_STOP") {
       running = false;

@@ -28,13 +28,21 @@
   }
 
   function allMatches(selectors, root) {
-    const doc = root || document;
+    const docs = root ? [root] : [document];
+    // Meet moves its mic controls and captions into document Picture-in-Picture
+    // when the user switches tabs. Read that same-origin document as well.
+    if (!root) {
+      try {
+        const pip = global.documentPictureInPicture?.window?.document;
+        if (pip && pip !== document) docs.unshift(pip);
+      } catch { /* inaccessible PiP: keep fail-closed mic behavior */ }
+    }
     const out = [];
     for (const sel of selectors) {
       try {
-        doc.querySelectorAll(sel).forEach((el) => {
+        docs.forEach(doc => doc.querySelectorAll(sel).forEach((el) => {
           if (!out.includes(el)) out.push(el);
-        });
+        }));
       } catch (e) { /* bỏ qua */ }
     }
     return out;
@@ -107,7 +115,7 @@
         for (const t of tiles) {
           const pid = t.getAttribute("data-participant-id");
           const label = t.getAttribute("aria-label") || "";
-          const overlay = t.querySelector("[data-self-name], [class*='name' i]");
+          const overlay = t.querySelector("[data-self-name], [class*='name' i], span.notranslate:not([aria-hidden='true'])");
           let name = overlay ? visibleText(overlay) : label;
           if (!name.trim() && t.parentElement) {
             try {
@@ -173,6 +181,21 @@
       } catch (e) { /* DOM lạ */ }
       return names;
     },
+    selfName() {
+      // Meet's local caption uses "You"; match its avatar to the named tile,
+      // so the signed-in web-app owner is not mistaken for the Meet account.
+      const avatarKey = img => {
+        try { const url = new URL(img.src); return url.origin + url.pathname; } catch { return ""; }
+      };
+      const local = [...document.querySelectorAll('.nMcdL')].find(row => /^(you|bạn)$/i.test(visibleText(row.querySelector('.NWpY1d'))));
+      const avatar = local?.querySelector('img');
+      if (!avatar) return "";
+      const key = avatarKey(avatar);
+      const matches = [...document.querySelectorAll('[data-participant-id]')].filter(tile =>
+        [...tile.querySelectorAll('img')].some(img => key && avatarKey(img) === key));
+      if (matches.length !== 1) return "";
+      return meet.cleanRosterName(visibleText(matches[0].querySelector('[data-self-name], span.notranslate:not([aria-hidden="true"])')));
+    },
     chatRoot() {
       // Panel chat (label VI + EN). QUAN TRỌNG: loại nút bấm — selector
       // '[aria-label*="Chat"]' từng vớ nhầm nút mở panel (BUTTON.VYBDae...)
@@ -225,7 +248,7 @@
         const all = document.querySelectorAll("textarea, input, [role='textbox'], [contenteditable='true'], [aria-label], [placeholder], [title]");
         let hiddenFallback = null;
         for (const el of all) {
-          if (!el.getAttribute) continue;
+          if (!el.getAttribute || el.matches('button, [role="button"]')) continue;
           const label = el.getAttribute("aria-label") || "";
           const holder = el.getAttribute("placeholder") || "";
           const title = el.getAttribute("title") || "";
@@ -259,10 +282,18 @@
         // Meet can keep a hidden/stale composer mounted while replacing the
         // visible chat panel. Never reuse a cached panel unless it still owns
         // the current composer anchor.
-        if (meet._chatPanel && meet._chatPanel.isConnected && meet._chatPanel.contains(anchor)) {
-          return meet._chatPanel;
-        }
+        // Re-evaluate the heading: a panel cached during SPA rendering may
+        // have been only the composer before the real header was mounted.
         meet._chatPanel = null;
+        // The current Meet chat has a separate aria-live message list and composer.
+        // Select their common panel, never the send-button toolbar.
+        let panel = anchor.parentElement;
+        for (let depth = 0; panel && panel !== document.body && depth < 12; depth++, panel = panel.parentElement) {
+          if ([...panel.querySelectorAll('h2, [role="heading"]')].some(heading => /^(in-call messages|tin nhắn trong cuộc gọi)$/i.test(visibleText(heading).trim()))) {
+            meet._chatPanel = panel;
+            return panel;
+          }
+        }
         // Prefer the ancestor containing actual message records over a composer toolbar.
         let candidate = anchor.parentElement;
         for (let depth = 0; candidate && candidate !== document.body && depth < 12; depth++, candidate = candidate.parentElement) {
@@ -324,7 +355,7 @@
       let sender = "";
       try {
         const se = block.querySelector?.("[data-sender-name]");
-        sender = se ? visibleText(se) : "";
+        sender = se ? (se.getAttribute("data-sender-name") || visibleText(se)) : "";
       } catch (e) { /* bỏ qua */ }
       let body = text;
       if (sender) {
@@ -361,6 +392,7 @@
       return { text: body, sender: sender || "Khách" };
     },
     captionRoot() {
+      const chat = meet.chatRoot();
       // Loại nút bấm (nút toggle CC có aria-label "Captions" — từng vớ nhầm
       // BUTTON khiến observer sống giả), ưu tiên vùng có chữ thật phi-status.
       const candidates = allMatches([
@@ -369,6 +401,7 @@
         '[aria-live="polite"]',
       ]).filter((el) => {
         try {
+          if (chat && (chat.contains(el) || el.contains(chat))) return false;
           if (el.matches('button, [role="button"]')) return false;
           if (el.closest('button, [role="button"]')) return false;
         } catch (e) { /* giữ lại xét tiếp */ }
@@ -395,9 +428,16 @@
       try {
         if (node.closest('button, [role="button"], [role="menu"], [aria-hidden="true"]')) return null;
       } catch (e) { /* tiếp tục */ }
+      const row = node.closest('.nMcdL') || [...node.querySelectorAll('.nMcdL')].at(-1);
+      if (row) {
+        const name = visibleText(row.querySelector('.NWpY1d'));
+        const text = visibleText(row.querySelector('.ygicle'));
+        return name && text ? { name, text } : null;
+      }
       const text = visibleText(node);
       if (!text || text.length < 3 || text.length > 2000) return null;
       if (meet.CAPTION_STATUS_PATTERNS.some((re) => re.test(text))) return null;
+      if (/^(arrow_downward\s*)?jump to bottom$/i.test(text)) return null;
       // Meet render "Tên: nội dung" trong caption.
       const m = text.match(/^([^:]{1,60}):\s+(.+)$/s);
       if (m) {
@@ -440,11 +480,15 @@
       };
       // Structured message records must win over timestamp/header heuristics.
       // A sender and time can live in a sibling header; parsing leaves loses the body.
-      const records = root.querySelectorAll('[data-message-id]');
+      const records = [...root.querySelectorAll('[data-message-id]')].filter(el =>
+        !el.matches('button, [role="button"]') && !el.closest('button, [role="button"]'));
       if (records.length) {
-        records.forEach(record => { if (!record.querySelector('[data-message-id]')) take(record); });
+        records.forEach(record => { if (!records.some(other => other !== record && record.contains(other))) take(record); });
         return blocks;
       }
+      // Current Meet can paint a bubble before attaching its message ID.
+      // Wait for the record instead of emitting its anonymous leaf first.
+      if (root.classList.contains('WUFI9b') || root.querySelector('.beTDc')) return blocks;
       // Tuyến 1: leo từ node giờ lên container hẹp nhất còn ≤600 ký tự.
       const TIME_RE = /\d{1,2}:\d{2}\s*[AP]M/i;
       try {
@@ -462,7 +506,10 @@
             while (el && el !== root && depth < 8) {
               const cleanFull = meet.chatTextWithoutUi(el);
               const nonTime = cleanFull.replace(/\d{1,2}:\d{2}\s*[AP]M/gi, "").replace(/\s+/g, " ").trim();
-              if (nonTime.length >= 2 && cleanFull.length <= 600) {
+              const onlyHeader = /^(?:[^:]{1,80})\s+\d{1,2}:\d{2}\s*[AP]M$/i.test(cleanFull) &&
+                el.parentElement && el.parentElement !== root &&
+                [...el.parentElement.children].some(sibling => sibling !== el && visibleText(sibling));
+              if (nonTime.length >= 2 && cleanFull.length <= 600 && !onlyHeader) {
                 take(el);
                 break;
               }
@@ -487,6 +534,7 @@
         for (const el of all) {
           if (scanned++ > 2000) break;
           try {
+            if (el.closest('button, [role="button"], [role="tooltip"], [aria-hidden="true"]')) continue;
             if (el.matches('button, [role="button"], input, textarea, [role="textbox"]')) continue;
             // Nhánh chứa ô nhập = composer.
             if (el.querySelector('textarea, input, [role="textbox"], [contenteditable="true"]')) continue;
@@ -516,8 +564,8 @@
       } catch (e) { /* bỏ qua */ }
       return blocks;
     },
-    // Parse 1 block tin nhắn: sender (element → roster-prefix → Name: →
-    // You/Bạn → selfName vì tin của chính mình thường không hiện tên) + body
+    // Parse sender from explicit metadata or known roster names. Missing sender
+    // stays unknown; never infer ownership from an absent label. Parse body
     // đã trừ timestamp. Trả null khi là UI (composer/header).
     // Pure theo DOM — test được.
     // Header/notice trong panel chat — không phải tin nhắn.
@@ -560,13 +608,23 @@
         // Block chứa ô nhập = composer, không phải tin nhắn.
         if (block.querySelector('textarea, input, [role="textbox"], [contenteditable="true"]')) return null;
       } catch (e) { /* tiếp tục */ }
-      const messageBody = block.querySelector('[data-message-text], [data-message-content]');
+      const messageBody = block.querySelector('[data-message-text], [data-message-content], [jsname="dTKtvb"]');
       if (messageBody) {
         const text = visibleText(messageBody);
         if (!text) return null;
         const senderElement = block.matches('[data-sender-name]') ? block : block.querySelector('[data-sender-name]');
         const sender = senderElement && (senderElement.getAttribute('data-sender-name') || visibleText(senderElement));
-        return { text, sender: sender || meet.senderOfChatText(meet.chatTextWithoutUi(block), rosterNames) || "Chưa xác định" };
+        // Current Meet groups remote messages under a shared sender header.
+        // The chmVPb bubble marks our own messages; absence of a name alone does not.
+        const group = block.closest('.aops0b');
+        const header = group?.querySelector('.HNucUd');
+        const headerName = header && visibleText(header).replace(/\d{1,2}:\d{2}\s*[AP]M/gi, '').trim();
+        const own = !!block.querySelector('.chmVPb');
+        const resolved = sender || (own ? (selfName || "Bạn") : headerName) || "Chưa xác định";
+        // Meet paints optimistic records before attaching ownership/header
+        // metadata. Wait rather than uploading an anonymous duplicate first.
+        if (messageBody.matches('[jsname="dTKtvb"]') && resolved === "Chưa xác định") return null;
+        return { text, sender: /^(you|bạn)$/i.test(resolved) ? (selfName || "Bạn") : resolved };
       }
       const TIME_RE = /\d{1,2}:\d{2}\s*[AP]M/i;
       let text = "";
@@ -583,12 +641,20 @@
       let sender = "";
       try {
         const se = block.querySelector("[data-sender-name]");
-        sender = se ? visibleText(se) : "";
+        sender = se ? (se.getAttribute("data-sender-name") || visibleText(se)) : "";
       } catch (e) { /* bỏ qua */ }
+      if (!sender) {
+        const header = [...block.children].find(child => /\d{1,2}:\d{2}\s*[AP]M/i.test(visibleText(child)) && child !== block.lastElementChild);
+        if (header) {
+          const headerText = visibleText(header);
+          const match = headerText.match(/^(.{1,80}?)\s+\d{1,2}:\d{2}\s*[AP]M$/i);
+          if (match && !/[/:]/.test(match[1])) sender = match[1].trim();
+        }
+      }
       if (!sender) sender = meet.senderOfChatText(text, rosterNames);
       if (!sender) {
-        // Tin của chính mình (Meet không hiện tên trên bubble của mình).
-        sender = selfName || "Bạn";
+        // Missing sender metadata does not prove that the owner sent this message.
+        sender = "Chưa xác định";
       }
       // Body = text trừ sender đầu + timestamp.
       let body = text;
@@ -599,6 +665,7 @@
       if (!body || meet.CHAT_UI_TOKENS.includes(body.toLowerCase())) return null;
       if (/^\((you|bạn)\)$/i.test(body)) return null;
       if (body === sender) return null;
+      if (/^(you|bạn)$/i.test(sender)) sender = selfName || "Bạn";
       return { text: body, sender };
     },
     // Tên người gửi trong block chat: roster-prefix dài nhất → "Name:" → You/Bạn.
@@ -609,8 +676,9 @@
       if (!t) return "";
       const stripped = meet.stripSpeakerPrefix(t, rosterNames);
       if (stripped.name) return stripped.name;
-      const m = t.match(/^([^:]{1,60}):\s+.+$/s);
-      if (m && m[1].trim()) return m[1].trim();
+      // A colon in message content is not evidence of a sender name.
+      const explicitSelf = t.match(/^(you|bạn):\s+/i);
+      if (explicitSelf) return explicitSelf[1];
       const y = t.match(/^(you|bạn)\b\s+.+/i);
       if (y) return y[1];
       return "";
@@ -680,7 +748,7 @@
     microphoneMuted() {
       // Labels trên toolbar mô tả hành động tiếp theo: "Turn on/Bật mic" nghĩa
       // là mic hiện đang tắt; "Turn off/Tắt mic" nghĩa là mic đang bật.
-      const controls = document.querySelectorAll('button[aria-label], [role="button"][aria-label]');
+      const controls = allMatches(['button[aria-label], [role="button"][aria-label]']);
       for (const control of controls) {
         const label = String(control.getAttribute("aria-label") || "").toLowerCase();
         if (/turn on (the )?microphone|unmute microphone|bật (mic|micro)(rô)?|bật tiếng/.test(label)) return true;

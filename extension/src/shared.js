@@ -73,6 +73,18 @@
     return { name: (ctx.fallbackName || "SPEAKER_00"), uncertain: true };
   }
 
+  function resolveAudioSpeaker(source, start, end, ctx) {
+    const captions = ctx.captionLines || [];
+    const localNames = new Set(captions.filter(c => c.isSelf === true).map(c => c.name));
+    const resolved = resolveSpeakerName(start, end, {
+      ...ctx,
+      activeSpans: source === "mic" ? [] : (ctx.activeSpans || []).filter(s => !localNames.has(s.name)),
+      captionLines: captions.filter(c => source === "mic" ? c.isSelf === true : c.isSelf !== true),
+    });
+    // A local caption identifies the Meet account, not a biometric identity.
+    return { ...resolved, speakerSource: source === "mic" || !activeNameAt(ctx.activeSpans || [], (start + end) / 2) ? "caption" : "active-speaker" };
+  }
+
   // Nối chuỗi chống lặp (port từ mergeText của realtime-protocol.ts).
   function mergeText(prev, next) {
     const p = String(prev || "").trim();
@@ -106,6 +118,7 @@
     detectProvider,
     normalizeName,
     resolveSpeakerName,
+    resolveAudioSpeaker,
     mergeText,
     shouldMergeSeg,
   };

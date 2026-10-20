@@ -93,8 +93,9 @@
     for (const w of units) {
       const voice = w.overlap ? -1 : (w.speaker ?? alt.speaker ?? -1);
       const voiceId = `${source.name}:${data.speaker_scope || source.generation}:${voice}`;
-      // Tab metadata describes remote sound. Mic may contain several people; do not label it as the owner.
-      const resolved = source.name === "tab" && !w.overlap ? shared.resolveSpeakerName(w.start, w.end, {
+      // Only explicit local captions can name mic speech. Remote captions must
+      // never label the mic, and local captions must never label tab playback.
+      const resolved = !w.overlap ? shared.resolveAudioSpeaker(source.name, w.start, w.end, {
         activeSpans: spans, captionLines: captions, fallbackName: "Chưa xác định"
       }) : { name: "Chưa xác định", uncertain: true };
       const matches = (context?.participants || []).filter(p => (p.displayName || p.name) === resolved.name);
@@ -107,7 +108,7 @@
         prev.text += " " + w.word; prev.end = w.end; prev.words.push(w);
       } else groups.push({ identity, speaker, voiceId, ...(participantId ? { participantId } : {}),
         text: w.word, start: w.start, end: w.end, words: [w], uncertain,
-        speakerSource: resolved.name !== "Chưa xác định" ? "active-speaker" : voice >= 0 ? "diarization" : "unknown" });
+        speakerSource: resolved.name !== "Chưa xác định" ? resolved.speakerSource : voice >= 0 ? "diarization" : "unknown" });
     }
     if (groups.length === 1) groups[0].text = alt.transcript;
     for (const group of groups) {

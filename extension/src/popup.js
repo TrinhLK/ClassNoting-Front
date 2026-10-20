@@ -491,4 +491,8 @@
   refresh();
   refreshServerSessions();
   refreshMicState();
+  // Audio starts asynchronously after session creation. Keep diagnostics live
+  // while this popup is open instead of freezing the initial "starting" state.
+  setInterval(refresh, 1000);
+  setInterval(refreshServerSessions, 5000);
 })();

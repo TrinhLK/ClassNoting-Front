@@ -5,7 +5,7 @@
  */
 // Đổi theo manifest.json mỗi build — popup/diag hiện số này để biết chắc
 // cả 3 mảnh (popup/background/content) có đồng bộ không.
-const CODE_VERSION = "0.3.7";
+const CODE_VERSION = "0.3.14";
 const DEFAULT_APP_ORIGIN = "https://smart-noting.vercel.app";
 const FLUSH_MS = 2000;
 const HEARTBEAT_TIMEOUT_MS = 2 * 60 * 1000;
@@ -206,7 +206,7 @@ async function tryEnsureSession(tabId, info, opts) {
     persistTabs();
     setBadge(tabId, "REC", "#dc2626");
     pushSession(tabId, data.sessionId);
-    startAudioCapture(tabId, data.sessionId, info.provider).catch(() => {
+    startAudioCapture(tabId, data.sessionId, data.provider || info.provider).catch(() => {
       // Thu audio thất bại (quyền/tab chưa audible) → vẫn giữ roster/chat/captions,
       // báo user bấm popup để thử lại (có user gesture).
       setBadge(tabId, "!", "#d97706");
@@ -261,6 +261,7 @@ function isAudioHealthy(t) {
 }
 
 async function startAudioCapture(tabId, sessionId, provider, opts) {
+  setAudioState(tabId, { state: "starting", detail: "Đang mở luồng audio cuộc họp" });
   // Tab phụ (vd tab YouTube đang share): fusion tên dùng spans của tab Meet
   // cùng session — truyền spansTabId để offscreen hỏi đúng chỗ.
   let spansTabId = (opts && opts.spansTabId) || undefined;
@@ -302,7 +303,7 @@ async function startAudioCapture(tabId, sessionId, provider, opts) {
   // Bắt buộc .catch: offscreen chưa chạy thì promise reject → lỗi
   // "Could not establish connection" tràn trang Errors (đã thấy thực tế).
   try {
-    await chrome.runtime.sendMessage({
+    const result = await chrome.runtime.sendMessage({
       type: "CN_AUDIO_START",
       tabId,
       sessionId,
@@ -317,7 +318,11 @@ async function startAudioCapture(tabId, sessionId, provider, opts) {
       spansTabId,
       micMuted: provider === "meet" ? micMuted : true,
     });
-  } catch (e) { /* offscreen chưa sẵn sàng — roster/chat/caption vẫn chạy */ }
+    if (result?.error) throw new Error(result.error);
+  } catch (e) {
+    setAudioState(tabId, { state: "capture_failed", detail: String(e?.message || e) });
+    throw e;
+  }
 }
 
 async function stopAudioCapture(tabId) {
@@ -537,7 +542,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         // không đẩy lên API, không thành segment.
         for (const s of ev.captions || []) {
           if (!s || !String(s.text || "").trim()) continue;
-          t.captions.push({ name: s.speaker || "", text: s.text, start: s.start, end: s.end });
+          const line = { id: s.id, name: s.speaker || "", text: s.text, start: s.start, end: s.end, isSelf: s.isSelf === true };
+          const existing = s.id && t.captions.findIndex(c => c.id === s.id);
+          if (typeof existing === "number" && existing >= 0) t.captions[existing] = line;
+          else t.captions.push(line);
           if (t.captions.length > 200) t.captions.splice(0, t.captions.length - 200);
         }
       } else if (ev.kind === "transcript") {

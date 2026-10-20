@@ -98,3 +98,13 @@ Trạng thái diarization của server, số người Meet đọc được và a
 Trên trang `/ext/[sessionId]`, chủ phiên bấm **Chia sẻ live** để copy link chỉ đọc. Người nhận không cần tài khoản hay tham gia cuộc họp; link cho phép xem transcript, người nói và chat khi phiên còn live. Khóa truy cập nằm trong URL fragment, server chỉ lưu hash, và API công khai không trả audio, link họp hoặc thông tin nội bộ của chủ phiên.
 
 Audio tab vẫn luôn được thu; mic thiết bị chỉ mở khi toolbar Meet xác nhận mic đang bật. Khi mic Meet tắt hoặc trạng thái chưa đọc được, luồng mic extension không được mở/đưa vào ASR. Sau khi cập nhật cần kết thúc phiên cũ, reload extension và tải lại tab Meet để offscreen document cũ được thay thế.
+
+### Bản 0.3.14 — kiểm tra trên Google Chrome ngày 20/10/2026
+
+- Đọc tên trên tile Meet hiện tại; chat lấy bubble thay vì nút ghim có cùng `data-message-id`, lấy nội dung riêng và tên ở header của nhóm tin.
+- Tin của chính mình chỉ được nhận khi có dấu hiệu bubble của Meet (`chmVPb`); không suy ra người gửi chỉ vì thiếu tên. Ưu tiên tên Meet khi avatar trong phụ đề “You” khớp duy nhất với tile.
+- Một content collector cho mỗi tab; roster/chat được quét khi nhận session, ID chat ổn định giúp backend không nhân bản khi F5.
+- Phụ đề đọc tên và lời từ cùng một hàng, bỏ nút “Jump to bottom”. Mic chỉ dùng phụ đề “You” làm bằng chứng tên; audio tab chỉ dùng bằng chứng phía người khác. Danh tính dựa riêng phụ đề vẫn được đánh dấu chưa xác nhận.
+- Metadata người nói được cập nhật trong lúc phụ đề đang phát triển, không chờ người nói ngừng. Khi chuyển tab, bộ đọc cũng kiểm tra nút mic/phụ đề trong cửa sổ document PiP của Meet.
+- Khởi động thủ công lấy nền tảng từ phản hồi API để không khóa nhầm mic Meet khi popup không truyền `provider`.
+- Kiểm tra handshake ASR thực tế trả `protocol: 2, diarization: false`. Thu chữ và gán tên theo Meet không đồng nghĩa server đã phân biệt giọng. Muốn kiểm chứng diarization cần nạp model trên server theo tài liệu speaker-attribution.
