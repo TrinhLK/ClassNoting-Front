@@ -24,6 +24,30 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     return () => unsubscribe();
   }, []);
 
+  useEffect(() => {
+    if (!user) return;
+    const controller = new AbortController();
+    let lastAttempt = 0;
+    const ping = async () => {
+      if (document.visibilityState !== "visible" || Date.now() - lastAttempt < 120_000) return;
+      lastAttempt = Date.now();
+      try {
+        const token = await user.getIdToken();
+        if (!controller.signal.aborted) await fetch("/api/account/activity", {
+          method: "POST", headers: { Authorization: `Bearer ${token}` }, signal: controller.signal,
+        });
+      } catch { /* Activity reporting must never interrupt the user's work. */ }
+    };
+    void ping();
+    const interval = setInterval(() => void ping(), 300_000);
+    document.addEventListener("visibilitychange", ping);
+    window.addEventListener("focus", ping);
+    return () => {
+      controller.abort(); clearInterval(interval);
+      document.removeEventListener("visibilitychange", ping); window.removeEventListener("focus", ping);
+    };
+  }, [user]);
+
   const login = async () => {
     try {
       await signInWithPopup(auth, googleProvider);

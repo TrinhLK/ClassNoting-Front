@@ -69,6 +69,43 @@
         }
       },
       "updatedAt": "2026-10-21"
+    },
+    "/admin": {
+      "targetKind": "new-ui",
+      "projectId": "49923952-324b-4a0b-b3cc-8d7270ca49c4",
+      "activeDraftId": "da9925d6-63f0-4dc7-a8b6-f8cd2a439a68",
+      "designSystemPath": ".superdesign/design-system.md",
+      "referenceIds": [
+        "classnoting-logo"
+      ],
+      "brandAssets": {
+        "logo": {
+          "assetKey": "classnoting-logo",
+          "url": "https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/49923952-324b-4a0b-b3cc-8d7270ca49c4/brand-assets/classnoting-logo/icon128.png",
+          "sourcePath": "extension/icons/icon128.png"
+        }
+      },
+      "contextFiles": [
+        ".superdesign/design-system.md",
+        "app/globals.css",
+        "app/components/ui/Button.tsx",
+        "app/components/ui/Card.tsx"
+      ],
+      "fingerprints": {
+        ".superdesign/design-system.md": "8b80b8a306437ec8edecb4999dd5a5e339fd51d17c609d3dd61704526ee8fde6",
+        "app/globals.css": "a7e700eba3f1109b664ed6b6f3795baa4723a6777f565fcdda218670df591ce7",
+        "app/components/ui/Button.tsx": "da15c8b34069561616439a9b5863529bf06ac92daf15fe9a172a1e4c815d5b1c",
+        "app/components/ui/Card.tsx": "13cce200e40ced075699ffb9b4d5a004ccd675cc5e3a93daece8f4838da2a897"
+      },
+      "drafts": {
+        "da9925d6-63f0-4dc7-a8b6-f8cd2a439a68": {
+          "title": "Smart Noting System Admin Dashboard",
+          "currentVersion": 1,
+          "visualDirection": "Account statistics, searchable table and quota editor",
+          "reviewStatus": "awaiting_user_approval"
+        }
+      },
+      "updatedAt": "2026-10-21"
     }
   }
 }

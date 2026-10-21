@@ -6,7 +6,7 @@ import { useAuth } from "@/app/context/AuthContext";
 import Button from "@/app/components/ui/Button";
 import Card from "@/app/components/ui/Card";
 
-type AiStatus = { hasKey: boolean; keySuffix: string | null; freeLimit: number; freeUsed: number; freePending: number; freeRemaining: number };
+type AiStatus = { hasKey: boolean; keySuffix: string | null; freeLimit: number | null; unlimited: boolean; freeUsed: number; freePending: number; freeRemaining: number | null };
 
 export default function AccountSettings() {
   const { user } = useAuth();
@@ -51,8 +51,8 @@ export default function AccountSettings() {
       <header><h1 className="text-2xl font-bold text-slate-900">Thiết lập tài khoản</h1><p className="mt-1 text-sm text-slate-500 break-all">{user?.email}</p></header>
       <div className="border-b border-slate-200"><span className="inline-flex border-b-2 border-primary-600 px-4 py-2 text-sm font-semibold text-primary-600">AI &amp; Gemini</span></div>
       <Card>
-        <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="font-semibold text-slate-900">Miễn phí 10 cuộc họp</h2><span className="text-sm text-slate-500">{status ? `Đã dùng ${status.freeUsed}/${status.freeLimit}` : "Đang tải hạn mức…"}</span></div>
-        {status && <><div className="my-4 h-2 overflow-hidden rounded-full bg-primary-100" role="progressbar" aria-label="Cuộc họp miễn phí đã dùng" aria-valuenow={status.freeUsed} aria-valuemin={0} aria-valuemax={status.freeLimit}><div className="h-full rounded-full bg-primary-600" style={{ width: `${Math.min(100, status.freeUsed / status.freeLimit * 100)}%` }} /></div><p className="mb-3 text-sm text-slate-600">Còn {status.freeRemaining} cuộc họp miễn phí{status.freePending ? ` · ${status.freePending} cuộc họp đang xử lý` : ""}. {status.hasKey && "Bạn đang dùng key riêng, không trừ lượt miễn phí."}</p></>}
+        <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="font-semibold text-slate-900">{status?.unlimited ? "AI hệ thống không giới hạn" : status && status.freeLimit !== 10 ? "Hạn mức AI được cấp" : "Miễn phí 10 cuộc họp"}</h2><span className="text-sm text-slate-500">{status ? status.unlimited ? `Đã dùng ${status.freeUsed} · Không giới hạn` : `Đã dùng ${status.freeUsed}/${status.freeLimit}` : "Đang tải hạn mức…"}</span></div>
+        {status && <>{!status.unlimited && <div className="my-4 h-2 overflow-hidden rounded-full bg-primary-100" role="progressbar" aria-label="Cuộc họp miễn phí đã dùng" aria-valuenow={status.freeUsed} aria-valuemin={0} aria-valuemax={status.freeLimit ?? 10}><div className="h-full rounded-full bg-primary-600" style={{ width: `${Math.min(100, status.freeUsed / (status.freeLimit ?? 10) * 100)}%` }} /></div>}<p className="my-3 text-sm text-slate-600">{status.unlimited ? "Bạn được cấp không giới hạn số cuộc họp dùng AI hệ thống" : `Còn ${status.freeRemaining} cuộc họp trong hạn mức được cấp`}{status.freePending ? ` · ${status.freePending} cuộc họp đang xử lý` : ""}. {status.hasKey && "Bạn đang dùng key riêng, không trừ lượt miễn phí."}</p></>}
         <div className="flex gap-2 rounded-lg border border-slate-100 bg-slate-50 p-3 text-sm text-slate-500"><Info className="mt-0.5 h-4 w-4 shrink-0" /><p>Mỗi cuộc họp chỉ tính một lượt khi AI xử lý thành công lần đầu, kể cả Live insight. Tóm tắt lại cùng cuộc họp không tính thêm lượt. Lượt không đặt lại theo tháng; yêu cầu thất bại không tính lượt.</p></div>
         <button type="button" onClick={() => void request()} disabled={busy} className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-primary-600 disabled:opacity-50"><RefreshCw className={`h-3.5 w-3.5 ${busy ? "animate-spin" : ""}`} />Cập nhật hạn mức</button>
       </Card>
@@ -73,7 +73,7 @@ export default function AccountSettings() {
           </div>
         </section>
       </Card>
-      {status && !status.hasKey && status.freeRemaining === 0 && <div className="rounded-xl border border-amber-200 bg-amber-50 p-4"><p className="text-sm font-semibold text-amber-900">{status.freeUsed >= status.freeLimit ? "Bạn đã dùng hết 10 cuộc họp miễn phí." : "Các lượt miễn phí còn lại đang được xử lý."}</p><p className="mt-1 text-sm text-amber-800">Thêm Gemini API key riêng để tóm tắt cuộc họp mới. Các cuộc họp đã tính lượt vẫn được thử lại.</p><button onClick={() => inputRef.current?.focus()} className="mt-3 text-sm font-semibold text-primary-700">Thiết lập Gemini</button></div>}
+      {status && !status.unlimited && !status.hasKey && status.freeRemaining === 0 && <div className="rounded-xl border border-amber-200 bg-amber-50 p-4"><p className="text-sm font-semibold text-amber-900">{status.freeUsed >= (status.freeLimit ?? 10) ? `Bạn đã dùng hết hạn mức ${status.freeLimit} cuộc họp được cấp.` : "Các lượt miễn phí còn lại đang được xử lý."}</p><p className="mt-1 text-sm text-amber-800">Thêm Gemini API key riêng để tóm tắt cuộc họp mới. Các cuộc họp đã tính lượt vẫn được thử lại.</p><button onClick={() => inputRef.current?.focus()} className="mt-3 text-sm font-semibold text-primary-700">Thiết lập Gemini</button></div>}
       {error && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
       {message && <p role="status" className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-700">{message}</p>}
     </div>

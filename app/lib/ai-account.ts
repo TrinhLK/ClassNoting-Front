@@ -2,7 +2,8 @@ import { createCipheriv, createDecipheriv, createHash, hkdfSync, randomBytes } f
 import { getAdminDb } from "./firebase-admin";
 import { isValidAiSessionId } from "./ai-session";
 
-export const FREE_MEETING_LIMIT = 10;
+import { aiQuotaStatus, effectiveAiQuota, FREE_MEETING_LIMIT, normalizeAiUsage } from "./ai-quota";
+export { FREE_MEETING_LIMIT } from "./ai-quota";
 export const AI_SETTINGS_URL = "/settings#gemini";
 export class AiAccountError extends Error {
   constructor(public code: string, message: string, public status = 400) { super(message); }
@@ -11,6 +12,7 @@ export class AiAccountError extends Error {
 // These top-level collections are denied to client SDKs by the deployed default-deny
 // Firestore rules. Never put credentials or quota under the client-writable users tree.
 const keyRef = (uid: string) => getAdminDb().collection("server_ai_keys").doc(uid);
+const policyRef = (uid: string) => getAdminDb().collection("server_ai_policies").doc(uid);
 const usageRef = (uid: string) => getAdminDb().collection("server_ai_usage").doc(uid);
 function encryptionKey() {
   const secret = process.env.GEMINI_KEY_ENCRYPTION_SECRET
@@ -44,24 +46,16 @@ export async function getGeminiKey(uid: string): Promise<string | null> {
   const record = snap.data();
   return !record || record.removed ? null : decryptGeminiKey(uid, record);
 }
-type Entry = { state: "used" | "pending"; requestId: string; expiresAt: number };
-type Ledger = Record<string, Entry>;
-const activeLedger = (data: any, now = Date.now()): Ledger => Object.fromEntries(
-  Object.entries((data?.meetings || {}) as Ledger).filter(([, entry]) => entry.state === "used" || entry.expiresAt > now)
-);
 export async function getAiAccountStatus(uid: string) {
   // A non-reversible configuration tag lets operators identify the active system
   // credential without revealing a write-only deployment secret or its suffix.
   if (process.env.NODE_ENV === "production" && process.env.GOOGLE_AI_API_KEY) {
     console.info("[ai-account]", { event: "system_key_config", tag: createHash("sha256").update(process.env.GOOGLE_AI_API_KEY).digest("hex").slice(0, 12) });
   }
-  const [key, usage] = await Promise.all([keyRef(uid).get(), usageRef(uid).get()]);
+  const [key, usage, policy] = await Promise.all([keyRef(uid).get(), usageRef(uid).get(), policyRef(uid).get()]);
   const record = key.data();
-  const meetings = Object.values(activeLedger(usage.data()));
-  const used = meetings.filter(entry => entry.state === "used").length;
-  const pending = meetings.length - used;
   return { hasKey: !!record && !record.removed, keySuffix: record && !record.removed ? record.suffix : null,
-    freeLimit: FREE_MEETING_LIMIT, freeUsed: used, freePending: pending, freeRemaining: Math.max(0, FREE_MEETING_LIMIT - used - pending) };
+    ...aiQuotaStatus(uid, usage.data(), policy.data()) };
 }
 
 export type AiMeetingScope = { kind: "meeting" | "live" | "extension"; id: string };
@@ -82,28 +76,36 @@ export async function canonicalAiMeeting(uid: string, input: unknown): Promise<s
 
 export async function reserveFreeMeeting(uid: string, meetingId: string, requestId: string) {
   const ref = usageRef(uid);
+  const meetingRef = ref.collection("meetings").doc(createHash("sha256").update(meetingId).digest("hex"));
   return getAdminDb().runTransaction(async tx => {
-    const snap = await tx.get(ref);
-    const ledger = activeLedger(snap.data());
-    if (ledger[meetingId]?.state === "used") return false;
-    if (ledger[meetingId]) throw new AiAccountError("AI_MEETING_BUSY", "Cuộc họp đang được tóm tắt. Vui lòng đợi kết quả.", 409);
-    if (Object.keys(ledger).length >= FREE_MEETING_LIMIT) {
-      throw new AiAccountError("AI_KEY_REQUIRED", "Bạn đã dùng hoặc đang xử lý đủ 10 cuộc họp miễn phí. Hãy thêm Gemini API key riêng trong Thiết lập tài khoản để tóm tắt cuộc họp mới. Các cuộc họp đã tính lượt vẫn có thể tóm tắt lại.", 402);
+    const [snap, policy, meeting] = await Promise.all([tx.get(ref), tx.get(policyRef(uid)), tx.get(meetingRef)]);
+    const ledger = normalizeAiUsage(snap.data());
+    if (meeting.exists || ledger.legacyMeetingIds.includes(meetingId)) return false;
+    if (Object.hasOwn(ledger.pending, meetingId)) throw new AiAccountError("AI_MEETING_BUSY", "Cuộc họp đang được tóm tắt. Vui lòng đợi kết quả.", 409);
+    const quota = effectiveAiQuota(uid, policy.data());
+    const pendingCount = Object.keys(ledger.pending).length;
+    if (!quota.unlimited && ledger.usedCount + pendingCount >= quota.limit) {
+      throw new AiAccountError("AI_KEY_REQUIRED", `Bạn đã dùng hoặc đang xử lý đủ ${quota.limit} cuộc họp được cấp. Hãy thêm Gemini API key riêng trong Thiết lập tài khoản để tóm tắt cuộc họp mới. Các cuộc họp đã tính lượt vẫn có thể tóm tắt lại.`, 402);
     }
-    ledger[meetingId] = { state: "pending", requestId, expiresAt: Date.now() + 12 * 60_000 };
-    tx.set(ref, { meetings: ledger, updatedAt: Date.now() });
+    if (pendingCount >= 50) throw new AiAccountError("AI_MEETING_BUSY", "Đang có quá nhiều cuộc họp xử lý đồng thời. Vui lòng chờ.", 429);
+    ledger.pending[meetingId] = { requestId, expiresAt: Date.now() + 12 * 60_000 };
+    tx.set(ref, { ...snap.data(), ...ledger, schemaVersion: 2, updatedAt: Date.now() });
     return true;
   });
 }
 export async function finishFreeMeeting(uid: string, meetingId: string, requestId: string, success: boolean) {
   const ref = usageRef(uid);
+  const meetingRef = ref.collection("meetings").doc(createHash("sha256").update(meetingId).digest("hex"));
   await getAdminDb().runTransaction(async tx => {
     const snap = await tx.get(ref);
-    const ledger = (snap.data()?.meetings || {}) as Ledger;
-    if (ledger[meetingId]?.state !== "pending" || ledger[meetingId].requestId !== requestId) return;
-    if (success) ledger[meetingId] = { state: "used", requestId, expiresAt: 0 };
-    else delete ledger[meetingId];
-    tx.set(ref, { meetings: ledger, updatedAt: Date.now() });
+    const ledger = normalizeAiUsage(snap.data(), 0);
+    if (ledger.pending[meetingId]?.requestId !== requestId) return;
+    delete ledger.pending[meetingId];
+    if (success) {
+      ledger.usedCount += 1;
+      tx.set(meetingRef, { usedAt: Date.now() });
+    }
+    tx.set(ref, { ...snap.data(), ...ledger, schemaVersion: 2, updatedAt: Date.now(), ...(success ? { lastAiAt: Date.now() } : {}) });
   });
 }
 
@@ -114,7 +116,7 @@ export async function authorizeAiUsage(uid: string, scope: unknown, requestId: s
   if (!apiKey) throw new AiAccountError("AI_CONFIG", "AI hệ thống chưa được cấu hình. Bạn có thể thêm Gemini API key riêng.", 503);
   const scopes = Array.isArray(scope) ? scope : [scope];
   if (scopes.length < 1 || scopes.length > FREE_MEETING_LIMIT) {
-    throw new AiAccountError("AI_KEY_REQUIRED", "Hãy thêm Gemini API key riêng hoặc chọn tối đa 10 cuộc họp.", 402);
+    throw new AiAccountError("AI_KEY_REQUIRED", "Chọn tối đa 10 cuộc họp trong mỗi yêu cầu AI.", 402);
   }
   const meetingIds = [...new Set(await Promise.all(scopes.map(item => canonicalAiMeeting(uid, item))))];
   const reserved: string[] = [];
