@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import { explainRefinementError } from "@/app/lib/refinementError";
 
 describe("explainRefinementError", () => {
-  it("map lỗi Unknown action sang hướng dẫn redeploy worker", () => {
+  it("map lỗi Unknown action sang hướng dẫn cập nhật dịch vụ EzNoting", () => {
     const out = explainRefinementError("Unknown action: refine_meeting");
     expect(out).toContain("bản cũ");
-    expect(out).toContain("ClassNoting-File-Processing");
+    expect(out).toContain("EzNoting");
     expect(out).not.toContain("Unknown action");
   });
 
