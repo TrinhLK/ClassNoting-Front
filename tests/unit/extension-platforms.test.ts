@@ -60,9 +60,9 @@ describe("extension shared.js — gộp câu ASR (chống vụn đây/đây/đâ
     ] };
     expect(resolve('mic', 2, 3, ctx)).toMatchObject({name: 'Chủ phòng', uncertain: true, speakerSource: 'caption'});
     expect(resolve('tab', 2, 3, ctx).name).toBe('Chưa xác định');
-    expect(resolve('mic', 6, 7, ctx).name).toBe('Chưa xác định');
+    expect(resolve('mic', 6, 7, ctx).name).toBe('Chủ phòng');
     expect(resolve('tab', 6, 7, ctx).name).toBe('Khách');
-    expect(resolve('mic', 9, 10, ctx).name).toBe('Chưa xác định');
+    expect(resolve('mic', 9, 10, ctx).name).toBe('Chủ phòng');
   });
   it("shouldMergeSeg: cùng người + gap nhỏ thì gộp, khác người/gap lớn thì tách", () => {
     const shared = loadShared();
@@ -587,4 +587,15 @@ describe('caption delay and UI roster controls', () => {
     expect(resolve('tab',10,12.8,'câu một chúng tôi',[...captions,{name:'Bình',text:'Câu trước',start:9,end:11,isSelf:false}])).toBeNull();
     expect(resolve('tab',10,12.8,'câu một chúng tôi',[...captions,{...captions[0],name:'Bình'}])).toBeNull();
   });
+});
+
+it('local mic requires a uniquely confirmed Meet account and never borrows a remote account', () => {
+  const resolve = loadShared().resolveAudioSpeaker as (...args: any[]) => any;
+  const ctx = {fallbackName:'Chưa xác định',activeSpans:[],captionLines:[
+    {name:'Chủ phòng',start:10,end:12,isSelf:true},
+    {name:'Khách',start:1,end:3,isSelf:false},
+  ]};
+  expect(resolve('mic',1,2,ctx).name).toBe('Chủ phòng');
+  expect(resolve('mic',1,2,{...ctx,captionLines:[ctx.captionLines[1]]}).name).toBe('Chưa xác định');
+  expect(resolve('mic',1,2,{...ctx,captionLines:[...ctx.captionLines,{name:'Tài khoản khác',start:15,end:16,isSelf:true}]}).name).toBe('Chưa xác định');
 });

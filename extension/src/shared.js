@@ -81,6 +81,12 @@
       activeSpans: source === "mic" ? [] : (ctx.activeSpans || []).filter(s => !localNames.has(s.name)),
       captionLines: captions.filter(c => source === "mic" ? c.isSelf === true : c.isSelf !== true),
     });
+    // This stream is the local Meet microphone, so a uniquely confirmed local
+    // account owns it even if ASR timestamps precede the arrival of captions.
+    if (source === "mic" && localNames.size === 1 && resolved.name === ctx.fallbackName) {
+      resolved.name = [...localNames][0];
+      resolved.uncertain = true;
+    }
     // A local caption identifies the Meet account, not a biometric identity.
     return { ...resolved, speakerSource: source === "mic" || !activeNameAt(ctx.activeSpans || [], (start + end) / 2) ? "caption" : "active-speaker" };
   }
