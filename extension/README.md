@@ -115,3 +115,5 @@ Audio tab vẫn luôn được thu; mic thiết bị chỉ mở khi toolbar Meet
 - Server cần trả `segmentation: {boundary_events: true, pause_seconds: 1}`; popup báo rõ khi server chưa hỗ trợ. Chữ vẫn gửi từng gói, không đợi đủ năm nhịp.
 - `ready.model` báo model thực tế server đã chọn. Không tự đổi model ASR của ghi âm web.
 - Không có chức năng cảnh báo mic. Khi thiếu bằng chứng tài khoản, vẫn hiển thị chưa xác định.
+
+0.4.1 sửa khởi động collector khi Meet đổi từ `/new` sang mã phòng mà không tải lại trang.

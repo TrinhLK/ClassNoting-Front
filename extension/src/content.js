@@ -9,11 +9,10 @@
   // Declarative injection and the onUpdated recovery can race on a fresh tab.
   // Only one collector may own observers/timers in this isolated world.
   if (globalThis.__classNotingCollectorLoaded) return;
-  globalThis.__classNotingCollectorLoaded = true;
 
   // Đồng bộ với manifest.json — hiện trong ô chẩn đoán để biết tab đang
   // chạy content bản nào (tránh cãi nhau chuyện reload chưa).
-  const CODE_VERSION = "0.4.0";
+  const CODE_VERSION = "0.4.1";
 
   const shared = globalThis.ClassNotingShared;
   const platforms = globalThis.ClassNotingPlatforms;
@@ -23,6 +22,9 @@
   if (!provider) return;
   const platform = platforms[provider];
   if (!platform) return;
+  // /new can become a room URL without a document reload. Only claim the
+  // singleton after initialization is possible, so recovery can try again.
+  globalThis.__classNotingCollectorLoaded = true;
 
   let sessionId = null;
   let running = true;

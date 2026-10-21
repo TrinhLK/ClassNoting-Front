@@ -80,3 +80,25 @@ it('publishes caption identity during continuous speech instead of waiting for s
   await vi.advanceTimersByTimeAsync(1);
   expect(captions().at(-1)).toMatchObject({start:captions()[0].start, speaker:'An',text:'Chào các bạn'});
 });
+
+it('allows collector recovery when Meet /new becomes a room without a document reload', () => {
+  vi.useFakeTimers();
+  const listeners: any[] = [];
+  let provider: string | null = null;
+  vi.stubGlobal('chrome', {runtime:{
+    sendMessage: (_msg: any, cb: any) => cb?.({}),
+    onMessage: {addListener: (fn: any) => listeners.push(fn)},
+  }});
+  vi.stubGlobal('ClassNotingShared', {detectProvider: () => provider});
+  vi.stubGlobal('ClassNotingPlatforms', {meet:{
+    chatRoot:()=>null, captionRoot:()=>null, scrapeRoster:()=>[],
+    microphoneMuted:()=>true, sampleActiveSpeaker:()=>'',
+  }});
+  (0,eval)(source);
+  expect((globalThis as any).__classNotingCollectorLoaded).toBeUndefined();
+  provider = 'meet';
+  (0,eval)(source);
+  expect(listeners).toHaveLength(1);
+  (0,eval)(source);
+  expect(listeners).toHaveLength(1);
+});

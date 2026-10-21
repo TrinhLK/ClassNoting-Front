@@ -5,7 +5,7 @@
  */
 // Đổi theo manifest.json mỗi build — popup/diag hiện số này để biết chắc
 // cả 3 mảnh (popup/background/content) có đồng bộ không.
-const CODE_VERSION = "0.4.0";
+const CODE_VERSION = "0.4.1";
 const DEFAULT_APP_ORIGIN = "https://smart-noting.vercel.app";
 const FLUSH_MS = 2000;
 const HEARTBEAT_TIMEOUT_MS = 2 * 60 * 1000;
@@ -882,7 +882,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 const injectedAt = new Map();
 const MEET_ROOM_RE = /^https:\/\/(www\.)?meet\.google\.com\/([a-z]{3}-[a-z]{4}-[a-z]{3}|lookup\/[\w-]+)/i;
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status !== "complete" || !tab.url || !MEET_ROOM_RE.test(tab.url)) return;
+  if ((changeInfo.status !== "complete" && !changeInfo.url) || !tab.url || !MEET_ROOM_RE.test(tab.url)) return;
   const lastInject = injectedAt.get(tabId) || 0;
   if (Date.now() - lastInject < 30000) return;
   const t = tabs.get(tabId);
