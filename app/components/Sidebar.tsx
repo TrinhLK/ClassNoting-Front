@@ -3,8 +3,9 @@ import { useState, useEffect } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   Home, FileText, ClipboardList, Users, Database, LogOut, Sparkles,
-  ChevronsLeft, ChevronsRight, Trash2, Puzzle
+  ChevronsLeft, ChevronsRight, Trash2, Puzzle, ShieldCheck
 } from "lucide-react";
+import { isSystemAdminIdentity } from "@/app/lib/admin-identity";
 import BrandIcon from "./BrandIcon";
 import { useAuth } from "@/app/context/AuthContext";
 import { useGlobalUI } from "@/app/context/GlobalUIProvider";
@@ -86,6 +87,7 @@ export default function Sidebar({ onNavigate, forceOpen = false }: SidebarProps)
 
   const allNavItems = [
     ...NAV_ITEMS,
+    ...(isSystemAdminIdentity(user) ? [{ group: "Quản trị", items: [{ href: "/admin", icon: <ShieldCheck className="w-4 h-4" />, label: "Quản trị hệ thống" }] }] : []),
     {
       group: "Khác",
       items: [

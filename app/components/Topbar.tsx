@@ -3,14 +3,16 @@ import { usePathname } from "next/navigation";
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import {
-  Bell, Search, ChevronRight, Menu, LogOut, Settings, User, Home
+  Bell, Search, ChevronRight, Menu, LogOut, Settings, User, Home, ShieldCheck
 } from "lucide-react";
 import { useAuth } from "@/app/context/AuthContext";
 import { cn } from "@/app/lib/cn";
+import { isSystemAdminIdentity } from "@/app/lib/admin-identity";
 import Avatar from "./ui/Avatar";
 
 const ROUTE_LABELS: Record<string, string> = {
   "": "Dashboard",
+  admin: "Quản trị hệ thống",
   settings: "Thiết lập tài khoản",
   minutes: "Biên bản họp",
   tasks: "Quản lý Task",
@@ -121,6 +123,7 @@ export default function Topbar({ onOpenMobileMenu }: TopbarProps) {
               <Link href="/settings" onClick={() => setShowUserMenu(false)} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors">
                 <Settings className="w-4 h-4" /> Thiết lập tài khoản
               </Link>
+              {isSystemAdminIdentity(user) && <Link href="/admin" onClick={() => setShowUserMenu(false)} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-primary-700 hover:bg-primary-50"><ShieldCheck className="w-4 h-4" /> Quản trị hệ thống</Link>}
               <div className="border-t border-slate-100 my-1" />
               <button onClick={logout} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors">
                 <LogOut className="w-4 h-4" /> Đăng xuất
