@@ -1,4 +1,4 @@
-# Extension 0.4.0 — yêu cầu và kiểm chứng
+# Extension 0.4.4 — yêu cầu và kiểm chứng
 
 ## Quy tắc đã xác nhận
 
@@ -25,13 +25,13 @@ Frontend lưu `paragraphId` cho từng gói ASR, gom đoạn khi hiển thị v�
 
 Server realtime thêm query `pause_seconds=1`, sự kiện `boundary`, `utterance_id` và thông tin model trong `ready`. Ghi âm web không truyền query vẫn giữ ngưỡng 0,8 giây. Extension giữ trạng thái VAD qua lần cắt audio 8 giây để không mất nhịp im lặng tiếp theo.
 
-## Kiểm tra trước triển khai (21/10/2026)
+## Kiểm tra và triển khai (21/10/2026)
 
-- 97 kiểm thử frontend/API liên quan đạt.
+- Bộ kiểm thử frontend/API đã mở rộng để kiểm tra collector chuyển URL Meet, lọc icon, gắn tài khoản mic và mặc định không chạy hậu xử lý.
 - Kiểm tra TypeScript mã ứng dụng đạt; TypeScript toàn repo còn lỗi ở các bộ test cũ.
-- 4 kiểm thử server với recognizer/VAD giả lập đạt: ngưỡng hợp lệ, năm nhịp, cắt dài không tính nhịp, filler không làm mất nhịp, flush không tạo nhịp.
+- 8 kiểm thử server đạt, gồm Silero VAD và DSP thật với 30 giây im lặng/nhiễu nhẹ không tạo transcript. Production cũng đã nhận 30 giây audio im lặng tổng hợp và trả 0 gói transcript.
 - Kiểm tra cú pháp extension và diff đạt.
 - Handshake production trước cập nhật: protocol 2, diarization tắt, chưa có segmentation/model metadata. `asr.noting.io.vn` trả HTTP 530.
 - Chrome Zeabur runtime log có cùng connection scope `75c1693b` với probe `asr-live.noting.io.vn`, xác nhận đúng dịch vụ đang kiểm tra.
 
-Chưa thay thế nghiệm thu Chrome của phiên bản 0.3.14. Kết quả sau deploy phải ghi riêng.
+Kết quả quan sát Chrome được ghi trong `chrome-acceptance-2026-10-21.md`. Server production xác nhận Gipformer 1.5 INT8 và `segmentation.speech_only=true`. Luồng extension không giải mã im lặng kéo dài, giữ pre-roll 2 giây; luồng ghi âm trang chủ giữ hành vi cũ. Hậu xử lý biên bản Meet chỉ chạy khi người dùng chủ động chọn để không tự thêm nhãn giọng vào kết quả realtime.

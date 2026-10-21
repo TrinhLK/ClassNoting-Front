@@ -120,4 +120,6 @@ Audio tab vẫn luôn được thu; mic thiết bị chỉ mở khi toolbar Meet
 
 0.4.2 lọc tên nút giao diện khỏi roster; khớp phần mở đầu với phụ đề đến chậm khi văn bản trùng, chỉ có một tài khoản phù hợp và không có người nói cạnh tranh. Trạng thái suy luận vẫn là đang xác minh.
 
-0.4.3 gắn mic cục bộ với tài khoản Meet đã được xác nhận duy nhất, kể cả khi phụ đề đến muộn. Server mới chỉ đưa audio có tiếng nói vào ASR, giữ đệm 400ms trước VAD để tránh mất đầu câu; nút ghi âm trang chủ giữ hành vi cũ.
+0.4.3 gắn mic cục bộ với tài khoản Meet đã được xác nhận duy nhất, kể cả khi phụ đề đến muộn. Server mới chỉ đưa audio có tiếng nói vào ASR, giữ đệm 2 giây trước VAD để tránh mất đầu câu; nút ghi âm trang chủ giữ hành vi cũ.
+
+0.4.4 ưu tiên roster có participant ID của Meet; không bổ sung tên từ nút điều khiển People khi đã có danh tính gốc. Server đã kiểm tra lại đệm đầu lời nói 2 giây bằng audio của phiên Chrome.

@@ -599,3 +599,12 @@ it('local mic requires a uniquely confirmed Meet account and never borrows a rem
   expect(resolve('mic',1,2,{...ctx,captionLines:[ctx.captionLines[1]]}).name).toBe('Chưa xác định');
   expect(resolve('mic',1,2,{...ctx,captionLines:[...ctx.captionLines,{name:'Tài khoản khác',start:15,end:16,isSelf:true}]}).name).toBe('Chưa xác định');
 });
+
+it('uses native participant IDs without appending People controls or visitor badges as accounts', () => {
+  setBody(`<div data-participant-id="p1"><span class="notranslate">Chủ phòng</span></div>
+    <div data-participant-id="p2"><span class="notranslate">Trình Lê Khánh</span></div>
+    <aside aria-label="People panel"><h2>People</h2>
+      ${['Back','mic_off','person_add','devicesmore_vertMore actions','more_vert','Trình Lê Khánhdomain_disabledVisitor','devices'].map(x=>`<button>${x}</button>`).join('')}
+    </aside>`);
+  expect(meet.scrapeRoster()).toEqual([{id:'p1',name:'Chủ phòng'},{id:'p2',name:'Trình Lê Khánh'}]);
+});

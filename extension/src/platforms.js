@@ -133,6 +133,10 @@
           push(name, pid);
         }
       } catch (e) { /* DOM lạ */ }
+      // Participant IDs are stronger evidence than text from panel controls.
+      // Meet's People header can contain icon-only buttons and visitor badges;
+      // never append those as extra people when native IDs are available.
+      if (names.some(person => person.id)) return names;
       // Lớp 2: panel People (sống sót khi đang present / tile thu gọn).
       // Diag thực tế: selector vớ nhầm ô search input — bỏ qua input/button.
       try {
