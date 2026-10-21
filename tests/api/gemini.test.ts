@@ -11,6 +11,12 @@ vi.mock("@/app/lib/rate-limit", async () => {
   return { ...actual };
 });
 
+vi.mock("@/app/lib/extension-auth", () => ({ verifyExtensionAuth: async () => ({ uid: "test-user" }) }));
+vi.mock("@/app/lib/ai-account", async () => {
+  const actual = await vi.importActual<typeof import("@/app/lib/ai-account")>("@/app/lib/ai-account");
+  return { ...actual, authorizeAiUsage: async () => ({ apiKey: "test-gemini-key", personal: false, finish: async () => {} }) };
+});
+
 const fetchMock = vi.fn();
 
 beforeEach(() => {
@@ -28,14 +34,14 @@ describe("POST /api/gemini — retry + validate (bug unknown, test logic mới)"
   });
 
   it("trả 400 khi thiếu text", async () => {
-    const req = makeRequest({ mode: "default" });
+    const req = makeRequest({ mode: "full" });
     const res = await POST(req);
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error).toContain("text");
   });
 
-  it("retry 3 lần khi API trả 500, sau đó fail", async () => {
+  it("retry từng model rồi fail khi cả hai model trả 500", async () => {
     fetchMock.mockResolvedValue({
       ok: false,
       status: 500,
@@ -43,11 +49,11 @@ describe("POST /api/gemini — retry + validate (bug unknown, test logic mới)"
       text: async () => "Server down",
     });
 
-    const req = makeRequest({ text: "Test transcript", mode: "default" });
+    const req = makeRequest({ text: "Test transcript", mode: "full" });
     const res = await POST(req);
 
-    expect(res.status).toBe(500);
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(res.status).toBe(503);
+    expect(fetchMock).toHaveBeenCalledTimes(6);
   });
 
   it("retry thành công khi API fail 1 lần rồi OK", async () => {
@@ -63,7 +69,7 @@ describe("POST /api/gemini — retry + validate (bug unknown, test logic mới)"
         json: async () => ({ choices: [{ message: { content: "Summary OK" } }] }),
       });
 
-    const req = makeRequest({ text: "Test transcript", mode: "default" });
+    const req = makeRequest({ text: "Test transcript", mode: "full" });
     const res = await POST(req);
 
     expect(res.status).toBe(200);
@@ -103,7 +109,7 @@ describe("POST /api/gemini — retry + validate (bug unknown, test logic mới)"
       json: async () => ({ choices: [{ message: { content: "x" } }] }),
     });
 
-    const req = makeRequest({ text: "T", mode: "default" });
+    const req = makeRequest({ text: "T", mode: "full" });
     await POST(req);
 
     const [, opts] = fetchMock.mock.calls[0];
@@ -122,7 +128,7 @@ describe("POST /api/gemini — retry + validate (bug unknown, test logic mới)"
 
     const req = makeRequest({
       text: "T",
-      mode: "default",
+      mode: "full",
       templateStructure: "| STT | Hạng mục |\n|---|---|\n| 1 | Fix bug |",
     });
     await POST(req);
@@ -141,7 +147,7 @@ describe("POST /api/gemini — retry + validate (bug unknown, test logic mới)"
       json: async () => ({ choices: [{ message: { content: "ok" } }] }),
     });
 
-    const req = makeRequest({ text: "T", mode: "default" });
+    const req = makeRequest({ text: "T", mode: "full" });
     await POST(req);
 
     const [, opts] = fetchMock.mock.calls[0];
@@ -303,7 +309,7 @@ describe("POST /api/gemini — retry + validate (bug unknown, test logic mới)"
 
   it("trả 429 khi rate limit vượt (20 req / 60s)", async () => {
     const makeReq = () =>
-      makeRequest({ text: "x", mode: "default" }, { ip: "88.88.88.88" });
+      makeRequest({ text: "x", mode: "full" }, { ip: "88.88.88.88" });
 
     fetchMock.mockResolvedValue({
       ok: true,

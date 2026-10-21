@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
-  Home, FileText, ClipboardList, Users, Database, LogOut,
+  Home, FileText, ClipboardList, Users, Database, LogOut, Sparkles,
   ChevronsLeft, ChevronsRight, Trash2, Puzzle
 } from "lucide-react";
 import BrandIcon from "./BrandIcon";
@@ -29,6 +29,7 @@ const NAV_ITEMS = [
     items: [
       { href: "/team", icon: <Users className="w-4 h-4" />, label: "Nhân sự" },
       { href: "/training", icon: <Database className="w-4 h-4" />, label: "Dữ liệu huấn luyện" },
+      { href: "/settings", icon: <Sparkles className="w-4 h-4" />, label: "AI & Gemini" },
     ],
   },
 ];

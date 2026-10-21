@@ -12,6 +12,7 @@ interface AIChatModalProps {
     onClearContext: () => void;
     contextText: string;
     contextCount: number;
+    meetingIds: string[];
 }
 
 interface Message {
@@ -19,7 +20,7 @@ interface Message {
     content: string;
 }
 
-export default function AIChatModal({ isOpen, onClose, onClearContext, contextText, contextCount }: AIChatModalProps) {
+export default function AIChatModal({ isOpen, onClose, onClearContext, contextText, contextCount, meetingIds }: AIChatModalProps) {
     const [messages, setMessages] = useState<Message[]>([]);
     const sessionIdRef = useRef<string | null>(null);
     const [inputValue, setInputValue] = useState("");
@@ -56,6 +57,7 @@ export default function AIChatModal({ isOpen, onClose, onClearContext, contextTe
                 question: userMsg.content,
                 mode: 'qa',
                 sessionId,
+                aiMeeting: meetingIds.map(id => ({ kind: "meeting", id })),
                 history: messages
             }, 90_000); // 90s cho chat ngắn
             const aiMsg: Message = { role: 'model', content: data.summary || "Lỗi: Không nhận được phản hồi." };

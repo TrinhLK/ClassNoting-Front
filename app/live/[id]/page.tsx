@@ -13,6 +13,7 @@ export default function LiveViewerPage() {
   const { user } = useAuth();
   const { confirm, toast } = useGlobalUI();
   const [error, setError] = useState("");
+  const [needsAiSettings, setNeedsAiSettings] = useState(false);
   const [summarizing, setSummarizing] = useState(false);
   const [showInsights, setShowInsights] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -52,13 +53,14 @@ export default function LiveViewerPage() {
   const handleSummarize = async () => {
     if (!user || session?.hostId !== user.uid || summarizing) return;
     setSummarizing(true);
+    setNeedsAiSettings(false);
     try {
       const token = await user.getIdToken();
       const response = await fetch(`/api/live/${encodeURIComponent(id)}/summarize`, {
         method: "POST", headers: { Authorization: `Bearer ${token}` },
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Không thể tóm tắt phiên live.");
+      if (!response.ok) { setNeedsAiSettings(!!data.settingsUrl); throw new Error(data.error || "Không thể tóm tắt phiên live."); }
       setSession(current => current ? { ...current, ...data } : current);
       setShowInsights(false);
       toast.success("Đã lưu bản tóm tắt toàn phiên.");
@@ -149,6 +151,7 @@ export default function LiveViewerPage() {
         )}
       </div>
 
+      {needsAiSettings && <div role="alert" className="bg-amber-50 px-6 py-3 text-sm text-amber-900">Kiểm tra hạn mức hoặc thêm Gemini API key riêng trong <a href="/settings#gemini" className="font-semibold underline">Thiết lập tài khoản → AI &amp; Gemini</a>.</div>}
       {/* BODY */}
       <div className="flex-1 overflow-hidden flex flex-col md:flex-row p-4 md:p-6 gap-6">
         

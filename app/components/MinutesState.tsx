@@ -379,6 +379,7 @@ ${m.summary}
 ---------------------------------------------
 `).join("\n\n")}
                 contextCount={selectedIds.size}
+                meetingIds={Array.from(selectedIds)}
                 onClearContext={() => {
                     setShowAIChat(false);
                     setSelectedIds(new Set());

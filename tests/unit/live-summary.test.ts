@@ -5,7 +5,7 @@ vi.mock("@/app/lib/extension-auth", () => ({ verifyExtensionAuth: m.auth }));
 vi.mock("@/app/api/gemini/route", () => ({ POST: m.generate }));
 vi.mock("@/app/lib/firebase-admin", () => ({ getAdminDb: () => ({ collection: () => ({ doc: () => ({ get: m.get }) }), runTransaction: (fn: Function) => fn({ get: m.current, update: m.update }) }) }));
 import { POST } from "@/app/api/live/[id]/summarize/route";
-const request = () => POST(new Request("http://localhost/api/live/live-test/summarize", { method: "POST" }), { params: Promise.resolve({ id: "live-test" }) });
+const request = () => POST(new Request("http://localhost/api/live/live-test/summarize", { method: "POST", headers: { Authorization: "Bearer owner-test-token" } }), { params: Promise.resolve({ id: "live-test" }) });
 beforeEach(() => {
   vi.clearAllMocks();
   m.auth.mockResolvedValue({ uid: "owner" });
@@ -17,6 +17,8 @@ it("summarizes all stored transcript and preserves live insights", async () => {
   expect((await request()).status).toBe(200);
   const body = await m.generate.mock.calls[0][0].json();
   expect(body.mode).toBe("full");
+  expect(body.aiMeeting).toEqual({ kind: "live", id: "live-test" });
+  expect(m.generate.mock.calls[0][0].headers.get("Authorization")).toBe("Bearer owner-test-token");
   expect(body.text).toContain("Nội dung đầu");
   expect(body.text).toContain("Nội dung cuối");
   expect(m.update.mock.calls[0][1].fullSummary).toContain("Biên bản");

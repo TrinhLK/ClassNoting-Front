@@ -169,7 +169,7 @@ export default function LiveRecordingState({
         .slice(-1)
         .map(s => s.content)
         .join("\n\n");
-      const summary = await requestSegmentSummary(textToProcess, sessionId, prevSummary);
+      const summary = await requestSegmentSummary(textToProcess, sessionId, prevSummary, { kind: "live", id: liveSessionIdRef.current || "" });
       if (aiSessionIdRef.current !== sessionId) return;
       setSummaries(prev => prev.map(item =>
         item.id === currentId
@@ -700,7 +700,7 @@ export default function LiveRecordingState({
         .join("\n\n");
 
       // 4. Lưu vào Firestore với trạng thái COMPLETED (Xong luôn)
-      const savedMeetingId = crypto.randomUUID();
+      const savedMeetingId = liveSessionIdRef.current || draftIdRef.current;
       await saveMeeting({
         id: savedMeetingId,
         userId: user.uid,

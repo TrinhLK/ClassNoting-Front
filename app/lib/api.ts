@@ -18,15 +18,19 @@ interface SendTaskEmailResult {
  * - Check response.ok, throw error có status code
  * - Log request + response status
  */
+export type AiMeetingScope = { kind: "meeting" | "live" | "extension"; id: string };
+
 export async function postGemini(body: Record<string, unknown> & { sessionId: string }, timeoutMs = 420_000): Promise<any> {
   if (!isValidAiSessionId(body.sessionId)) throw new Error("Invalid or missing sessionId");
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
+    const token = await auth.currentUser?.getIdToken();
+    if (!token) throw new Error("Vui lòng đăng nhập để dùng AI.");
     const response = await fetch('/api/gemini', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify(body),
       signal: controller.signal,
     }).finally(() => clearTimeout(timeoutId));
@@ -44,6 +48,11 @@ export async function postGemini(body: Record<string, unknown> & { sessionId: st
     if (!response.ok) {
       const err = new Error(data.error || `HTTP ${response.status}`);
       (err as any).status = response.status;
+      (err as any).code = data.code;
+      if (data.settingsUrl && typeof window !== "undefined") {
+        const { toast } = await import("sonner");
+        toast.error(data.error, { id: "ai-account", action: { label: "Thiết lập Gemini", onClick: () => window.location.assign("/settings#gemini") } });
+      }
       throw err;
     }
 
@@ -53,7 +62,7 @@ export async function postGemini(body: Record<string, unknown> & { sessionId: st
       console.error('[gemini] timeout after', timeoutMs, 'ms, mode:', body.mode);
     }
     throw e;
-  }
+  } finally { clearTimeout(timeoutId); }
 }
 
 // Gửi email phân công nhiệm vụ (bắt buộc kèm Firebase ID token)
@@ -150,26 +159,10 @@ export const startTranscriptionJob = async (audioUrl: string, language: "vi" | "
 
 // --- HÀM 2: TÓM TẮT NHANH (Text -> Summary) ---
 // [SỬA] Dùng Gemini (Next.js API) để trả kết quả NGAY LẬP TỨC
-export const requestSegmentSummary = async (text: string, sessionId: string, previousSummary: string = ""): Promise<string> => {
-  try {
-    const data = await postGemini({
-      text: text,
-      previousSummary: previousSummary,
-      sessionId,
-      mode: "segment"
-    });
-    if (data.summary) return data.summary;
-    console.warn("[requestSegmentSummary] Empty summary returned:", JSON.stringify(data).slice(0, 200));
-    return "";
-  } catch (e) {
-    console.error("Lỗi Live Summary:", e);
-    const msg = (e as Error).message || "Không xác định";
-    if (typeof window !== "undefined") {
-      const { toast } = await import("sonner");
-      toast.error("Lỗi tóm tắt: " + msg);
-    }
-    return "";
-  }
+export const requestSegmentSummary = async (text: string, sessionId: string, previousSummary: string = "", aiMeeting?: AiMeetingScope): Promise<string> => {
+  const data = await postGemini({ text, previousSummary, sessionId, aiMeeting, mode: "segment" });
+  if (typeof data.summary === "string" && data.summary.trim()) return data.summary;
+  throw new Error("AI chưa trả nội dung tóm tắt. Vui lòng thử lại.");
 };
 
 // Gọi Gemini trả về Text luôn
@@ -208,6 +201,7 @@ export interface FillContext {
   summary?: string;
   speakers?: string[];
   objectives?: string;
+  aiMeeting?: AiMeetingScope;
 }
 
 export const requestFillPlaceholders = async (
@@ -220,6 +214,7 @@ export const requestFillPlaceholders = async (
     sessionId,
     placeholders,
     context: context || {},
+    aiMeeting: context?.aiMeeting,
   });
 
   if (!data.summary) {
@@ -247,6 +242,7 @@ export const requestDetectFill = async (
     sessionId,
     text,
     context: context || {},
+    aiMeeting: context?.aiMeeting,
   });
 
   if (!data.summary) {

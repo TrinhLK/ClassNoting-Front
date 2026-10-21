@@ -86,7 +86,7 @@ export function useSummarize(onRefresh?: () => void) {
       });
 
       await updateMeetingProcess(meetingId, {
-        status: MEETING_STATUS.FAILED,
+        status: [402, 409].includes(error.status) && !isDraft ? meeting.status : MEETING_STATUS.FAILED,
         errorMessage: error.message,
       });
 

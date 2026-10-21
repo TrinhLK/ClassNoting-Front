@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
+vi.mock("@/app/lib/firebase", () => ({ auth: { currentUser: { getIdToken: async () => "test-id-token" } }, storage: {} }));
+
 const importApi = async () => {
   vi.resetModules();
   return await import("@/app/lib/api");

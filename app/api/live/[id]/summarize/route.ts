@@ -20,12 +20,12 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     if (!(session.segments || []).some(s => s.text?.trim())) return NextResponse.json({ error: "Chưa có nội dung để tóm tắt." }, { status: 400 });
     const response = await generateSummary(new Request(req.url, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "x-forwarded-for": req.headers.get("x-forwarded-for") || "unknown" },
-      body: JSON.stringify({ mode: "full", text, sessionId: meetingAiSessionId("summary", id), createdAt: session.startedAt,
+      headers: { "Content-Type": "application/json", Authorization: req.headers.get("Authorization") || "", "x-forwarded-for": req.headers.get("x-forwarded-for") || "unknown" },
+      body: JSON.stringify({ mode: "full", text, aiMeeting: { kind: "live", id }, sessionId: meetingAiSessionId("summary", id), createdAt: session.startedAt,
         duration: Math.max(0, ...session.segments.map(s => s.end || 0)) }),
     }));
     const result = await response.json();
-    if (!response.ok) return NextResponse.json({ error: result.error || "Không thể tóm tắt." }, { status: response.status });
+    if (!response.ok) return NextResponse.json({ error: result.error || "Không thể tóm tắt.", code: result.code, settingsUrl: result.settingsUrl }, { status: response.status });
     if (typeof result.summary !== "string" || !result.summary.trim()) throw new Error("Empty summary");
     const fullSummary = result.summary.trim();
     const summarizedAt = Date.now();

@@ -18,9 +18,11 @@ export interface InsightItem {
  */
 export default function ExtLiveInsight({
   segments,
+  extensionSessionId,
   compact = false,
 }: {
   segments: ExtLiveSegment[];
+  extensionSessionId: string;
   compact?: boolean;
 }) {
   const [insights, setInsights] = useState<InsightItem[]>([]);
@@ -62,7 +64,7 @@ export default function ExtLiveInsight({
       .slice(-1)
       .map((s) => s.content)
       .join("\n\n");
-    requestSegmentSummary(text, sessionId, prevSummary)
+    requestSegmentSummary(text, sessionId, prevSummary, { kind: "extension", id: extensionSessionId })
       .then((summary) => {
         setInsights((prev) =>
           prev.map((it) =>
@@ -72,10 +74,10 @@ export default function ExtLiveInsight({
           )
         );
       })
-      .catch(() => {
+      .catch((error) => {
         setInsights((prev) =>
           prev.map((it) =>
-            it.id === id ? { ...it, content: "Lỗi tóm tắt, sẽ thử lại ở nhịp sau.", isLoading: false } : it
+            it.id === id ? { ...it, content: error instanceof Error ? error.message : "Lỗi tóm tắt, sẽ thử lại ở nhịp sau.", isLoading: false } : it
           )
         );
       })

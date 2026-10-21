@@ -353,6 +353,7 @@ export default function MeetingDetailState({
         isOpen={showDocsFill}
         onClose={() => setShowDocsFill(false)}
         context={{
+          aiMeeting: { kind: "meeting", id: meeting.id },
           summary: meeting.summary || undefined,
           speakers: (meeting.speakers || []).map((s) => s.name),
           objectives: meeting.objectives || undefined,

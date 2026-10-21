@@ -40,6 +40,35 @@
         }
       },
       "updatedAt": "2026-10-21T07:48:44.600073+00:00"
+    },
+    "/settings": {
+      "targetKind": "new-ui",
+      "projectId": "49923952-324b-4a0b-b3cc-8d7270ca49c4",
+      "activeDraftId": "40e7328c-787b-45dd-8d0f-efc08aaaaecd",
+      "designSystemPath": ".superdesign/design-system.md",
+      "referenceIds": [
+        "classnoting-logo"
+      ],
+      "contextFiles": [
+        ".superdesign/design-system.md",
+        "app/globals.css",
+        "app/components/ui/Button.tsx",
+        "app/components/ui/Card.tsx"
+      ],
+      "fingerprints": {
+        ".superdesign/design-system.md": "8b80b8a306437ec8edecb4999dd5a5e339fd51d17c609d3dd61704526ee8fde6",
+        "app/globals.css": "a7e700eba3f1109b664ed6b6f3795baa4723a6777f565fcdda218670df591ce7",
+        "app/components/ui/Button.tsx": "da15c8b34069561616439a9b5863529bf06ac92daf15fe9a172a1e4c815d5b1c",
+        "app/components/ui/Card.tsx": "13cce200e40ced075699ffb9b4d5a004ccd675cc5e3a93daece8f4838da2a897"
+      },
+      "drafts": {
+        "40e7328c-787b-45dd-8d0f-efc08aaaaecd": {
+          "title": "Thiết lập AI & Gemini - Smart Noting",
+          "currentVersion": 1,
+          "visualDirection": "Approved compact settings cards with free meeting usage and personal Gemini key"
+        }
+      },
+      "updatedAt": "2026-10-21"
     }
   }
 }

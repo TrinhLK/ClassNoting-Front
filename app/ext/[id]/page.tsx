@@ -255,7 +255,7 @@ export default function ExtLivePage() {
         <div className={`md:w-1/3 flex-col min-h-0 gap-4 md:gap-6 overflow-hidden ${tab === "transcript" ? "hidden md:flex" : "flex"} flex-1 md:flex-none`}>
           {/* Nửa trên: live insight từ transcript ASR (như Ghi âm trực tiếp) */}
           <div className="flex-1 min-h-0 flex">
-            <ExtLiveInsight segments={session.liveSegments} />
+            {!publicMode && <ExtLiveInsight segments={session.liveSegments} extensionSessionId={session.id} />}
           </div>
           {/* Nửa dưới: box chat của cuộc họp */}
           <div className="flex-1 min-h-0 bg-white rounded-2xl border flex flex-col overflow-hidden">

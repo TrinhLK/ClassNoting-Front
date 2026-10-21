@@ -14,6 +14,12 @@ const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat
 const PRIMARY = "gemini-3.7-flash";
 const FALLBACK = "gemini-3.6-flash";
 
+vi.mock("@/app/lib/extension-auth", () => ({ verifyExtensionAuth: async () => ({ uid: "test-user" }) }));
+vi.mock("@/app/lib/ai-account", async () => {
+  const actual = await vi.importActual<typeof import("@/app/lib/ai-account")>("@/app/lib/ai-account");
+  return { ...actual, authorizeAiUsage: async () => ({ apiKey: "test-gemini-key", personal: false, finish: async () => {} }) };
+});
+
 const fetchMock = vi.fn();
 const modes = ["segment", "full", "qa", "fill_placeholders", "detect_fill", "extract_json"];
 const success = () => new Response(JSON.stringify({ choices: [{ message: { content: "[]" } }] }));
@@ -144,7 +150,7 @@ describe("provider diagnostics", () => {
       .mockImplementation(() => new Response("PRIVATE_BODY", { status: 503 }));
     const pending = POST(makeRequest(body("qa")));
     await vi.runAllTimersAsync();
-    expect((await pending).status).toBe(500);
+    expect((await pending).status).toBe(503);
     expect(logs().filter(log => log.event === "retry").map(({ reason, backoffMs, status }) => ({ reason, backoffMs, status }))).toEqual([
       { reason: "network", backoffMs: 1000, status: undefined },
       { reason: "empty", backoffMs: 2000, status: undefined },

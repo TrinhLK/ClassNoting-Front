@@ -4,8 +4,11 @@ import { checkRateLimit } from "@/app/lib/rate-limit";
 import { stripCjk, stripEvidenceReferences, stripThinking } from "@/app/lib/text";
 import { parseAiJson } from "@/app/lib/json-parser";
 import { isValidAiSessionId } from "@/app/lib/ai-session";
+import { verifyExtensionAuth } from "@/app/lib/extension-auth";
+import { authorizeAiUsage, AiAccountError, AI_SETTINGS_URL } from "@/app/lib/ai-account";
 
-const API_KEY = process.env.GOOGLE_AI_API_KEY || "";
+export const maxDuration = 300;
+
 const BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai";
 const MODELS = {
   segment: "gemini-3.7-flash",
@@ -39,7 +42,7 @@ function tokenUsage(usage: any) {
   return result;
 }
 
-async function generateWithRetry(prompt: string, model: string, mode: string, sessionId: string, diagnostic: DiagnosticContext, retries = 3) {
+async function generateWithRetry(prompt: string, model: string, mode: string, sessionId: string, diagnostic: DiagnosticContext, apiKey: string, retries = 3) {
   for (let attempt = 1; attempt <= retries; attempt++) {
     const startedAt = performance.now();
     const metadata = { requestedModel: model, attempt };
@@ -54,7 +57,7 @@ async function generateWithRetry(prompt: string, model: string, mode: string, se
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${API_KEY}`,
+          Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
           model: model,
@@ -66,14 +69,14 @@ async function generateWithRetry(prompt: string, model: string, mode: string, se
       if (!response.ok) {
         reason = "http";
         let bodyReadFailed = false;
-        const errorBody = await response.text().catch(() => { bodyReadFailed = true; return ""; });
+        await response.text().catch(() => { bodyReadFailed = true; return ""; });
         logDiagnostic(bodyReadFailed ? "body_failure" : "body_complete", diagnostic, { ...metadata, status: response.status, durationMs: performance.now() - startedAt });
         if (RETRYABLE_STATUS.has(response.status) && attempt < retries) {
           logRetry("http", response.status);
           await delay(1000 * Math.pow(2, attempt - 1));
           continue;
         }
-        throw new Error(`API error: ${response.status} ${response.statusText} — ${errorBody}`);
+        throw Object.assign(new Error("Gemini không xử lý được yêu cầu."), { status: response.status });
       }
       const data = await response.json();
       logDiagnostic("body_complete", diagnostic, { ...metadata, status: response.status, durationMs: performance.now() - startedAt });
@@ -113,7 +116,7 @@ async function generateWithRetry(prompt: string, model: string, mode: string, se
   throw new Error("Retry failed");
 }
 
-async function generateWithFallback(prompt: string, models: string[], mode: string, sessionId: string, requestId: string) {
+async function generateWithFallback(prompt: string, models: string[], mode: string, sessionId: string, requestId: string, apiKey: string) {
   const startedAt = performance.now();
   // Never log arbitrary client mode values or upstream error messages/bodies.
   const diagnostic = { requestId, mode: Object.prototype.hasOwnProperty.call(MODELS, mode) ? mode : "unknown" };
@@ -121,7 +124,7 @@ async function generateWithFallback(prompt: string, models: string[], mode: stri
   let lastError: unknown;
   for (const [index, model] of models.entries()) {
     try {
-      const content = await generateWithRetry(prompt, model, mode, sessionId, diagnostic);
+      const content = await generateWithRetry(prompt, model, mode, sessionId, diagnostic, apiKey);
       logDiagnostic("pipeline_complete", diagnostic, { outcome: "success", requestedModel: model, durationMs: performance.now() - startedAt });
       return content;
     } catch (error) {
@@ -144,8 +147,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Too many requests' }, { status: 429 });
   }
 
+  let access: Awaited<ReturnType<typeof authorizeAiUsage>> | undefined;
   try {
-    const { text, mode, sessionId, dateContext, previousSummary, departments, teams, question, history, templateStructure, meetingObjectives, placeholders, context, duration, createdAt } = await req.json();
+    const { text, mode, sessionId, aiMeeting, dateContext, previousSummary, departments, teams, question, history, templateStructure, meetingObjectives, placeholders, context, duration, createdAt } = await req.json();
 
     // Legacy clients have no reliable conversation key. Fail closed rather than
     // merge unrelated users or invent a new provider conversation on every turn.
@@ -156,6 +160,19 @@ export async function POST(req: Request) {
     if (mode !== "fill_placeholders" && mode !== "detect_fill" && !text) {
       return NextResponse.json({ error: "Thiếu nội dung text" }, { status: 400 });
     }
+
+    if (!Object.prototype.hasOwnProperty.call(MODELS, mode)) {
+      return NextResponse.json({ error: "Chế độ AI không hợp lệ." }, { status: 400 });
+    }
+    const auth = await verifyExtensionAuth(req);
+    if (auth instanceof NextResponse) return auth;
+    const inferredMeeting = sessionId.startsWith("summary-") || sessionId.startsWith("tasks-")
+      ? { kind: "meeting", id: sessionId.replace(/^(summary|tasks)-/, "") } : undefined;
+    access = await authorizeAiUsage(auth.uid, aiMeeting || inferredMeeting, requestId);
+    const complete = async (summary: string) => {
+      await access!.finish(true);
+      return NextResponse.json({ summary });
+    };
 
     const primaryModel = (MODELS as Record<string, string>)[mode] || DEFAULT_MODEL;
     const chosenModels = (MODELS as Record<string, string>)[mode]
@@ -207,12 +224,12 @@ export async function POST(req: Request) {
       ]
       QUAN TRỌNG: Chỉ trả về JSON Array thuần túy, không dùng Markdown \`\`\`json.
       `;
-      const rawText = await generateWithFallback(prompt, chosenModels, mode, sessionId, requestId);
+      const rawText = await generateWithFallback(prompt, chosenModels, mode, sessionId, requestId, access.apiKey);
       const parsed = parseAiJson(rawText, "extract_json", "array");
       const cleanText = Array.isArray(parsed)
         ? JSON.stringify(parsed, (_k, v) => typeof v === "string" ? stripCjk(v) : v)
         : "[]";
-      return NextResponse.json({ summary: cleanText });
+      return await complete(cleanText);
     } else if (mode === "segment") {
       prompt = `
       Bạn là chuyên gia ghi chép biên bản cuộc họp theo thời gian thực (Live-taker).
@@ -314,9 +331,9 @@ export async function POST(req: Request) {
       NGỮ CẢNH CUỘC HỌP (nếu có):
       ${contextBlock}
       `;
-      const rawText = await generateWithFallback(prompt, chosenModels, mode, sessionId, requestId);
+      const rawText = await generateWithFallback(prompt, chosenModels, mode, sessionId, requestId, access.apiKey);
       const cleanText = stripCjk(rawText.replace(/```json|```/g, "").trim());
-      return NextResponse.json({ summary: cleanText });
+      return await complete(cleanText);
     } else if (mode === "qa") {
       const historyStr = history?.map((m: any) => `${m.role === 'user' ? 'User' : 'AI'}: ${m.content}`).join("\n") || "";
 
@@ -471,15 +488,21 @@ export async function POST(req: Request) {
       `;
     }
 
-    const generated = stripCjk(await generateWithFallback(prompt, chosenModels, mode, sessionId, requestId));
+    const generated = stripCjk(await generateWithFallback(prompt, chosenModels, mode, sessionId, requestId, access.apiKey));
     const summary = mode === "full" ? stripEvidenceReferences(generated) : generated;
-    return NextResponse.json({ summary });
+    return await complete(summary);
 
   } catch (error: any) {
+    try { await access?.finish(false); } catch { /* Lease expires if Firestore is unavailable. */ }
     console.error("[gemini]", { event: "route_failure", requestId });
-    const errorMessage = error.status === 503
-      ? "Hệ thống AI đang quá tải, vui lòng thử lại sau."
-      : (error.message || "Lỗi xử lý AI.");
-    return NextResponse.json({ error: errorMessage, detail: error.message }, { status: 500 });
+    if (error instanceof AiAccountError) {
+      return NextResponse.json({ error: error.message, code: error.code, settingsUrl: AI_SETTINGS_URL }, { status: error.status });
+    }
+    const personal = access?.personal;
+    const status = personal && [400, 401, 403, 429].includes(error.status) ? 422 : 503;
+    const errorMessage = personal && status === 422
+      ? "Gemini API key riêng không hợp lệ, chưa có quyền dùng model hoặc hết hạn mức. Hãy kiểm tra key và project trong Thiết lập tài khoản. Hệ thống không chuyển sang key dùng chung."
+      : "AI tạm thời không xử lý được. Vui lòng thử lại sau; lượt miễn phí chưa được tính.";
+    return NextResponse.json({ error: errorMessage, code: personal ? "PERSONAL_AI_ERROR" : "AI_UNAVAILABLE", settingsUrl: AI_SETTINGS_URL }, { status });
   }
 }

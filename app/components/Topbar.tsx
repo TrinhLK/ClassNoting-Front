@@ -11,6 +11,7 @@ import Avatar from "./ui/Avatar";
 
 const ROUTE_LABELS: Record<string, string> = {
   "": "Dashboard",
+  settings: "Thiết lập tài khoản",
   minutes: "Biên bản họp",
   tasks: "Quản lý Task",
   team: "Nhân sự",
@@ -117,9 +118,9 @@ export default function Topbar({ onOpenMobileMenu }: TopbarProps) {
               <button className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors">
                 <User className="w-4 h-4" /> Hồ sơ
               </button>
-              <button className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors">
-                <Settings className="w-4 h-4" /> Cài đặt
-              </button>
+              <Link href="/settings" onClick={() => setShowUserMenu(false)} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors">
+                <Settings className="w-4 h-4" /> Thiết lập tài khoản
+              </Link>
               <div className="border-t border-slate-100 my-1" />
               <button onClick={logout} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors">
                 <LogOut className="w-4 h-4" /> Đăng xuất

@@ -22,32 +22,33 @@ beforeEach(() => {
 });
 
 it("chưa đủ ~40 từ thì chưa gọi tóm tắt", async () => {
-  render(<ExtLiveInsight segments={[seg("s1", longText(10))]} />);
+  render(<ExtLiveInsight extensionSessionId="ext-test" segments={[seg("s1", longText(10))]} />);
   await act(async () => {});
   expect(vi.mocked(requestSegmentSummary)).not.toHaveBeenCalled();
   expect(screen.getByText(/AI tóm tắt sẽ hiện/i)).toBeTruthy();
 });
 
 it("đủ từ mới thì gọi tóm tắt 1 nhịp và hiển thị", async () => {
-  const { rerender } = render(<ExtLiveInsight segments={[seg("s1", longText(10))]} />);
-  rerender(<ExtLiveInsight segments={[seg("s1", longText(10)), seg("s2", longText(35))]} />);
+  const { rerender } = render(<ExtLiveInsight extensionSessionId="ext-test" segments={[seg("s1", longText(10))]} />);
+  rerender(<ExtLiveInsight extensionSessionId="ext-test" segments={[seg("s1", longText(10)), seg("s2", longText(35))]} />);
   await act(async () => {});
   expect(vi.mocked(requestSegmentSummary)).toHaveBeenCalledTimes(1);
   const [text, sessionId] = vi.mocked(requestSegmentSummary).mock.calls[0];
   expect(sessionId).toMatch(/^live-[0-9a-f-]{36}$/);
   expect(text).toContain("Trình Lê Khánh");
+  expect(vi.mocked(requestSegmentSummary).mock.calls[0][3]).toEqual({ kind: "extension", id: "ext-test" });
   expect(await screen.findByText("Ý chính cuộc họp")).toBeTruthy();
 });
 
 it("nhịp sau chỉ tóm tắt phần câu mới (không lặp)", async () => {
   const { rerender } = render(
-    <ExtLiveInsight segments={[seg("s1", longText(45))]} />
+    <ExtLiveInsight extensionSessionId="ext-test" segments={[seg("s1", longText(45))]} />
   );
   await act(async () => {});
   expect(vi.mocked(requestSegmentSummary)).toHaveBeenCalledTimes(1);
   const fresh = Array(45).fill("mới").join(" ");
   rerender(
-    <ExtLiveInsight segments={[seg("s1", longText(45)), seg("s2", fresh)]} />
+    <ExtLiveInsight extensionSessionId="ext-test" segments={[seg("s1", longText(45)), seg("s2", fresh)]} />
   );
   await act(async () => {});
   expect(vi.mocked(requestSegmentSummary)).toHaveBeenCalledTimes(2);
