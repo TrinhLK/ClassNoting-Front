@@ -13,7 +13,7 @@ import { POST } from "@/app/api/gemini/route";
 import { GET, PUT, DELETE } from "@/app/api/account/ai/route";
 import { getAiAccountStatus, saveGeminiKey } from "@/app/lib/ai-account";
 const fetchMock = vi.fn();
-const key = `AIza${"a".repeat(35)}`;
+const key = `AQ.${"a".repeat(50)}`;
 function req(body: any, uid = "alice", method = "POST") {
   return new Request("https://smart-noting.vercel.app/api/gemini", { method, headers: { "Content-Type": "application/json", ...(uid ? { Authorization: `Bearer ${uid}` } : {}) }, ...(method !== "GET" ? { body: JSON.stringify(body) } : {}) });
 }
@@ -82,6 +82,10 @@ describe("key settings endpoint", () => {
     expect(await (await GET(req(null, "bob", "GET"))).json()).toMatchObject({ hasKey: false });
     expect((await DELETE(req({}, "alice", "DELETE"))).status).toBe(200);
     expect(await (await GET(req(null, "alice", "GET"))).json()).toMatchObject({ hasKey: false });
+  });
+  it("also accepts standard Google keys and rejects header-unsafe values", async () => {
+    expect((await PUT(req({ apiKey: `AIza${"s".repeat(35)}`, paidServiceConfirmed: true }, "alice", "PUT"))).status).toBe(200);
+    expect((await PUT(req({ apiKey: `AQ.${"s".repeat(40)}\r\nX-Header: bad`, paidServiceConfirmed: true }, "alice", "PUT"))).status).toBe(400);
   });
   it("invalid replacement never overwrites a working saved key", async () => {
     await saveGeminiKey("alice", key);

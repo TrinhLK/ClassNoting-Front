@@ -31,6 +31,8 @@ Extension cần kết nối Internet và tài khoản Smart Noting. Âm thanh đ
 
 Chỉ hỗ trợ Google Meet trên Chrome máy tính. Tên người nói phụ thuộc dữ liệu giao diện/phụ đề Meet; giọng chồng lấn, tạp âm và thay đổi giao diện Meet có thể ảnh hưởng kết quả. ClassNoting là sản phẩm độc lập, không do Google cung cấp hay chứng thực.
 
+AI & chi phí: Mỗi tài khoản được AI xử lý miễn phí 10 cuộc họp khác nhau, kể cả Live insight; tóm tắt lại cùng cuộc họp không tính thêm lượt. Sau đó cần thêm Gemini API key riêng trong Thiết lập tài khoản → AI & Gemini để tóm tắt cuộc họp mới. Key riêng dùng hạn mức/chi phí của project của bạn và cần xác nhận Cloud Billing đang hoạt động. Ghi âm, transcript và chat vẫn dùng được khi hết lượt AI.
+
 ## Single purpose
 
 Ghi chú cuộc họp Google Meet do người dùng lựa chọn và đồng bộ âm thanh, transcript, người tham gia, chat về tài khoản Smart Noting của họ để xem trực tiếp và lưu biên bản.
