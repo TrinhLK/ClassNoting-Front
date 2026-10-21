@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import BrandIcon from "./BrandIcon";
 import { useAuth } from "../context/AuthContext";
@@ -68,9 +69,10 @@ export default function LoginState() {
                 <span className="font-semibold text-slate-700 flex-1 text-center pr-6">Tiếp tục với Google</span>
               </Button>
 
-              <p className="mt-8 text-[10px] text-slate-400">
-                Bằng việc tiếp tục, bạn đồng ý với Chính sách bảo mật & Điều khoản dịch vụ.
-              </p>
+              <div className="mt-6 flex flex-wrap justify-center gap-x-5 gap-y-2 text-xs">
+                <Link href="/extension" className="font-semibold text-primary-600 hover:underline">Cài & dùng extension Meet</Link>
+                <Link href="/privacy" className="text-slate-500 hover:underline">Quyền riêng tư</Link>
+              </div>
             </div>
           </div>
           <div className="mt-6 text-center text-slate-400 text-xs font-medium">© 2025 Smart Meeting Assistant</div>

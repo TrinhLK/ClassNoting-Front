@@ -63,6 +63,7 @@
       <p class="meeting-name">Ghi âm tab đang mở</p>
       <p class="hint">Thu âm thanh của tab cuộc họp. Mic chỉ được thu khi mic Meet đang bật.</p>
     </div>
+    <p class="meta" style="margin:0 0 10px">Bắt đầu ghi sẽ gửi âm thanh, tên người tham gia, phụ đề và chat từ Meet về Smart Noting để nhận dạng, lưu biên bản và tóm tắt AI trên web. Hãy thông báo và có sự đồng ý phù hợp của người tham gia trước khi ghi. <a class="link" href="https://smart-noting.vercel.app/privacy" target="_blank" rel="noopener noreferrer">Quyền riêng tư</a></p>
     <button id="startBtn" class="primary">Bắt đầu tab này</button>
     <button id="endBtn" class="danger" style="display:none">Kết thúc &amp; tạo biên bản</button>
     <div id="actionMsg" style="display:none"></div>
@@ -78,7 +79,7 @@
       <label class="switch"><input type="checkbox" id="autoStart" /> Tự động ghi khi mở phòng họp</label>
       <p class="meta" style="margin:5px 0 9px 23px">Chỉ bật nếu bạn muốn extension tự bắt đầu phiên.</p>
       <div id="consentBox" class="subsection" style="display:none">
-        <div class="meta">Tự động ghi cần quyền đồng ý riêng. Ghi thủ công bằng nút phía trên chỉ áp dụng cho tab này.</div>
+        <div class="meta">Bật tùy chọn này cho phép tự ghi các phòng Meet bạn tham gia: gửi âm thanh, tên, phụ đề và chat về Smart Noting để nhận dạng, lưu biên bản và tóm tắt AI trên web. Ghi thủ công bằng nút phía trên chỉ áp dụng cho tab này.</div>
         <div class="row"><button id="consentBtn" class="ghost" style="width:100%">Bật tự động ghi</button></div>
       </div>
       <div class="subsection">
@@ -101,6 +102,7 @@
       <div id="speakerDiag" class="subsection meta" style="display:none"></div>
     </div>
   </details>
+  <p class="meta"><a class="link" href="https://smart-noting.vercel.app/extension" target="_blank" rel="noopener noreferrer">Hướng dẫn cài đặt &amp; sử dụng</a></p>
 </div>
 <script src="./popup.js"></script>
 </body>

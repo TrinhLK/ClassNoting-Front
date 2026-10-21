@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   Home, FileText, ClipboardList, Users, Database, LogOut,
-  ChevronsLeft, ChevronsRight, Trash2
+  ChevronsLeft, ChevronsRight, Trash2, Puzzle
 } from "lucide-react";
 import BrandIcon from "./BrandIcon";
 import { useAuth } from "@/app/context/AuthContext";
@@ -88,6 +88,7 @@ export default function Sidebar({ onNavigate, forceOpen = false }: SidebarProps)
     {
       group: "Khác",
       items: [
+        { href: "/extension", icon: <Puzzle className="w-4 h-4" />, label: "Hướng dẫn extension" },
         { href: "/?tab=trash", icon: <Trash2 className="w-4 h-4" />, label: "Thùng rác" },
       ],
     },

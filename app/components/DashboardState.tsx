@@ -15,6 +15,7 @@ import RecordSetupModal from "./Dashboard/RecordSetupModal";
 import Header from "./Dashboard/Header";
 import LiveSessionManager from "./Dashboard/LiveSessionManager";
 import ExtLiveBanner from "./Dashboard/ExtLiveBanner";
+import ExtensionSetupCard from "./ExtensionSetupCard";
 import StatsCards from "./Dashboard/StatsCards";
 import MeetingListView from "./Dashboard/MeetingListView";
 import { MEETING_STATUS } from "../lib/constants";
@@ -309,6 +310,7 @@ export default function DashboardState({
 
       {/* SCROLLABLE AREA */}
       <div className="flex-1 overflow-y-auto p-4 md:p-8 pb-24 md:pb-8">
+        {currentTab === "all" && <ExtensionSetupCard />}
         {currentTab === "all" && <ExtLiveBanner />}
         {currentTab === "all" && (
             <StatsCards

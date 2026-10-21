@@ -5,7 +5,7 @@
  */
 // Đổi theo manifest.json mỗi build — popup/diag hiện số này để biết chắc
 // cả 3 mảnh (popup/background/content) có đồng bộ không.
-const CODE_VERSION = "0.4.4";
+const CODE_VERSION = "0.4.6";
 const DEFAULT_APP_ORIGIN = "https://smart-noting.vercel.app";
 const FLUSH_MS = 2000;
 const HEARTBEAT_TIMEOUT_MS = 2 * 60 * 1000;
@@ -99,6 +99,10 @@ function setBadge(tabId, text, color) {
 
 // ---- Token relay từ web app (ExtensionBridge) ----
 chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
+  if (msg?.type === "CLASSNOTING_PING") {
+    sendResponse({ ok: true, version: chrome.runtime.getManifest().version });
+    return false;
+  }
   if (msg?.type === "CLASSNOTING_AUTH" && msg.idToken && msg.uid) {
     chrome.storage.session
       .set({ idToken: msg.idToken, uid: msg.uid, email: msg.email, displayName: msg.displayName })

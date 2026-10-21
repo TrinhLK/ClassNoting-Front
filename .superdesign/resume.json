@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "targets": {
+    "/extension": {
+      "targetKind": "new-ui",
+      "projectId": "49923952-324b-4a0b-b3cc-8d7270ca49c4",
+      "activeDraftId": "22f5975f-b802-447c-b63e-a1557bbd33db",
+      "designSystemPath": ".superdesign/design-system.md",
+      "referenceIds": [
+        "classnoting-logo"
+      ],
+      "brandAssets": {
+        "logo": {
+          "assetKey": "classnoting-logo",
+          "url": "https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/49923952-324b-4a0b-b3cc-8d7270ca49c4/brand-assets/classnoting-logo/icon128.png",
+          "sourcePath": "extension/icons/icon128.png"
+        }
+      },
+      "contextFiles": [
+        ".superdesign/design-system.md",
+        "app/globals.css",
+        "app/components/Dashboard/HeroCard.tsx",
+        "app/components/ui/Button.tsx",
+        "app/components/ui/Card.tsx",
+        "extension/src/popup.html"
+      ],
+      "fingerprints": {
+        ".superdesign/design-system.md": "8b80b8a306437ec8edecb4999dd5a5e339fd51d17c609d3dd61704526ee8fde6",
+        "app/globals.css": "a7e700eba3f1109b664ed6b6f3795baa4723a6777f565fcdda218670df591ce7",
+        "app/components/Dashboard/HeroCard.tsx": "3fb7baf0d59e34d1d3890e3dd2bfbbce385349c78323dc63d0af860435a3c590",
+        "app/components/ui/Button.tsx": "da15c8b34069561616439a9b5863529bf06ac92daf15fe9a172a1e4c815d5b1c",
+        "app/components/ui/Card.tsx": "13cce200e40ced075699ffb9b4d5a004ccd675cc5e3a93daece8f4838da2a897",
+        "extension/src/popup.html": "3aeec41d670ff323dc35dc175ed12f3b3255641ff161e0be98818234f3cfd674"
+      },
+      "drafts": {
+        "22f5975f-b802-447c-b63e-a1557bbd33db": {
+          "title": "Smart Noting Dashboard Extension Feature",
+          "currentVersion": 2,
+          "visualDirection": "Compact dashboard card and separate on-demand guide"
+        }
+      },
+      "updatedAt": "2026-10-21T07:48:44.600073+00:00"
+    }
+  }
+}

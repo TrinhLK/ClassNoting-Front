@@ -2,16 +2,7 @@
 
 import { useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
-
-const EXTENSION_ID = process.env.NEXT_PUBLIC_EXTENSION_ID || "";
-
-// Kiểu tối thiểu cho chrome.runtime.sendMessage (không cần @types/chrome).
-type ChromeRuntimeShape = {
-  runtime?: {
-    sendMessage?: (extensionId: string, message: unknown) => Promise<unknown>;
-  };
-};
-declare const chrome: ChromeRuntimeShape | undefined;
+import { EXTENSION_IDS, messageExtension } from "../lib/extension-config";
 
 /**
  * Cầu xác thực web app → Chrome extension.
@@ -23,8 +14,6 @@ export default function ExtensionBridge() {
   const { user } = useAuth();
 
   useEffect(() => {
-    if (!EXTENSION_ID) return;
-    if (typeof chrome === "undefined" || !chrome.runtime?.sendMessage) return;
     if (!user) return;
 
     let cancelled = false;
@@ -32,13 +21,13 @@ export default function ExtensionBridge() {
       try {
         const idToken = await user.getIdToken();
         if (cancelled) return;
-        await chrome.runtime?.sendMessage?.(EXTENSION_ID, {
+        await Promise.all(EXTENSION_IDS.map(id => messageExtension(id, {
           type: "CLASSNOTING_AUTH",
           idToken,
           uid: user.uid,
           email: user.email,
           displayName: user.displayName,
-        });
+        })));
       } catch {
         // Extension chưa cài / chặn message → bỏ qua trong im lặng.
       }
