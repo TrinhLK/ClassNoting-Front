@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="440" height="280"><rect width="440" height="280" fill="#4f46e5"/><rect x="150" y="34" width="140" height="140" rx="32" fill="#4338ca"/><svg x="172" y="55" width="96" height="96" viewBox="0 0 24 24">
+  <g fill="none" stroke="#ffffff" stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
+    <path d="M13.4 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7.4"/>
+    <path d="M2 6h4M2 10h4M2 14h4M2 18h4"/>
+    <path d="M21.378 5.626a1 1 0 1 0-3.004-3.004l-5.01 5.012a2 2 0 0 0-.506.854l-.837 2.87a.5.5 0 0 0 .62.62l2.87-.837a2 2 0 0 0 .854-.506z"/>
+  </g>
+</svg>
+<text x="220" y="214" font-family="Arial,sans-serif" font-size="30" font-weight="700" fill="white" text-anchor="middle">ClassNoting</text><text x="220" y="245" font-family="Arial,sans-serif" font-size="15" fill="#e0e7ff" text-anchor="middle">Google Meet → Smart Noting</text></svg>

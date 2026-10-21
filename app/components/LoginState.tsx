@@ -13,6 +13,7 @@ export default function LoginState() {
   const { login, user } = useAuth();
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [loginError, setLoginError] = useState("");
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -27,7 +28,17 @@ export default function LoginState() {
 
   const handleLogin = async () => {
     setLoading(true);
-    try { await login(); } finally { setLoading(false); }
+    setLoginError("");
+    try {
+      await login();
+    } catch (error) {
+      const code = (error as { code?: string })?.code;
+      setLoginError(code === "auth/popup-blocked"
+        ? "Chrome đang chặn cửa sổ đăng nhập Google. Cho phép cửa sổ bật lên cho trang Smart Noting rồi bấm lại nút đăng nhập; kiểm tra tiện ích chặn popup nếu vẫn bị chặn."
+        : code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request"
+          ? "Đăng nhập chưa hoàn tất. Bấm Tiếp tục với Google để thử lại."
+          : "Chưa đăng nhập được. Kiểm tra kết nối mạng rồi thử lại.");
+    } finally { setLoading(false); }
   };
 
   return (
@@ -68,6 +79,7 @@ export default function LoginState() {
                 )}
                 <span className="font-semibold text-slate-700 flex-1 text-center pr-6">Tiếp tục với Google</span>
               </Button>
+              {loginError && <p role="alert" className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-left text-sm leading-relaxed text-amber-800">{loginError}</p>}
 
               <div className="mt-6 flex flex-wrap justify-center gap-x-5 gap-y-2 text-xs">
                 <Link href="/extension" className="font-semibold text-primary-600 hover:underline">Cài & dùng extension Meet</Link>

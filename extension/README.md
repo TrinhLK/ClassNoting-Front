@@ -11,10 +11,11 @@ thu roster + chat + captions + audio tab, gán tên người nói thật bằng
 2. Ghi lại **Extension ID** (vd `abcdefg...`).
 3. Web app: đặt env `NEXT_PUBLIC_EXTENSION_ID=<id>` rồi chạy lại Next.js
    (để `ExtensionBridge` đẩy Firebase ID Token sang extension).
-4. Mở popup extension → nhập **địa chỉ web app** (`https://smart-noting.vercel.app`,
-   dev là `http://localhost:3000`) → **Lưu cài đặt** → bấm
-   **"Tôi đồng ý, bật tự động"**.
-5. Đăng nhập web app ClassNoting (token tự đẩy sang extension, refresh mỗi 50 phút).
+4. Đăng nhập Smart Noting trong cùng profile Chrome, tải lại web để chuyển token
+   sang extension (refresh mỗi 50 phút). Nếu cần đổi địa chỉ app, dùng Cài đặt nâng cao.
+5. Trong tab Meet, bật CC, mở People/Chat, mở popup → **Bắt đầu tab này**.
+   Chỉ bật tự động ghi riêng nếu bạn muốn các phòng sau tự bắt đầu.
+   Cấp quyền micro trong Cài đặt nâng cao nếu muốn thu cả giọng của mình.
 
 ## 2. Firestore rules (bắt buộc — rules quản lý trên Firebase Console)
 
@@ -81,11 +82,20 @@ Họp mở: để trống để bot vào như khách.
 - Captions tắt → tên người nói kém chính xác hơn (còn active-speaker + nối prev);
   extension không tự bật được CC, user bật tay trong phòng họp.
 
-## 7. Publish Chrome Web Store (sau)
+## 7. Bộ phát hành Chrome Web Store
 
-- Khai báo quyền `tabCapture`, `tabs`, `notifications` + chính sách quyền riêng tư
-  (chỉ thu tab họp Meet, token trong `chrome.storage.session`, không log nội dung chat).
-- Chuẩn bị screenshot popup + trang `/ext/[id]` live.
+- Chạy `python3 scripts/package-extension.py` từ gốc repo. ZIP và SHA-256 ở
+  `artifacts/chrome-web-store/`; thư mục này không đưa vào Git.
+- ZIP bỏ `localhost` và wildcard `*.noting.io.vn`, chỉ chứa mã runtime và icon.
+- Bản 0.4.6 không xin quyền `tabs`; host Meet và `activeTab` cung cấp quyền đọc
+  metadata cần thiết cho các tab thuộc phạm vi tính năng.
+- ID được Store cấp: `dgiijpohmfieghplibimafomgajafmfl`. Web hỗ trợ ID Store và ID dev
+  trong `NEXT_PUBLIC_EXTENSION_ID` để giữ cầu đăng nhập khi phát hành.
+- Hồ sơ: [mô tả và khai báo quyền](../docs/chrome-web-store/listing.vi.md).
+- Hướng dẫn công khai: `https://smart-noting.vercel.app/extension`;
+  quyền riêng tư: `https://smart-noting.vercel.app/privacy`.
+- Chỉ bật `EXTENSION_STORE_PUBLISHED` trong `app/lib/extension-config.ts` sau khi
+  kiểm tra trang Store thực sự công khai. Tải ZIP lên hoặc gửi duyệt chưa phải là đã publish.
 
 ## Speaker attribution v0.3
 
