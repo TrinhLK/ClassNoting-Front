@@ -11,7 +11,7 @@ export async function GET() {
       if (response.ok) {
         const html = await response.text();
         const title = html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1] || "";
-        published = /ClassNoting/i.test(title) && html.includes(STORE_EXTENSION_ID);
+        published = /(?:EzNoting|ClassNoting)/i.test(title) && html.includes(STORE_EXTENSION_ID);
       }
     } catch { /* Keep the pending state when the storefront cannot be verified. */ }
   }

@@ -1,4 +1,4 @@
-# ClassNoting Extension — Ghi chú cuộc họp tự động
+# EzNoting Extension — Ghi chú cuộc họp tự động
 
 Chrome extension (Manifest V3) tự phát hiện phòng họp **Google Meet** đang mở,
 thu roster + chat + captions + audio tab, gán tên người nói thật bằng
@@ -11,7 +11,7 @@ thu roster + chat + captions + audio tab, gán tên người nói thật bằng
 2. Ghi lại **Extension ID** (vd `abcdefg...`).
 3. Web app: đặt env `NEXT_PUBLIC_EXTENSION_ID=<id>` rồi chạy lại Next.js
    (để `ExtensionBridge` đẩy Firebase ID Token sang extension).
-4. Đăng nhập Smart Noting trong cùng profile Chrome, tải lại web để chuyển token
+4. Đăng nhập EzNoting trong cùng profile Chrome, tải lại web để chuyển token
    sang extension (refresh mỗi 50 phút). Nếu cần đổi địa chỉ app, dùng Cài đặt nâng cao.
 5. Trong tab Meet, bật CC, mở People/Chat, mở popup → **Bắt đầu tab này**.
    Chỉ bật tự động ghi riêng nếu bạn muốn các phòng sau tự bắt đầu.
@@ -101,7 +101,7 @@ Họp mở: để trống để bot vào như khách.
 
 Xem [triển khai, cấu hình và giới hạn tích hợp](../docs/speaker-attribution/README.md). Tài liệu này thay thế mô tả cũ về giao thức audio và gán người nói.
 
-Extension `0.3.6` có popup một thao tác: mở extension và bấm **Bắt đầu tab này** để tạo phiên và thu âm tab hiện tại. Cú bấm thủ công là xác nhận chỉ cho tab đó; tự động ghi khi mở Meet vẫn cần bật riêng trong **Cài đặt nâng cao**. Đăng nhập ClassNoting vẫn cần thiết để lưu biên bản. Các thao tác đổi tên, cấp quyền mic, danh sách phiên và chẩn đoán nằm trong phần nâng cao. Icon extension là sổ ghi chú, đồng bộ với icon web; bộ nhận dạng chat bỏ thông báo hệ thống nằm chung hàng với bubble.
+Extension `0.3.6` có popup một thao tác: mở extension và bấm **Bắt đầu tab này** để tạo phiên và thu âm tab hiện tại. Cú bấm thủ công là xác nhận chỉ cho tab đó; tự động ghi khi mở Meet vẫn cần bật riêng trong **Cài đặt nâng cao**. Đăng nhập EzNoting vẫn cần thiết để lưu biên bản. Các thao tác đổi tên, cấp quyền mic, danh sách phiên và chẩn đoán nằm trong phần nâng cao. Icon extension là sổ ghi chú, đồng bộ với icon web; bộ nhận dạng chat bỏ thông báo hệ thống nằm chung hàng với bubble.
 
 Trạng thái diarization của server, số người Meet đọc được và active-speaker gần nhất nằm trong phần chẩn đoán. Khi chữ vẫn về nhưng status báo `diarization tắt`, server đang chạy nhưng thiếu model/env; khi roster là `0`, bấm **Chẩn đoán tab Meet** để xem selectors `roster:*` và `speaker:active`.
 

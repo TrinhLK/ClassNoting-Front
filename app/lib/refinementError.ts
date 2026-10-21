@@ -4,7 +4,7 @@
  */
 export function explainRefinementError(error: string): string {
   if (/unknown action/i.test(error)) {
-    return "Worker RunPod đang chạy bản cũ, chưa hỗ trợ phân tích lại. Hãy rebuild + redeploy worker từ repo ClassNoting-File-Processing bản mới nhất rồi thử lại.";
+    return "Máy chủ xử lý của EzNoting đang chạy bản cũ, chưa hỗ trợ phân tích lại. Vui lòng liên hệ quản trị viên để cập nhật dịch vụ rồi thử lại.";
   }
   return error;
 }

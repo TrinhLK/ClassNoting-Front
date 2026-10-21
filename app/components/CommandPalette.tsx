@@ -112,7 +112,7 @@ export default function CommandPalette() {
 
       <div className="border-t border-slate-200 px-4 py-2 flex items-center justify-between text-[10px] text-slate-400">
         <span><kbd className="px-1 py-0.5 bg-slate-100 rounded font-mono">↑↓</kbd> di chuyển <kbd className="px-1 py-0.5 bg-slate-100 rounded font-mono ml-2">↵</kbd> chọn</span>
-        <span>Smart Meeting</span>
+        <span>EzNoting</span>
       </div>
     </Modal>
   );

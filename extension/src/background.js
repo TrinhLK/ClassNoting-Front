@@ -87,8 +87,8 @@ function notifyLoginRequired() {
   chrome.notifications.create("cn-login", {
     type: "basic",
     iconUrl: "icons/icon128.png",
-    title: "ClassNoting cần đăng nhập",
-    message: "Mở web app ClassNoting và đăng nhập để extension tự ghi chú cuộc họp.",
+    title: "EzNoting cần đăng nhập",
+    message: "Mở web app EzNoting và đăng nhập để extension tự ghi chú cuộc họp.",
   }).catch(() => {});
 }
 
@@ -242,7 +242,7 @@ async function ensureOffscreen() {
       await chrome.offscreen.createDocument({
         url: "src/offscreen.html",
         reasons: ["USER_MEDIA", "AUDIO_PLAYBACK"],
-        justification: "Thu audio tab họp để live-transcript qua classnoting-realtime-server.",
+        justification: "Thu âm thanh cuộc họp để tạo bản chép lời trực tiếp trên EzNoting.",
       });
     }
   })().catch((e) => {

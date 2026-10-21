@@ -196,7 +196,7 @@
 
   const REASONS = {
     no_consent: "Cần bật quyền tự động ghi trong Cài đặt nâng cao.",
-    no_auth: "Chưa đăng nhập — mở web app ClassNoting, đăng nhập, rồi F5 lại tab web.",
+    no_auth: "Chưa đăng nhập — mở web app EzNoting, đăng nhập, rồi F5 lại tab web.",
     token_expired: "Token hết hạn — mở web app, F5 lại tab web để đẩy token mới, rồi thử lại.",
     bad_link: "Tab này không phải link Google Meet được hỗ trợ.",
     rate_limited: "Bấm quá nhanh — đợi 1 phút rồi thử lại.",

@@ -1,10 +1,18 @@
 {
   "manifest_version": 3,
-  "name": "ClassNoting — Ghi chú cuộc họp tự động",
-  "version": "0.4.6",
-  "description": "Tự phát hiện phòng họp Google Meet đang mở, ghi chú người tham gia + chat + transcript live về ClassNoting.",
+  "name": "EzNoting",
+  "version": "0.4.7",
+  "description": "Tự phát hiện phòng họp Google Meet đang mở, ghi chú người tham gia + chat + transcript live về EzNoting.",
   "minimum_chrome_version": "116",
-  "permissions": ["activeTab", "tabCapture", "storage", "notifications", "alarms", "offscreen", "scripting"],
+  "permissions": [
+    "activeTab",
+    "tabCapture",
+    "storage",
+    "notifications",
+    "alarms",
+    "offscreen",
+    "scripting"
+  ],
   "host_permissions": [
     "https://meet.google.com/*",
     "https://smart-noting.vercel.app/*",
@@ -19,14 +27,20 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://meet.google.com/*"],
-      "js": ["src/shared.js", "src/platforms.js", "src/content.js"],
+      "matches": [
+        "https://meet.google.com/*"
+      ],
+      "js": [
+        "src/shared.js",
+        "src/platforms.js",
+        "src/content.js"
+      ],
       "run_at": "document_idle"
     }
   ],
   "action": {
     "default_popup": "src/popup.html",
-    "default_title": "ClassNoting ghi chú họp"
+    "default_title": "EzNoting ghi chú họp"
   },
   "icons": {
     "16": "icons/icon16.png",

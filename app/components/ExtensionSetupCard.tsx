@@ -49,7 +49,7 @@ export default function ExtensionSetupCard({ detailed = false }: { detailed?: bo
 
   const label = status === "connected" ? "Đã kết nối tài khoản" : status === "installed" ? "Đã cài · cần đăng nhập" : status === "checking" ? "Đang kiểm tra…" : "Chưa kết nối";
   return (
-    <section aria-label="ClassNoting cho Google Meet" className="mb-6 rounded-2xl border border-primary-100 bg-white p-4 md:p-5">
+    <section aria-label="EzNoting cho Google Meet" className="mb-6 rounded-2xl border border-primary-100 bg-white p-4 md:p-5">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-center">
         <div className="flex min-w-0 flex-1 items-start gap-3">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-50 text-primary-600"><Puzzle className="h-5 w-5" aria-hidden="true" /></span>
@@ -60,7 +60,7 @@ export default function ExtensionSetupCard({ detailed = false }: { detailed?: bo
                 {status === "connected" && <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />}{label}
               </span>
             </div>
-            <p className="mt-1 text-sm text-slate-500">Dùng ClassNoting để xem lời nói, người nói và chat ngay trên Smart Noting.</p>
+            <p className="mt-1 text-sm text-slate-500">Dùng extension EzNoting để xem lời nói, người nói và chat trực tiếp trên web.</p>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -71,9 +71,9 @@ export default function ExtensionSetupCard({ detailed = false }: { detailed?: bo
       </div>
       {detailed && <div className="mt-4 border-t border-slate-100 pt-3 text-sm leading-relaxed text-slate-600">
         {!storePublished && <p>Extension đã được gửi tới Google để xét duyệt. Web kiểm tra trang Chrome Web Store khi bạn mở hoặc quay lại trang; nút cài đặt chỉ mở khi xác minh được trang công khai.</p>}
-        {status === "unavailable" && <p>Không liên lạc được với extension trong profile này. Nếu đã cài, hãy tải lại trang Smart Noting, kiểm tra extension đang bật rồi bấm “Kiểm tra kết nối”.</p>}
-        {!user && <p className="mt-2"><Link href="/login" className="font-semibold text-primary-600 underline">Đăng nhập Smart Noting</Link> trong cùng profile Chrome để kết nối tài khoản.</p>}
-        {status === "connected" && <p>Web đã gửi đăng nhập sang extension. Để ghi cuộc họp, mở tab Meet rồi bấm biểu tượng ClassNoting → “Bắt đầu tab này”.</p>}
+        {status === "unavailable" && <p>Không liên lạc được với extension trong profile này. Nếu đã cài, hãy tải lại trang EzNoting, kiểm tra extension đang bật rồi bấm “Kiểm tra kết nối”.</p>}
+        {!user && <p className="mt-2"><Link href="/login" className="font-semibold text-primary-600 underline">Đăng nhập EzNoting</Link> trong cùng profile Chrome để kết nối tài khoản.</p>}
+        {status === "connected" && <p>Web đã gửi đăng nhập sang extension. Để ghi cuộc họp, mở tab Meet rồi bấm biểu tượng EzNoting → “Bắt đầu tab này”.</p>}
       </div>}
     </section>
   );

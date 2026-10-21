@@ -1,10 +1,10 @@
-# Hồ sơ phát hành ClassNoting
+# Hồ sơ phát hành EzNoting
 
 Tài khoản phát hành được chủ sản phẩm chọn: `trinhlk.vnu@gmail.com`.
 
 ## Listing
 
-- Tên: ClassNoting — Ghi chú cuộc họp tự động
+- Tên: EzNoting
 - Danh mục: Productivity / Tools (chọn mục tương ứng trong dashboard)
 - Ngôn ngữ: Tiếng Việt
 - Trang chủ / hỗ trợ: https://smart-noting.vercel.app/extension
@@ -13,29 +13,29 @@ Tài khoản phát hành được chủ sản phẩm chọn: `trinhlk.vnu@gmail.
 
 ### Mô tả ngắn
 
-Ghi chú Google Meet: lời nói, người tham gia và chat được đồng bộ với Smart Noting để xem trực tiếp và lưu biên bản.
+Ghi chú Google Meet: lời nói, người tham gia và chat được đồng bộ với EzNoting để xem trực tiếp và lưu biên bản.
 
 ### Mô tả chi tiết
 
-ClassNoting kết nối Google Meet trên Chrome với Smart Noting, giúp bạn theo dõi lời nói và tin nhắn trong cùng một bản ghi cuộc họp.
+Extension EzNoting kết nối Google Meet trên Chrome với ứng dụng web EzNoting, giúp bạn theo dõi lời nói và tin nhắn trong cùng một bản ghi cuộc họp.
 
-• Nhận dạng tiếng nói và hiển thị nội dung trực tiếp trên Smart Noting.
+• Nhận dạng tiếng nói và hiển thị nội dung trực tiếp trên EzNoting.
 • Hiển thị tên tài khoản từ dữ liệu người tham gia và phụ đề Google Meet khi có đủ bằng chứng; trường hợp chưa chắc chắn được ghi là chưa xác định hoặc đang xác minh.
 • Đồng bộ tin nhắn cùng tên người gửi từ khung chat đang mở.
 • Gom lời của cùng một tài khoản thành đoạn sau 5 nhịp im lặng, mỗi nhịp ít nhất 1 giây; đổi tài khoản mở đoạn mới khi nhận dạng có kết quả.
 • Kết thúc phiên để lưu biên bản; xem lại và sử dụng các công cụ xử lý biên bản trên web.
 
-Cách bắt đầu: cài extension, đăng nhập Smart Noting trong cùng profile Chrome, mở Meet, bật phụ đề và mở khung chat. Bấm biểu tượng ClassNoting rồi chọn “Bắt đầu tab này”. Cấp quyền micro nếu muốn ghi giọng của chính bạn; luồng micro chỉ mở khi extension xác nhận mic Meet đang bật. Có thể bật chế độ tự động ghi riêng trong Cài đặt nâng cao.
+Cách bắt đầu: cài extension, đăng nhập EzNoting trong cùng profile Chrome, mở Meet, bật phụ đề và mở khung chat. Bấm biểu tượng EzNoting rồi chọn “Bắt đầu tab này”. Cấp quyền micro nếu muốn ghi giọng của chính bạn; luồng micro chỉ mở khi extension xác nhận mic Meet đang bật. Có thể bật chế độ tự động ghi riêng trong Cài đặt nâng cao.
 
-Extension cần kết nối Internet và tài khoản Smart Noting. Âm thanh được gửi tới máy chủ nhận dạng; âm thanh bản ghi, transcript, chat và thông tin người tham gia được lưu trên hệ thống Smart Noting. Hãy thông báo và có sự đồng ý phù hợp của người tham gia trước khi ghi.
+Extension cần kết nối Internet và tài khoản EzNoting. Âm thanh được gửi tới máy chủ nhận dạng; âm thanh bản ghi, transcript, chat và thông tin người tham gia được lưu trên hệ thống EzNoting. Hãy thông báo và có sự đồng ý phù hợp của người tham gia trước khi ghi.
 
-Chỉ hỗ trợ Google Meet trên Chrome máy tính. Tên người nói phụ thuộc dữ liệu giao diện/phụ đề Meet; giọng chồng lấn, tạp âm và thay đổi giao diện Meet có thể ảnh hưởng kết quả. ClassNoting là sản phẩm độc lập, không do Google cung cấp hay chứng thực.
+Chỉ hỗ trợ Google Meet trên Chrome máy tính. Tên người nói phụ thuộc dữ liệu giao diện/phụ đề Meet; giọng chồng lấn, tạp âm và thay đổi giao diện Meet có thể ảnh hưởng kết quả. EzNoting là sản phẩm độc lập, không do Google cung cấp hay chứng thực.
 
 AI & chi phí: Mỗi tài khoản được AI xử lý miễn phí 10 cuộc họp khác nhau, kể cả Live insight; tóm tắt lại cùng cuộc họp không tính thêm lượt. Sau đó cần thêm Gemini API key riêng trong Thiết lập tài khoản → AI & Gemini để tóm tắt cuộc họp mới. Key riêng dùng hạn mức/chi phí của project của bạn và cần xác nhận Cloud Billing đang hoạt động. Ghi âm, transcript và chat vẫn dùng được khi hết lượt AI.
 
 ## Single purpose
 
-Ghi chú cuộc họp Google Meet do người dùng lựa chọn và đồng bộ âm thanh, transcript, người tham gia, chat về tài khoản Smart Noting của họ để xem trực tiếp và lưu biên bản.
+Ghi chú cuộc họp Google Meet do người dùng lựa chọn và đồng bộ âm thanh, transcript, người tham gia, chat về tài khoản EzNoting của họ để xem trực tiếp và lưu biên bản.
 
 ## Khai báo quyền
 
@@ -62,7 +62,7 @@ Không chạy mã từ xa: JavaScript được đóng gói trong ZIP. Dịch v�
 
 1. Cài ZIP, mở trang chủ và đăng nhập bằng Google của người kiểm duyệt. Không cung cấp mật khẩu thật trong hồ sơ.
 2. Mở Google Meet, tham gia một phòng có ít nhất hai tài khoản thử nghiệm; bật phụ đề, mở khung chat và danh sách người tham gia.
-3. Mở popup, chọn “Bắt đầu tab này”; nếu chưa nhận đăng nhập, tải lại trang Smart Noting sau khi cài extension.
+3. Mở popup, chọn “Bắt đầu tab này”; nếu chưa nhận đăng nhập, tải lại trang EzNoting sau khi cài extension.
 4. Cấp micro nếu thử giọng người cài extension. Mở trang live từ popup/dashboard; thử lời nói, chat và chuyển tài khoản phát biểu.
 5. Bấm “Kết thúc & tạo biên bản” và kiểm tra bản ghi trên web.
 

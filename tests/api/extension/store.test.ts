@@ -6,6 +6,7 @@ it.each([
   [404, "<title>Chrome Web Store</title>", false],
   [200, `<title>Chrome Web Store</title>${STORE_EXTENSION_ID}`, false],
   [200, `<title>Just a moment</title>${STORE_EXTENSION_ID}`, false],
+  [200, `<title>EzNoting - Chrome Web Store</title>${STORE_EXTENSION_ID}`, true],
   [200, `<title>ClassNoting — Ghi chú cuộc họp tự động - Chrome Web Store</title>${STORE_EXTENSION_ID}`, true],
 ])("only enables a verified public listing (HTTP %s)", async (status, html, published) => {
   const fetchMock = vi.fn(async () => new Response(String(html), { status: Number(status) }));

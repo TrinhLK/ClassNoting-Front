@@ -20,7 +20,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "AI Meeting Notes",
+  title: "EzNoting",
   description: "Ghi biên bản và tóm tắt cuộc họp",
 };
 

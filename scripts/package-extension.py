@@ -23,7 +23,7 @@ files = sorted((SOURCE / "src").glob("*.js")) + sorted((SOURCE / "src").glob("*.
 files += [SOURCE / "icons" / f"icon{size}.png" for size in (16, 48, 128)]
 out = ROOT / "artifacts" / "chrome-web-store"
 out.mkdir(parents=True, exist_ok=True)
-target = out / f"classnoting-{manifest['version']}.zip"
+target = out / f"eznoting-{manifest['version']}.zip"
 with ZipFile(target, "w", ZIP_DEFLATED) as archive:
     archive.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
     for file in files:

@@ -111,7 +111,7 @@ export default function Sidebar({ onNavigate, forceOpen = false }: SidebarProps)
           <BrandIcon className="w-5 h-5 text-white" />
         </div>
         {(forceOpen || !collapsed) && (
-          <span className="font-bold text-slate-800 tracking-tight truncate">Smart Meeting</span>
+          <span className="font-bold text-slate-800 tracking-tight truncate">EzNoting</span>
         )}
       </div>
 
@@ -211,7 +211,7 @@ export default function Sidebar({ onNavigate, forceOpen = false }: SidebarProps)
         )}
 
         {(forceOpen || !collapsed) && (
-          <p className="text-[10px] text-slate-400 text-center pt-2">© 2025 Smart Meeting</p>
+          <p className="text-[10px] text-slate-400 text-center pt-2">© 2026 EzNoting</p>
         )}
       </div>
     </aside>

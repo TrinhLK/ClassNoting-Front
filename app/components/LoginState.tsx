@@ -34,7 +34,7 @@ export default function LoginState() {
     } catch (error) {
       const code = (error as { code?: string })?.code;
       setLoginError(code === "auth/popup-blocked"
-        ? "Chrome đang chặn cửa sổ đăng nhập Google. Cho phép cửa sổ bật lên cho trang Smart Noting rồi bấm lại nút đăng nhập; kiểm tra tiện ích chặn popup nếu vẫn bị chặn."
+        ? "Chrome đang chặn cửa sổ đăng nhập Google. Cho phép cửa sổ bật lên cho trang EzNoting rồi bấm lại nút đăng nhập; kiểm tra tiện ích chặn popup nếu vẫn bị chặn."
         : code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request"
           ? "Đăng nhập chưa hoàn tất. Bấm Tiếp tục với Google để thử lại."
           : "Chưa đăng nhập được. Kiểm tra kết nối mạng rồi thử lại.");
@@ -63,7 +63,7 @@ export default function LoginState() {
                 <div className="mx-auto w-20 h-20 bg-slate-200 rounded-2xl mb-8 animate-pulse" />
               )}
 
-              <h1 className="text-3xl font-extrabold text-slate-800 mb-2 tracking-tight">Smart Meeting Assistant</h1>
+              <h1 className="text-3xl font-extrabold text-slate-800 mb-2 tracking-tight">EzNoting</h1>
               <p className="text-slate-500 mb-10 text-sm md:text-base leading-relaxed">
                 Biến cuộc họp thành văn bản & tóm tắt thông minh chỉ trong vài giây.
               </p>
@@ -87,7 +87,7 @@ export default function LoginState() {
               </div>
             </div>
           </div>
-          <div className="mt-6 text-center text-slate-400 text-xs font-medium">© 2025 Smart Meeting Assistant</div>
+          <div className="mt-6 text-center text-slate-400 text-xs font-medium">© 2026 EzNoting</div>
         </div>
 
         {/* RIGHT: Features (desktop only) */}

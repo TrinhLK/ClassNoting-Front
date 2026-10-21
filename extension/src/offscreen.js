@@ -50,7 +50,7 @@
   }
   async function sendAudioRecord(record) {
     const ctx = await chrome.runtime.sendMessage({ type: "CN_CAPTURE_CONTEXT", tabId: record.tabId });
-    if (!ctx?.idToken) throw new Error("Mở ClassNoting để làm mới đăng nhập");
+    if (!ctx?.idToken) throw new Error("Mở EzNoting để làm mới đăng nhập");
     const form = new FormData();
     for (const key of ["sessionId", "id", "source", "start"]) form.set(key, String(record[key]));
     form.set("audio", record.blob, record.id + ".wav");
