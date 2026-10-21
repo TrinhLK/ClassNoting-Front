@@ -9,7 +9,6 @@ import {
   patchExtSession,
   type ExtSession,
 } from "@/app/lib/ext-sessions";
-import { startRefinement } from "./refinement";
 import { meetParagraphs } from "./meet-paragraphs";
 import { saveMeetingContent, loadMeetingContent } from "./meeting-content";
 import { mergeMeetingDocs } from "@/app/lib/meeting-merge";
@@ -116,9 +115,9 @@ export async function finalizeExtSession(
   );
   await saveMeetingContent(clean as Meeting);
   await patchExtSession(session.id, { status: "ended", meetingId });
-  if (process.env.RUNPOD_API_KEY && process.env.RUNPOD_ENDPOINT_ID) {
-    await startRefinement(finalMeeting).catch(e => console.warn("[refinement]", e.message));
-  }
+  // Meet accounts and VAD paragraphs are the default saved transcript.
+  // Offline clustering is available through the explicit refinement action;
+  // running it automatically adds unnamed voices outside the live speech.
 
   return { meetingId, empty: false, counts };
 }

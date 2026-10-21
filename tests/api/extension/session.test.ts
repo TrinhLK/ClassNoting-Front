@@ -7,6 +7,7 @@ const store = new Map<string, any>();
 let idCounter = 0;
 
 const fakeDb = memoryFirestore(store);
+vi.mock("@/app/lib/refinement", () => ({ startRefinement: vi.fn() }));
 
 vi.mock("@/app/lib/firebase-admin", () => ({
   getAdminAuth: () => ({
@@ -196,6 +197,22 @@ describe("POST /api/extension/events + /end", () => {
     const saved = store.get(`meetings/${(await res.json()).meetingId}`);
     expect(saved.segments.map((s: any) => s.text)).toEqual(["Một. Hai.", "Ba."]);
     expect(saved.segments.map((s: any) => s.participantId)).toEqual(["a", "a"]);
+  });
+
+  it("keeps Meet live paragraphs as the saved result without an automatic offline job", async () => {
+    vi.stubEnv("RUNPOD_API_KEY", "test-configured");
+    vi.stubEnv("RUNPOD_ENDPOINT_ID", "test-configured");
+    try {
+      const sid = await newSession();
+      await eventsPOST(authed({sessionId:sid,events:[{kind:"transcript",segments:[
+        {id:"s1",paragraphId:"p",participantId:"meet:a",speaker:"An",speakerSource:"caption",text:"Nội dung live",start:1,end:2},
+      ]}]}));
+      const res = await endPOST(authed({sessionId:sid}));
+      expect(res.status).toBe(200);
+      const saved = store.get(`meetings/${(await res.json()).meetingId}`);
+      expect(saved.segments[0]).toMatchObject({participantId:"meet:a",text:"Nội dung live"});
+      expect((await import("@/app/lib/refinement")).startRefinement).not.toHaveBeenCalled();
+    } finally { vi.unstubAllEnvs(); }
   });
 
   it("nháy đúp nút Bắt đầu: 2 request đua nhau chỉ tạo 1 session", async () => {
