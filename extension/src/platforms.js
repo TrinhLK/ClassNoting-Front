@@ -63,6 +63,7 @@
       // Lấy dòng đầu, bỏ hậu tố "(You)"/"(Bạn)".
       let name = String(raw).split("\n")[0].trim().replace(/\s*\((you|bạn)\)\s*$/i, "").trim();
       if (!name || name.length > 120) return "";
+      if (/^(arrow_back|close)$/i.test(name)) return "";
       if (/^\d+$/.test(name)) return "";
       // Tên bị nhân đôi do gộp text ("Trình Lê Khánh Trình Lê Khánh", độ dài lẻ
       // 2n+1 nên so nửa chuỗi không bao giờ khớp) → rút về một bằng regex.

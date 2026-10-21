@@ -568,3 +568,23 @@ describe("Meet real UI chat panel regression", () => {
     expect(platform.captionRoot()).toBeNull();
   });
 });
+
+describe('caption delay and UI roster controls', () => {
+  it('filters Meet icon ligatures without filtering actual names', () => {
+    const clean = meet.cleanRosterName as (...args: any[]) => any;
+    expect(clean('arrow_back')).toBe('');
+    expect(clean('close')).toBe('');
+    expect(clean('Closen An')).toBe('Closen An');
+  });
+  it('recovers opening words only from matching caption text and the correct audio source', () => {
+    const resolve = loadShared().resolveCaptionPrefix as (...args: any[]) => any;
+    const captions = [{name:'An', text:'Câu 1 chúng tôi bắt đầu kiểm thử', start:12.8,end:15,isSelf:false}];
+    expect(resolve('tab',10,12.8,'câu một chúng tôi',captions)).toMatchObject({name:'An',uncertain:true});
+    expect(resolve('mic',10,12.8,'câu một chúng tôi',captions)).toBeNull();
+    expect(resolve('tab',10,12.8,'câu một nội dung khác',captions)).toBeNull();
+    expect(resolve('tab',9,12.8,'câu một chúng tôi',captions)).toBeNull();
+    expect(resolve('tab',10,12.8,'chúng tôi',captions)).toBeNull();
+    expect(resolve('tab',10,12.8,'câu một chúng tôi',[...captions,{name:'Bình',text:'Câu trước',start:9,end:11,isSelf:false}])).toBeNull();
+    expect(resolve('tab',10,12.8,'câu một chúng tôi',[...captions,{...captions[0],name:'Bình'}])).toBeNull();
+  });
+});

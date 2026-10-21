@@ -85,6 +85,25 @@
     return { ...resolved, speakerSource: source === "mic" || !activeNameAt(ctx.activeSpans || [], (start + end) / 2) ? "caption" : "active-speaker" };
   }
 
+  // Meet captions may arrive after the opening words. Recover only an exact
+  // textual prefix with one account, a bounded delay and no competing speaker.
+  function resolveCaptionPrefix(source, start, end, text, captions) {
+    const normalize = value => String(value || "").toLocaleLowerCase("vi")
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d")
+      .replace(/\b(mot|hai|ba|bon|nam|sau)\b/g, word => ({mot:1,hai:2,ba:3,bon:4,nam:5,sau:6})[word])
+      .replace(/[^a-z0-9]+/g, " ").trim();
+    const prefix = normalize(text);
+    if (prefix.split(" ").length < 3) return null;
+    const eligible = (captions || []).filter(c => source === "mic" ? c.isSelf === true : c.isSelf !== true);
+    const matches = eligible.filter(c => c.name && c.start >= start && c.start - start <= 3 && c.end >= end - .25 &&
+      (normalize(c.text) === prefix || normalize(c.text).startsWith(prefix + " ")));
+    const names = new Set(matches.map(c => c.name));
+    if (names.size !== 1) return null;
+    const name = matches[0].name;
+    if (eligible.some(c => c.name !== name && c.end > start && c.start <= matches[0].start)) return null;
+    return { name, uncertain: true, speakerSource: "caption" };
+  }
+
   // Nối chuỗi chống lặp (port từ mergeText của realtime-protocol.ts).
   function mergeText(prev, next) {
     const p = String(prev || "").trim();
@@ -145,6 +164,7 @@
 
   global.ClassNotingShared = {
     createMeetParagraphTracker,
+    resolveCaptionPrefix,
     detectProvider,
     normalizeName,
     resolveSpeakerName,

@@ -116,6 +116,17 @@
         speakerSource: resolved.name !== "Chưa xác định" ? resolved.speakerSource : voice >= 0 ? "diarization" : "unknown" });
     }
     if (groups.length === 1) groups[0].text = alt.transcript;
+    for (const group of groups) {
+      if (group.speakerSource !== "unknown") continue;
+      const match = shared.resolveCaptionPrefix(source.name, group.start, group.end, group.text, captions);
+      if (!match) continue;
+      const participants = (context?.participants || []).filter(p => (p.displayName || p.name) === match.name);
+      if (participants.length !== 1 || participants[0].id == null) continue;
+      group.speaker = match.name;
+      group.participantId = String(participants[0].id);
+      group.speakerSource = match.speakerSource;
+      group.uncertain = true;
+    }
     const packetId = `${source.name}:${data.speaker_scope || source.generation}:${data.utterance_id ?? ++source.packetSequence}`;
     for (const [index, group] of groups.entries()) {
       source.lastEnd = Math.max(source.lastEnd, group.end);

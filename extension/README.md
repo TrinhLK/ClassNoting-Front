@@ -117,3 +117,5 @@ Audio tab vẫn luôn được thu; mic thiết bị chỉ mở khi toolbar Meet
 - Không có chức năng cảnh báo mic. Khi thiếu bằng chứng tài khoản, vẫn hiển thị chưa xác định.
 
 0.4.1 sửa khởi động collector khi Meet đổi từ `/new` sang mã phòng mà không tải lại trang.
+
+0.4.2 lọc tên nút giao diện khỏi roster; khớp phần mở đầu với phụ đề đến chậm khi văn bản trùng, chỉ có một tài khoản phù hợp và không có người nói cạnh tranh. Trạng thái suy luận vẫn là đang xác minh.
