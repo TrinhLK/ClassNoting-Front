@@ -114,7 +114,37 @@
     return g >= 0 && g < gap;
   }
 
+  function createMeetParagraphTracker(makeId = () => crypto.randomUUID()) {
+    let current = null;
+    const assigned = new Map();
+    const pauses = new Set();
+    return {
+      assign(segment, eventId, source) {
+        if (assigned.has(eventId)) return assigned.get(eventId);
+        const identity = segment.participantId ? `participant:${segment.participantId}` :
+          `unknown:${segment.voiceId || source}:${segment.speaker}`;
+        // A name shared by two accounts is never used as the identity key.
+        if (!current || current.identity !== identity || segment.start < current.end - 0.25) {
+          current = { id: makeId(), identity, source, end: segment.end, pauseCount: 0 };
+        }
+        current.end = Math.max(current.end, segment.end);
+        current.source = source;
+        assigned.set(eventId, current.id);
+        if (assigned.size > 10000) assigned.delete(assigned.keys().next().value);
+        return current.id;
+      },
+      pause(eventId, source, seconds) {
+        if (!current || current.source !== source || !Number.isFinite(seconds) || seconds < 1 || pauses.has(eventId)) return;
+        pauses.add(eventId);
+        if (pauses.size > 10000) pauses.delete(pauses.values().next().value);
+        if (++current.pauseCount === 5) current = null;
+      },
+      close() { current = null; },
+    };
+  }
+
   global.ClassNotingShared = {
+    createMeetParagraphTracker,
     detectProvider,
     normalizeName,
     resolveSpeakerName,

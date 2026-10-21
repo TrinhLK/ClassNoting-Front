@@ -108,3 +108,10 @@ Audio tab vẫn luôn được thu; mic thiết bị chỉ mở khi toolbar Meet
 - Metadata người nói được cập nhật trong lúc phụ đề đang phát triển, không chờ người nói ngừng. Khi chuyển tab, bộ đọc cũng kiểm tra nút mic/phụ đề trong cửa sổ document PiP của Meet.
 - Khởi động thủ công lấy nền tảng từ phản hồi API để không khóa nhầm mic Meet khi popup không truyền `provider`.
 - Kiểm tra handshake ASR thực tế trả `protocol: 2, diarization: false`. Thu chữ và gán tên theo Meet không đồng nghĩa server đã phân biệt giọng. Muốn kiểm chứng diarization cần nạp model trên server theo tài liệu speaker-attribution.
+
+## 0.4.0 — đoạn theo tài khoản Meet
+
+- Cùng tài khoản: gom đoạn sau năm nhịp ngắt VAD, mỗi nhịp im lặng ít nhất 1 giây. Đổi tài khoản mở đoạn mới ngay khi có kết quả nhận dạng.
+- Server cần trả `segmentation: {boundary_events: true, pause_seconds: 1}`; popup báo rõ khi server chưa hỗ trợ. Chữ vẫn gửi từng gói, không đợi đủ năm nhịp.
+- `ready.model` báo model thực tế server đã chọn. Không tự đổi model ASR của ghi âm web.
+- Không có chức năng cảnh báo mic. Khi thiếu bằng chứng tài khoản, vẫn hiển thị chưa xác định.

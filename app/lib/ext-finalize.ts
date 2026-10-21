@@ -10,6 +10,7 @@ import {
   type ExtSession,
 } from "@/app/lib/ext-sessions";
 import { startRefinement } from "./refinement";
+import { meetParagraphs } from "./meet-paragraphs";
 import { saveMeetingContent, loadMeetingContent } from "./meeting-content";
 import { mergeMeetingDocs } from "@/app/lib/meeting-merge";
 import type { Meeting, Segment, Speaker } from "@/app/lib/db";
@@ -63,7 +64,7 @@ export async function finalizeExtSession(
     name: session.liveSegments.find(s => (s.participantId ? `participant:${s.participantId}` : s.voiceId || s.speaker) === n)?.speaker || n,
     color: SPEAKER_COLORS[i % SPEAKER_COLORS.length],
   }));
-  const segments: Segment[] = session.liveSegments.map((s) => ({
+  const segments: Segment[] = meetParagraphs(session.liveSegments).map((s) => ({
     id: s.id,
     speakerId: nameToId.get(s.participantId ? `participant:${s.participantId}` : s.voiceId || s.speaker) ?? "SPEAKER_00",
     start: s.start,

@@ -68,6 +68,7 @@ export async function GET(
           })),
           liveSegments: (session.liveSegments || []).map((segment) => ({
             id: segment.id,
+            ...(segment.paragraphId ? { paragraphId: segment.paragraphId } : {}),
             speaker: segment.speaker,
             text: segment.text,
             start: segment.start,

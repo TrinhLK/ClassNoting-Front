@@ -68,7 +68,10 @@ export function applyRefinement(original: Meeting, refined: Segment[]): Meeting 
     const total = ranked.reduce((n, v) => n + v[1], 0);
     if (ranked[0]?.[1] >= 3 && ranked[0][1] / total >= 0.85) names.set(voice, ranked[0][0]);
   }
-  const manual = original.segments.filter(s => s.manuallyEdited || s.speakerSource === "manual");
+  // Preserve platform-account evidence even when voice matching is uncertain.
+  // Offline voice clusters must not erase the Meet account already observed.
+  const manual = original.segments.filter(s => s.manuallyEdited || s.speakerSource === "manual" ||
+    (s.participantId && ["caption", "platform"].includes(s.speakerSource || "")));
   const unlocked: Segment[] = [];
   for (const segment of refined) {
     const touches = (start: number, end: number) => manual.some(m => Math.min(m.end, end) > Math.max(m.start, start));

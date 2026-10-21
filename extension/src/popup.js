@@ -46,9 +46,12 @@
       const rosterCount = Number.isFinite(mine.rosterCount)
         ? mine.rosterCount
         : Number(srv?.participantCount || 0);
-      const statuses = Object.entries(mine.speakerStatus || {}).map(([source, value]) =>
-        `${source}: ${value.diarization ? "diarization bật" : "diarization tắt"} (protocol ${value.protocol || "?"})`
-      );
+      const statuses = Object.entries(mine.speakerStatus || {}).map(([source, value]) => {
+        const pauses = value.segmentation?.boundary_events && value.segmentation.pause_seconds === 1
+          ? "ngắt đoạn sau 5 nhịp, mỗi nhịp 1 giây" : "server chưa xác nhận nhịp ngắt 1 giây";
+        const model = value.model?.family || "server chưa báo model";
+        return `${source}: ${model}; ${pauses}; ${value.diarization ? "diarization bật" : "diarization tắt"} (protocol ${value.protocol || "?"})`;
+      });
       const active = mine.activeSpeaker ? `; active speaker: ${mine.activeSpeaker}` : "; chưa bắt được active speaker";
       const mic = mine.audioState?.micCapture === "enabled"
         ? "mic cục bộ đang thu vì Meet mic bật"

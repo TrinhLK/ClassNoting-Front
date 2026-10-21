@@ -79,6 +79,11 @@
     return failed;
   }
   async function handleFinal(cap, source, data) {
+    if (data.type === "boundary" && data.end_reason === "pause") {
+      const id = `${source.name}:${data.speaker_scope || source.generation}:${data.utterance_id}`;
+      cap.paragraphs.pause(id, source.name, data.pause_seconds);
+      return;
+    }
     const alt = data.channel?.alternatives?.[0];
     if (!data.is_final || !alt?.transcript) return;
     const context = await chrome.runtime.sendMessage({ type: "CN_GET_SPANS", tabId: cap.spansTabId }).catch(() => ({}));
@@ -111,17 +116,23 @@
         speakerSource: resolved.name !== "Chưa xác định" ? resolved.speakerSource : voice >= 0 ? "diarization" : "unknown" });
     }
     if (groups.length === 1) groups[0].text = alt.transcript;
-    for (const group of groups) {
+    const packetId = `${source.name}:${data.speaker_scope || source.generation}:${data.utterance_id ?? ++source.packetSequence}`;
+    for (const [index, group] of groups.entries()) {
       source.lastEnd = Math.max(source.lastEnd, group.end);
+      const id = `${packetId}:${index}`;
+      const paragraphId = source.paragraphBoundaries ? cap.paragraphs.assign(group, id, source.name) : undefined;
       await chrome.runtime.sendMessage({ type: "CN_ASR_FINAL", tabId: cap.tabId, sessionId: cap.sessionId,
-        ...group, id: crypto.randomUUID(), revision: 1 });
+        ...group, id, paragraphId, revision: 1 });
     }
+    // Only an explicit server VAD boundary is a pause. Forced 8s chunks,
+    // retransmissions and ASR word fragments do not count as extra pauses.
+    if (data.end_reason === "pause") cap.paragraphs.pause(packetId, source.name, data.pause_seconds);
     cap.finals += groups.length;
     report(cap, "transcribing", `Đã nhận ${cap.finals} đoạn; mic và tab độc lập`);
   }
   function startSource(cap, stream, name) {
     const source = { name, ws: null, buffer: [], archive: [], archiveSamples: 0, sequence: 0,
-      retry: 0, generation: 0, protocol: 0, lastEnd: 0, uploads: Promise.resolve(), processing: Promise.resolve() };
+      retry: 0, generation: 0, protocol: 0, lastEnd: 0, packetSequence: 0, uploads: Promise.resolve(), processing: Promise.resolve() };
     cap.sources.push(source);
     const src = cap.ctx.createMediaStreamSource(stream);
     const proc = cap.ctx.createScriptProcessor(4096, 1, 1);
@@ -133,6 +144,7 @@
       source.generation++; source.protocol = 0;
       const url = new URL(cap.wsBase); url.searchParams.set("language", "vi");
       url.searchParams.set("client", "extension"); url.searchParams.set("source", name);
+      url.searchParams.set("pause_seconds", "1");
       const ws = new WebSocket(url); source.ws = ws;
       source.timeout = setTimeout(() => { if (ws.readyState === 0) ws.close(); }, 8000);
       ws.onopen = () => { clearTimeout(source.timeout); source.retry = 0; };
@@ -141,9 +153,10 @@
         if (data.type === "flushed") { source.onFlushed?.(); return; }
         if (data.type === "ready") {
           source.protocol = data.protocol || 1;
+          source.paragraphBoundaries = data.segmentation?.boundary_events === true && data.segmentation.pause_seconds === 1;
           const diarization = data.diarization === true;
           report(cap, "speaker_status", "", { speakerStatus: {
-            [name]: { protocol: source.protocol, diarization },
+            [name]: { protocol: source.protocol, diarization, segmentation: data.segmentation || null, model: data.model || null },
           } });
           if (source.protocol < 2) {
             report(cap, "protocol_error", `Server ${name} chưa hỗ trợ protocol 2; audio chưa được gửi để nhận dạng`);
@@ -238,7 +251,8 @@
   async function startCapture(msg) {
     if (captures.has(msg.tabId)) return;
     const cap = { ...msg, captureId: crypto.randomUUID(), epoch: msg.startedAt / 1000,
-      spansTabId: msg.spansTabId || msg.tabId, sources: [], streams: [], finals: 0 };
+      spansTabId: msg.spansTabId || msg.tabId, sources: [], streams: [], finals: 0,
+      paragraphs: shared.createMeetParagraphTracker() };
     captures.set(msg.tabId, cap);
     try {
       const tab = await navigator.mediaDevices.getUserMedia({ audio: { mandatory: { chromeMediaSource: "tab", chromeMediaSourceId: msg.streamId } } });

@@ -5,7 +5,7 @@
  */
 // Đổi theo manifest.json mỗi build — popup/diag hiện số này để biết chắc
 // cả 3 mảnh (popup/background/content) có đồng bộ không.
-const CODE_VERSION = "0.3.14";
+const CODE_VERSION = "0.4.0";
 const DEFAULT_APP_ORIGIN = "https://smart-noting.vercel.app";
 const FLUSH_MS = 2000;
 const HEARTBEAT_TIMEOUT_MS = 2 * 60 * 1000;
@@ -615,6 +615,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       kind: "transcript",
       payload: {
         id: msg.id,
+        paragraphId: msg.paragraphId,
         speaker: msg.speaker,
         voiceId: msg.voiceId, participantId: msg.participantId,
         speakerSource: msg.speakerSource, words: msg.words, revision: msg.revision,

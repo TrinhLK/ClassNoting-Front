@@ -68,6 +68,7 @@ function sanitizeEvents(raw: unknown): {
               end: Number.isFinite(s.end) ? Math.max(s.end, Number.isFinite(s.start) ? s.start : 0, 0) : 0,
             };
             seg.uncertain = s.uncertain !== false;
+            if (typeof s.paragraphId === "string" && s.paragraphId.trim()) seg.paragraphId = s.paragraphId.trim().slice(0, 200);
             if (typeof s.voiceId === "string") seg.voiceId = s.voiceId.slice(0, 160);
             if (typeof s.participantId === "string") seg.participantId = s.participantId.slice(0, 160);
             if (["diarization", "caption", "active-speaker", "platform", "unknown"].includes(s.speakerSource || "")) seg.speakerSource = s.speakerSource;

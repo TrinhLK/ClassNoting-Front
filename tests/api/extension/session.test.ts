@@ -183,6 +183,21 @@ describe("POST /api/extension/events + /end", () => {
     expect(r3.status).toBe(409);
   });
 
+  it("persists paragraph IDs through retries and saves each paragraph once", async () => {
+    const sid = await newSession();
+    const batch = { sessionId: sid, events: [{ kind: "transcript", segments: [
+      { id: "s1", paragraphId: "p1", participantId: "a", speaker: "An", text: "Một.", start: 0, end: 1 },
+      { id: "s2", paragraphId: "p1", participantId: "a", speaker: "An", text: "Hai.", start: 2, end: 3 },
+      { id: "s3", paragraphId: "p2", participantId: "a", speaker: "An", text: "Ba.", start: 4, end: 5 },
+    ] }] };
+    await eventsPOST(authed(batch));
+    await eventsPOST(authed(batch));
+    const res = await endPOST(authed({ sessionId: sid }));
+    const saved = store.get(`meetings/${(await res.json()).meetingId}`);
+    expect(saved.segments.map((s: any) => s.text)).toEqual(["Một. Hai.", "Ba."]);
+    expect(saved.segments.map((s: any) => s.participantId)).toEqual(["a", "a"]);
+  });
+
   it("nháy đúp nút Bắt đầu: 2 request đua nhau chỉ tạo 1 session", async () => {
     const payload = { meetingUrl: "https://meet.google.com/abc-defg-hij" };
     const [r1, r2] = await Promise.all([sessionPOST(authed(payload)), sessionPOST(authed(payload))]);

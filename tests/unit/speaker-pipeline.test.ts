@@ -7,6 +7,13 @@ vi.mock("@/app/lib/firebase-admin", () => ({ getAdminDb: vi.fn(), getAdminStorag
 import { applyRefinement } from "@/app/lib/refinement";
 
 describe("speaker pipeline", () => {
+  it("retains Meet account evidence and paragraphs during offline refinement", () => {
+    const live = mockSegment({ id: "meet-account", start: 1, end: 4, text: "Đoạn của tài khoản Meet", participantId: "meet:a", speakerSource: "caption", uncertain: true });
+    const original = mockMeeting({ segments: [live], speakers: [mockSpeaker()] });
+    const result = applyRefinement(original, [mockSegment({ id: "offline", start: 1, end: 4, speakerId: "cluster-20", text: "Nội dung hậu xử lý" })]);
+    expect(result.segments).toEqual([live]);
+    expect(result.speakers).toEqual(original.speakers);
+  });
   it("splits one packet by word speakers, retaining punctuation and order", () => {
     const packet = parseServerMessage({ protocol: 2, speaker_scope: "connection-a", is_final: true, channel: { alternatives: [{
       transcript: "Chào anh. Vâng!", speaker: 0, words: [

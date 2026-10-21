@@ -7,6 +7,7 @@ export type ExtSessionStatus = "live" | "finalizing" | "ended";
 /** Một dòng transcript live đã gán tên người nói (từ extension). */
 export interface ExtLiveSegment {
   id: string;
+  paragraphId?: string;
   speaker: string;
   text: string;
   start: number;

@@ -10,6 +10,7 @@ import ChatPanel from "@/app/components/Meeting/ChatPanel";
 import ExtLiveInsight from "@/app/components/Meeting/ExtLiveInsight";
 import { PROVIDER_LABELS } from "@/app/lib/meeting-links";
 import { useAuth } from "@/app/context/AuthContext";
+import { meetParagraphs } from "@/app/lib/meet-paragraphs";
 
 /** Màn hình xem live phiên ghi từ Chrome extension: ai nói gì + chat realtime. */
 export default function ExtLivePage() {
@@ -142,6 +143,7 @@ export default function ExtLivePage() {
   }
 
   const rosterMissing = session.status === "live" && session.participants.length === 0;
+  const paragraphs = meetParagraphs(session.liveSegments);
   const speakerMissing = session.status === "live" && session.liveSegments.length > 0 &&
     session.liveSegments.every((s) => s.uncertain || s.speaker === "Chưa xác định");
 
@@ -216,7 +218,7 @@ export default function ExtLivePage() {
             }`}
           >
             {t === "transcript" ? <AlignLeft className="w-4 h-4" /> : <MessageSquare className="w-4 h-4" />}
-            {t === "transcript" ? `Ai nói gì (${session.liveSegments.length})` : `Chat (${session.chatMessages.length})`}
+            {t === "transcript" ? `Ai nói gì (${paragraphs.length})` : `Chat (${session.chatMessages.length})`}
           </button>
         ))}
       </div>
@@ -232,7 +234,7 @@ export default function ExtLivePage() {
                 Đang chờ câu nói đầu tiên...
               </p>
             )}
-            {session.liveSegments.map((s) => (
+            {paragraphs.map((s) => (
               <div key={s.id} className="flex gap-2 items-start">
                 <span className="w-7 h-7 rounded-full bg-indigo-100 text-indigo-700 text-[11px] font-bold flex items-center justify-center shrink-0">
                   {s.speaker.charAt(0).toUpperCase()}
