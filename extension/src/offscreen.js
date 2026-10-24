@@ -100,7 +100,7 @@
       .map(w => ({ ...w, start: w.start + offset, end: w.end + offset }));
     // Missing timestamps are explicitly uncertain, never fabricated across a whole sentence.
     const units = words.length ? words : [{ word: alt.transcript, start: source.lastEnd, end: source.lastEnd, speaker: -1 }];
-    const groups = [];
+    let groups = [];
     for (const w of units) {
       const voice = w.overlap ? -1 : (w.speaker ?? alt.speaker ?? -1);
       const voiceId = `${source.name}:${data.speaker_scope || source.generation}:${voice}`;
@@ -143,6 +143,9 @@
       group.identity = `participant:${known.participantId}`;
       group.speakerSource = "diarization"; group.uncertain = true;
     }
+    groups = shared.recoverShortActivePrefix(groups, spans);
+    groups = shared.coalesceSpeakerGroups(groups);
+    if (groups.length === 1) groups[0].text = alt.transcript;
     const packetId = `${source.name}:${data.speaker_scope || source.generation}:${data.utterance_id ?? ++source.packetSequence}`;
     for (const [index, group] of groups.entries()) {
       source.lastEnd = Math.max(source.lastEnd, group.end);

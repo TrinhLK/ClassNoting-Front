@@ -632,6 +632,12 @@ describe('Meet account attribution without web account guessing', () => {
     setBody('<div data-participant-id="remote"><button aria-label="Backgrounds and effects"></button><span class="notranslate">Remote</span></div>');
     expect(meet.selfParticipant()).toBeNull();
   });
+  it('keeps our own message when the ownership marker is on the record itself', () => {
+    setBody('<div data-message-id="mine" class="chmVPb"><div jsname="dTKtvb">My own message</div><button data-message-id="mine">Pin message</button></div>');
+    const blocks=meet.findChatBlocks(document.body) as Element[];
+    expect(blocks).toHaveLength(1);
+    expect(meet.parseChatBlock(blocks[0],[],'Meet account')).toEqual({sender:'Meet account',text:'My own message'});
+  });
   it('uses confirmed local Meet identity only for microphone audio', () => {
     const resolve = loadShared().resolveAudioSpeaker as any;
     const context = {fallbackName:'Chưa xác định', selfParticipant:{id:'meet-self',name:'Meet account'},captionLines:[],activeSpans:[]};
@@ -647,4 +653,49 @@ describe('Meet account attribution without web account guessing', () => {
     tracker.observe({...sample,voiceId:'tab:scope:-1',end:30}); expect(tracker.resolve('tab:scope:-1')).toBeNull();
     expect(tracker.resolve('tab:new-scope:1')).toBeNull();
   });
+});
+
+describe('Meet audio indicators without captions or chat', () => {
+  it('reads a speaking account from its volume level, ignores silent and hidden indicators', () => {
+    setBody('<div data-participant-id="remote"><span class="notranslate">Remote account</span><div jsname="QgSmzd" class="DYfzY HX2H7"></div></div><div data-participant-id="quiet" aria-label="Quiet"><div jsname="QgSmzd" class="IisKdb gjg47c sxlEM"></div></div>');
+    expect(meet.activeParticipants()).toEqual([{id:'remote',name:'Remote account'}]);
+    expect(meet.sampleActiveSpeaker()).toBe('Remote account');
+    (document.querySelector('[data-participant-id="remote"]') as HTMLElement).style.display='none';
+    expect(meet.activeParticipants()).toEqual([]);
+  });
+  it('deduplicates the tile and roster and preserves simultaneous different accounts', () => {
+    setBody('<div data-participant-id="one" aria-label="Same name"><div jsname="QgSmzd" class="IisKdb wEsLMd"></div></div><div data-participant-id="one" aria-label="Same name"><div jsname="QgSmzd" class="DYfzY OgVli"></div></div><div data-participant-id="two" aria-label="Same name"><div jsname="QgSmzd" class="DYfzY I8fSpb"></div></div>');
+    expect(meet.activeParticipants()).toEqual([{id:'one',name:'Same name'},{id:'two',name:'Same name'}]);
+    expect(meet.sampleActiveSpeaker()).toBe('');
+  });
+  it('keeps native participant ID without captions and rejects overlapping identities', () => {
+    const resolve=loadShared().resolveAudioSpeaker as any;
+    const ctx={fallbackName:'Unknown',captionLines:[],selfParticipant:{id:'local',name:'Same name'},activeSpans:[{participantId:'remote',name:'Same name',start:0,end:4}]};
+    expect(resolve('tab',1,2,ctx)).toMatchObject({name:'Same name',participantId:'remote',speakerSource:'active-speaker'});
+    ctx.activeSpans.push({participantId:'another',name:'Same name',start:0,end:4});
+    expect(resolve('tab',1,2,ctx).name).toBe('Unknown');
+  });
+});
+
+it('learns a consistent native active speaker and coalesces fragments after attribution', () => {
+  const shared=loadShared() as any;const tracker=shared.createVoiceIdentityTracker();
+  const first={voiceId:'tab:session:0',participantId:'one',speaker:'One',speakerSource:'active-speaker',start:0,end:3.2,text:'One two',words:[],uncertain:true};
+  tracker.observe(first);expect(tracker.resolve(first.voiceId)).toEqual({participantId:'one',name:'One'});
+  const groups=shared.coalesceSpeakerGroups([first,{...first,start:3.2,end:4,text:'three',speakerSource:'diarization'}]);
+  expect(groups).toHaveLength(1);expect(groups[0].text).toBe('One two three');
+  tracker.observe({...first,participantId:'other'});expect(tracker.resolve(first.voiceId)).toBeNull();
+  expect(shared.coalesceSpeakerGroups([first,{...first,participantId:'other',start:3.2,end:4}])).toHaveLength(2);
+});
+
+it('recovers only a short adjacent prefix supported by one native active account', () => {
+  const shared=loadShared() as any;
+  const make=()=>[{text:'tôi',start:0,end:.3,words:[{word:'tôi',start:0,end:.3}],voiceId:'tab:s:-1',uncertain:true},
+    {text:'là người tham gia thứ hai',start:.3,end:4,words:[{word:'là',start:.3,end:4}],voiceId:'tab:s:0',participantId:'p1',speaker:'One',speakerSource:'active-speaker',uncertain:true}];
+  const evidence=[{participantId:'p1',name:'One',start:.2,end:4}];
+  const groups=shared.recoverShortActivePrefix(make(),evidence);
+  expect(groups[0]).toMatchObject({speaker:'One',participantId:'p1',uncertain:true});
+  expect(shared.coalesceSpeakerGroups(groups)).toHaveLength(1);
+  expect(shared.recoverShortActivePrefix(make(),[...evidence,{participantId:'p2',name:'Two',start:0,end:.2}])[0].participantId).toBeUndefined();
+  const long=make();long[0].end=1;expect(shared.recoverShortActivePrefix(long,evidence)[0].participantId).toBeUndefined();
+  const overlap=make();(overlap[0].words[0] as any).overlap=true;expect(shared.recoverShortActivePrefix(overlap,evidence)[0].participantId).toBeUndefined();
 });

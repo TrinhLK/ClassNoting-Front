@@ -28,7 +28,8 @@
     let best = null;
     for (const s of spans) {
       if (t < s.start || t >= s.end) continue;
-      if (best && normalizeName(best.name) !== normalizeName(s.name)) return null;
+      if (best && (normalizeName(best.name) !== normalizeName(s.name) ||
+          (best.participantId && s.participantId && best.participantId !== s.participantId))) return null;
       if (!best || s.start > best.start) best = s;
     }
     return best ? normalizeName(best.name) : null;
@@ -81,9 +82,11 @@
     const captions = ctx.captionLines || [];
     const localNames = new Set(captions.filter(c => c.isSelf === true && c.name && !/^(you|bạn)$/i.test(c.name)).map(c => c.name));
     if (ctx.selfParticipant?.name) localNames.add(ctx.selfParticipant.name);
+    const remoteSpan = span => span.participantId && ctx.selfParticipant?.id
+      ? span.participantId !== ctx.selfParticipant.id : !localNames.has(span.name);
     const resolved = resolveSpeakerName(start, end, {
       ...ctx,
-      activeSpans: source === "mic" ? [] : (ctx.activeSpans || []).filter(s => !localNames.has(s.name)),
+      activeSpans: source === "mic" ? [] : (ctx.activeSpans || []).filter(remoteSpan),
       captionLines: captions.filter(c => source === "mic" ? c.isSelf === true : c.isSelf !== true),
     });
     // This stream is the local Meet microphone, so a uniquely confirmed local
@@ -93,7 +96,12 @@
       resolved.uncertain = true;
     }
     // A local caption identifies the Meet account, not a biometric identity.
-    return { ...resolved, speakerSource: source === "mic" || !activeNameAt(ctx.activeSpans || [], (start + end) / 2) ? "caption" : "active-speaker" };
+    const mid = (start + end) / 2;
+    const spans = (ctx.activeSpans || []).filter(remoteSpan);
+    const active = activeNameAt(spans, mid);
+    const identities = new Set(spans.filter(s => s.start <= mid && mid < s.end && s.name === resolved.name && s.participantId).map(s => s.participantId));
+    return { ...resolved, ...(active === resolved.name && identities.size === 1 ? {participantId:[...identities][0]} : {}),
+      speakerSource: source === "mic" || !active ? "caption" : "active-speaker" };
   }
 
   // Meet captions may arrive after the opening words. Recover only an exact
@@ -173,12 +181,43 @@
     };
   }
 
+  function recoverShortActivePrefix(groups, spans) {
+    if (groups.length < 2) return groups;
+    const first = groups[0], next = groups[1];
+    if (first.participantId || !next.participantId || next.speakerSource !== 'active-speaker' ||
+        first.words.length === 0 || first.words.length > 2 || first.text.trim().split(/\s+/).length > 2 ||
+        first.end - first.start > 0.6 || first.end < first.start ||
+        next.start - first.end > 0.25 || next.start < first.end - 0.05 || next.end - next.start < 1.5 ||
+        first.words.some(w => w.overlap) || next.words.some(w => w.overlap)) return groups;
+    const evidence = spans.filter(s => s.start < next.end && s.end > first.start - 0.3);
+    // No prefix propagation across a speaker switch or unknown account evidence.
+    if (!evidence.length || evidence.some(s => !s.participantId || s.participantId !== next.participantId)) return groups;
+    first.participantId = next.participantId; first.speaker = next.speaker;
+    first.identity = `participant:${next.participantId}`;
+    first.speakerSource = 'active-speaker'; first.uncertain = true;
+    return groups;
+  }
+
+  function coalesceSpeakerGroups(groups) {
+    const merged = [];
+    for (const group of groups) {
+      const prior = merged[merged.length - 1];
+      if (prior && group.participantId && prior.participantId === group.participantId &&
+          prior.uncertain === group.uncertain &&
+          group.start - prior.end <= 1 && !prior.words.some(w => w.overlap) && !group.words.some(w => w.overlap)) {
+        prior.text += ' ' + group.text; prior.end = group.end; prior.words.push(...group.words);
+        if (/:-1$/.test(prior.voiceId)) prior.voiceId = group.voiceId;
+      } else merged.push({...group, words:[...group.words]});
+    }
+    return merged;
+  }
+
   function createVoiceIdentityTracker() {
     const voices = new Map();
     return {
       observe(group) {
         if (!group.voiceId || /:-1$/.test(group.voiceId) || group.words?.some(w => w.overlap) ||
-            !group.participantId || !["caption", "platform"].includes(group.speakerSource)) return;
+            !group.participantId || !["caption", "platform", "active-speaker"].includes(group.speakerSource)) return;
         const key = String(group.participantId);
         let value = voices.get(group.voiceId);
         if (!value) { value = {key, name: group.speaker, seconds: 0, blocked: false}; voices.set(group.voiceId, value); }
@@ -196,6 +235,8 @@
   global.ClassNotingShared = {
     createMeetParagraphTracker,
     createVoiceIdentityTracker,
+    coalesceSpeakerGroups,
+    recoverShortActivePrefix,
     resolveCaptionPrefix,
     detectProvider,
     normalizeName,

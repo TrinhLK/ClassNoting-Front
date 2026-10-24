@@ -20,16 +20,16 @@ Ghi chú Google Meet: lời nói, người tham gia và chat được đồng b�
 Extension EzNoting kết nối Google Meet trên Chrome với ứng dụng web EzNoting, giúp bạn theo dõi lời nói và tin nhắn trong cùng một bản ghi cuộc họp.
 
 • Nhận dạng tiếng nói và hiển thị nội dung trực tiếp trên EzNoting; tự chọn mô hình tiếng Việt hoặc tiếng Anh theo âm thanh. Đoạn quá ngắn có thể giữ ngôn ngữ trước đó.
-• Hiển thị tên tài khoản từ dữ liệu người tham gia và phụ đề Google Meet khi có đủ bằng chứng; trường hợp chưa chắc chắn được ghi là chưa xác định hoặc đang xác minh.
+• Hiển thị tên tài khoản từ dữ liệu người tham gia và chỉ báo âm lượng Google Meet, không yêu cầu bật phụ đề hoặc mở chat; phụ đề nếu bật là nguồn đối chiếu bổ sung. Khi có đủ bằng chứng, tên được gắn với tài khoản Meet; trường hợp chưa chắc chắn được ghi là chưa xác định hoặc đang xác minh.
 • Đồng bộ tin nhắn cùng tên người gửi từ khung chat đang mở.
 • Gom lời của cùng một tài khoản thành đoạn sau 5 nhịp im lặng, mỗi nhịp ít nhất 1 giây; đổi tài khoản mở đoạn mới khi nhận dạng có kết quả.
 • Kết thúc phiên để lưu biên bản; xem lại và sử dụng các công cụ xử lý biên bản trên web.
 
-Cách bắt đầu: cài extension, đăng nhập EzNoting trong cùng profile Chrome, mở Meet và mở khung chat. Extension thử bật phụ đề Meet khi bắt đầu để hỗ trợ xác định người nói; hãy kiểm tra phụ đề đã bật. Bấm biểu tượng EzNoting rồi chọn “Bắt đầu tab này”. Cấp quyền micro nếu muốn ghi giọng của chính bạn; luồng micro chỉ mở khi extension xác nhận mic Meet đang bật. Có thể bật chế độ tự động ghi riêng trong Cài đặt nâng cao.
+Cách bắt đầu: cài extension, đăng nhập EzNoting trong cùng profile Chrome, mở Meet. Phụ đề không bắt buộc và extension không tự bật phụ đề. Mở khung chat nếu muốn đồng bộ tin nhắn. Bấm biểu tượng EzNoting rồi chọn “Bắt đầu tab này”. Cấp quyền micro nếu muốn ghi giọng của chính bạn; luồng micro chỉ mở khi extension xác nhận mic Meet đang bật. Có thể bật chế độ tự động ghi riêng trong Cài đặt nâng cao.
 
 Extension cần kết nối Internet và tài khoản EzNoting. Âm thanh được gửi tới máy chủ nhận dạng; âm thanh bản ghi, transcript, chat và thông tin người tham gia được lưu trên hệ thống EzNoting. Hãy thông báo và có sự đồng ý phù hợp của người tham gia trước khi ghi.
 
-Chỉ hỗ trợ Google Meet trên Chrome máy tính. Tên người nói phụ thuộc dữ liệu giao diện/phụ đề Meet; giọng chồng lấn, tạp âm và thay đổi giao diện Meet có thể ảnh hưởng kết quả. EzNoting là sản phẩm độc lập, không do Google cung cấp hay chứng thực.
+Chỉ hỗ trợ Google Meet trên Chrome máy tính. Tên người nói phụ thuộc tín hiệu giao diện Meet đang được hiển thị; giọng chồng lấn, tạp âm và thay đổi giao diện Meet có thể ảnh hưởng kết quả. EzNoting là sản phẩm độc lập, không do Google cung cấp hay chứng thực.
 
 AI & chi phí: Mỗi tài khoản được AI xử lý miễn phí 10 cuộc họp khác nhau, kể cả Live insight; tóm tắt lại cùng cuộc họp không tính thêm lượt. Sau đó cần thêm Gemini API key riêng trong Thiết lập tài khoản → AI & Gemini để tóm tắt cuộc họp mới. Key riêng dùng hạn mức/chi phí của project của bạn và cần xác nhận Cloud Billing đang hoạt động. Ghi âm, transcript và chat vẫn dùng được khi hết lượt AI.
 
@@ -61,7 +61,7 @@ Không chạy mã từ xa: JavaScript được đóng gói trong ZIP. Dịch v�
 ## Hướng dẫn người kiểm duyệt
 
 1. Cài ZIP, mở trang chủ và đăng nhập bằng Google của người kiểm duyệt. Không cung cấp mật khẩu thật trong hồ sơ.
-2. Mở Google Meet, tham gia một phòng có ít nhất hai tài khoản thử nghiệm; bật phụ đề, mở khung chat và danh sách người tham gia.
+2. Mở Google Meet, tham gia một phòng có ít nhất hai tài khoản thử nghiệm; giữ phụ đề và khung chat tắt để thử nhận diện người nói. Sau đó mở khung chat, gửi tin nhắn từ cả người ghi và người tham gia để thử đồng bộ chat.
 3. Mở popup, chọn “Bắt đầu tab này”; nếu chưa nhận đăng nhập, tải lại trang EzNoting sau khi cài extension.
 4. Cấp micro nếu thử giọng người cài extension. Mở trang live từ popup/dashboard; thử lời nói, chat và chuyển tài khoản phát biểu.
 5. Bấm “Kết thúc & tạo biên bản” và kiểm tra bản ghi trên web.

@@ -103,3 +103,41 @@ it('allows collector recovery when Meet /new becomes a room without a document r
   (0,eval)(source);
   expect(listeners).toHaveLength(1);
 });
+
+it('keeps own chat with the Meet account while captions are off and the web account differs', () => {
+  vi.useFakeTimers();
+  const messages: any[] = [], listeners: any[] = [];
+  const root = document.createElement('div');
+  const block = document.createElement('div'); block.setAttribute('data-message-id','own-message'); root.append(block);
+  vi.stubGlobal('chrome',{runtime:{sendMessage:(msg:any,cb:any)=>{messages.push(msg);cb?.({});},onMessage:{addListener:(fn:any)=>listeners.push(fn)}}});
+  vi.stubGlobal('ClassNotingShared',{detectProvider:()=> 'meet'});
+  vi.stubGlobal('ClassNotingPlatforms',{meet:{
+    chatRoot:()=>root, captionRoot:()=>null, findChatBlocks:()=>[block],
+    parseChatBlock:(_block:any,_names:any,selfName:string)=>({sender:selfName,text:'Tin của chính tôi'}),
+    selfParticipant:()=>({id:'meet-self',name:'Meet account'}), selfName:()=>'',
+    scrapeRoster:()=>[{id:'meet-self',name:'Meet account'}],
+    sampleActiveSpeaker:()=>'',microphoneMuted:()=>true,
+  }});
+  (0,eval)(source);
+  listeners[0]({type:'CN_SESSION',sessionId:'self-chat',ownerDisplayName:'Different web account'}, {}, ()=>{});
+  vi.advanceTimersByTime(6000);
+  const chat=messages.flatMap(m=>m.events||[]).flatMap(e=>e.messages||[]);
+  expect(chat).toEqual([expect.objectContaining({sender:'Meet account',text:'Tin của chính tôi'})]);
+});
+
+it('collects simultaneous native account indicators without enabling captions', () => {
+  vi.useFakeTimers();
+  const messages:any[]=[],listeners:any[]=[];const captions=vi.fn();
+  vi.stubGlobal('chrome',{runtime:{sendMessage:(msg:any,cb:any)=>{messages.push(msg);cb?.({});},onMessage:{addListener:(fn:any)=>listeners.push(fn)}}});
+  vi.stubGlobal('ClassNotingShared',{detectProvider:()=> 'meet'});
+  vi.stubGlobal('ClassNotingPlatforms',{meet:{
+    chatRoot:()=>null,captionRoot:()=>null,scrapeRoster:()=>[],microphoneMuted:()=>true,
+    enableSpeakerCaptions:captions,activeParticipants:()=>[{id:'one',name:'One'},{id:'two',name:'Two'}],sampleActiveSpeaker:()=>'',
+  }});
+  (0,eval)(source);listeners[0]({type:'CN_SESSION',sessionId:'no-caption'}, {}, ()=>{});
+  vi.advanceTimersByTime(1500);
+  expect(captions).not.toHaveBeenCalled();
+  const spans=messages.filter(m=>m.type==='CN_SPANS').at(-1).spans;
+  expect(spans).toHaveLength(2);
+  expect(spans).toEqual(expect.arrayContaining([expect.objectContaining({participantId:'one',name:'One'}),expect.objectContaining({participantId:'two',name:'Two'})]));
+});

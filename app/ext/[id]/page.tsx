@@ -145,7 +145,7 @@ export default function ExtLivePage() {
   const rosterMissing = session.status === "live" && session.participants.length === 0;
   const paragraphs = meetParagraphs(session.liveSegments);
   const speakerMissing = session.status === "live" && session.liveSegments.length > 0 &&
-    session.liveSegments.every((s) => s.uncertain || s.speaker === "Chưa xác định");
+    session.liveSegments.every((s) => !s.participantId && (!s.speaker || s.speaker === "Chưa xác định" || /^Giọng (tab|mic) \d+$/.test(s.speaker)));
 
   return (
     <div className="flex flex-col h-screen bg-slate-50 overflow-hidden">

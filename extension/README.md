@@ -67,7 +67,7 @@ Họp mở: để trống để bot vào như khách.
 - Popup hiện "Không có" dù dashboard có phiên live: service worker vừa restart
   (MV3) — heartbeat 15s từ tab Meet sẽ tự gắn lại, hoặc bấm "Bắt đầu tab này".
 - Badge `?` màu cam: quá ~3 phút không đọc được roster/chat/caption → mở panel
-  People + Chat trong Meet, bật phụ đề (CC).
+  People trong Meet nếu ô người nói chưa hiện. Phụ đề là tùy chọn; mở Chat nếu muốn đồng bộ tin nhắn.
 - Số liệu rác (chat "chat_bubble", caption "closed_caption_off"): đã lọc ở
   `platforms.js` (blocklist + bỏ node trong button/menu); nếu Meet đổi DOM và rác
   quay lại, báo lại kèm screenshot để bổ sung selector.
@@ -145,3 +145,7 @@ Audio tab vẫn luôn được thu; mic thiết bị chỉ mở khi toolbar Meet
 ### 0.4.9 — cấu trúc Meet hiện tại
 
 Đọc nhãn `(You)` riêng trong danh sách người tham gia và ô tự xem có cả nút Reframe + Backgrounds and effects. Đối chiếu trực tiếp DOM Meet ngày 24/10/2026 xác nhận tên + participant ID khi mở hoặc đóng danh sách.
+
+### 0.4.10 — không yêu cầu phụ đề để đọc tín hiệu người nói
+
+Không tự bật phụ đề. Đọc chỉ báo mức âm lượng trên ô Meet/danh sách người tham gia, gắn native participant ID và giữ các khoảng phát âm đồng thời. Phụ đề, nếu người dùng bật, vẫn là nguồn đối chiếu bổ sung. Người không có ô hoặc chỉ báo được render có thể chưa xác định; mức âm lượng không chứng minh đó là lời nói thay vì tạp âm. Chat của chính người ghi dùng tên Meet trực tiếp, không phụ thuộc phụ đề hay tài khoản web. Khung chat cần được Meet render để đọc tin nhắn.

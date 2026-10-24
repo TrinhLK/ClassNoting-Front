@@ -624,7 +624,7 @@
         const group = block.closest('.aops0b');
         const header = group?.querySelector('.HNucUd');
         const headerName = header && visibleText(header).replace(/\d{1,2}:\d{2}\s*[AP]M/gi, '').trim();
-        const own = !!block.querySelector('.chmVPb');
+        const own = block.matches('.chmVPb') || !!block.querySelector('.chmVPb');
         const resolved = sender || (own ? (selfName || "Bạn") : headerName) || "Chưa xác định";
         // Meet paints optimistic records before attaching ownership/header
         // metadata. Wait rather than uploading an anonymous duplicate first.
@@ -754,7 +754,36 @@
       const roster = meet.scrapeRoster().filter(p => p.name === name && p.id);
       return name && roster.length === 1 ? roster[0] : null;
     },
+    activeParticipants() {
+      const participants = new Map();
+      const rendered = el => {
+        for (let node = el; node && node.nodeType === 1; node = node.parentElement) {
+          if (node.hidden || node.getAttribute('aria-hidden') === 'true') return false;
+          const style = node.ownerDocument.defaultView?.getComputedStyle(node);
+          if (style && (style.display === 'none' || style.visibility === 'hidden')) return false;
+        }
+        return true;
+      };
+      // Observed in current Meet with captions/chat closed: these levels drive
+      // the participant's audio ring and the three-bar volume indicator.
+      const levels = ['OgVli', 'HX2H7', 'wEsLMd', 'Oaajhc', 'I8fSpb'];
+      for (const tile of allMatches(['[data-participant-id]'])) {
+        if (!rendered(tile)) continue;
+        const explicit = tile.getAttribute('data-speaking') === 'true' || tile.getAttribute('data-active-speaker') === 'true';
+        const meters = [...tile.querySelectorAll('[jsname="QgSmzd"].DYfzY, [jsname="QgSmzd"].IisKdb')];
+        const audible = meters.some(meter => !meter.classList.contains('gjg47c') &&
+          levels.some(level => meter.classList.contains(level)) && rendered(meter));
+        if (!explicit && !audible) continue;
+        const id = tile.getAttribute('data-participant-id');
+        const raw = tile.getAttribute('aria-label') || visibleText(tile.querySelector('[data-self-name], span.notranslate:not([aria-hidden="true"])'));
+        const name = meet.cleanRosterName(raw.replace(/\s*[,·]\s*(is\s+)?(speaking|presenting|muted|unmuted|đang nói|đang phát biểu).*$/i, ''));
+        if (id && name) participants.set(id, {id, name});
+      }
+      return [...participants.values()];
+    },
     sampleActiveSpeaker() {
+      const active = meet.activeParticipants();
+      if (active.length) return active.length === 1 ? active[0].name : '';
       // Tile đang nói của Meet có chỉ báo âm lượng/border — thử nhiều dấu hiệu.
       const speaking = allMatches([
         "[data-participant-id][data-speaking='true']",

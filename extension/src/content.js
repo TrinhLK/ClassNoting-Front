@@ -12,7 +12,7 @@
 
   // Đồng bộ với manifest.json — hiện trong ô chẩn đoán để biết tab đang
   // chạy content bản nào (tránh cãi nhau chuyện reload chưa).
-  const CODE_VERSION = "0.4.9";
+  const CODE_VERSION = "0.4.10";
 
   const shared = globalThis.ClassNotingShared;
   const platforms = globalThis.ClassNotingPlatforms;
@@ -34,7 +34,7 @@
   // Tên roster mới nhất — dùng để bóc "Tên nội dung" trong caption
   // (Meet mới không render dấu hai chấm).
   let lastRosterNames = [];
-  let lastActive = { name: "", ts: 0 };
+  let lastActive = new Map();
   const activeSpans = [];
   let eventQueue = [];
 
@@ -127,13 +127,12 @@
     publishCaptionContext(p, true);
   }
 
-  // Tên tài khoản thật (background gửi kèm CN_SESSION) để map "You"/"Bạn"
-  // mà Meet dùng gọi chính mình.
+  // Resolve the local Meet account independently of captions and web login.
   let selfName = "";
   function normalizeSelfName(name) {
     const n = String(name || "").trim();
     if (!n) return "";
-    try { selfName = platform.selfName?.() || selfName; } catch { /* keep known identity */ }
+    try { selfName = platform.selfParticipant?.()?.name || platform.selfName?.() || selfName; } catch { /* keep known identity */ }
     if (/^(you|bạn)$/i.test(n)) return selfName || "";
     return n;
   }
@@ -285,7 +284,7 @@
   // Meet). Tin nhắn tồn tại trong DOM nên poll bắt được cả khi observer trượt.
   function handleChatBlock(block) {
     if (!sessionId) return;
-    try { selfName = platform.selfName?.() || selfName; } catch { /* keep known identity */ }
+    try { selfName = platform.selfParticipant?.()?.name || platform.selfName?.() || selfName; } catch { /* keep known identity */ }
     let parsed = null;
     try {
       parsed = platform.parseChatBlock(block, lastRosterNames, selfName || "Bạn");
@@ -343,7 +342,9 @@
     seenCaption.clear();
     lastCaptionSnapshot = "";
     lastRosterKey = "";
-    try { platform.enableSpeakerCaptions?.(); } catch { /* leave capture running */ }
+    // Captions remain optional; never change the user's Meet caption setting.
+    activeSpans.length = 0;
+    lastActive.clear();
     pollRoster();
     pollChatBlocks();
     pollCaption();
@@ -351,30 +352,41 @@
     reportMicState();
   }
 
-  // Active-speaker: lấy mẫu mỗi 500ms → span {name,start,end}, gửi kèm heartbeat.
+  // Sample native Meet audio indicators every 200ms; keep simultaneous account spans.
   setInterval(() => {
     if (!running) return;
-    let name = "";
+    let active = [];
     try {
-      name = (platform.sampleActiveSpeaker() || "").trim();
-    } catch (e) { /* bỏ qua */ }
-    const now = Date.now() / 1000;
-    if (name) {
-      if (lastActive.name === name) {
-        const span = activeSpans[activeSpans.length - 1];
-        if (span) span.end = now;
-      } else {
-        activeSpans.push({ name, start: now - 0.5, end: now });
-        if (activeSpans.length > 200) activeSpans.splice(0, activeSpans.length - 200);
-        lastActive = { name, ts: now };
+      active = platform.activeParticipants?.() || [];
+      if (!active.length) {
+        const name = (platform.sampleActiveSpeaker() || '').trim();
+        if (name) active = [{name}];
       }
+    } catch { /* DOM unknown */ }
+    const now = Date.now() / 1000;
+    const next = new Map();
+    for (const person of active) {
+      const key = person.id || person.name;
+      let span = lastActive.get(key);
+      if (span && now - span.end <= 0.75) { span.end = now; span.lastSeen = now; }
+      else {
+        span = {name:person.name, ...(person.id ? {participantId:person.id} : {}), start:now - 0.2, end:now, lastSeen:now};
+        activeSpans.push(span);
+      }
+      next.set(key, span);
     }
-    if (!name) lastActive = { name: "", ts: now };
+    // Brief low-volume frames are part of the same turn. Never hold a prior
+    // account over a newly detected account or erase simultaneous activity.
+    if (!active.length) for (const [key, span] of lastActive) {
+      if (now - span.lastSeen <= 0.6) { span.end = now; next.set(key, span); }
+    }
+    lastActive = next;
+    if (activeSpans.length > 200) activeSpans.splice(0, activeSpans.length - 200);
     // Gửi spans mới về background để fusion với ASR.
     let selfParticipant = null;
     try { selfParticipant = platform.selfParticipant?.() || null; } catch { /* unknown */ }
-    send({ type: "CN_SPANS", selfParticipant, spans: activeSpans.slice(-50), sessionId: sessionId || undefined });
-  }, 500);
+    send({ type: "CN_SPANS", selfParticipant, spans: activeSpans.slice(-100), sessionId: sessionId || undefined });
+  }, 200);
 
   // Mic vật lý chỉ được extension lấy khi Meet xác nhận mic đang bật.
   // Nếu nhãn nút chưa đọc được thì fail-closed: không cấp mic riêng cho extension.
