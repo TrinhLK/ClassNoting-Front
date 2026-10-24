@@ -732,8 +732,17 @@
         const label = tile.getAttribute('aria-label') || '';
         const marker = tile.querySelector('[data-self-name]');
         const selfLabel = /(?:\(|,|·)\s*(you|bạn)\s*\)?(?:$|[,·])/i.test(label);
-        if (!marker && !selfLabel) continue;
-        const raw = marker?.getAttribute('data-self-name') || (marker && visibleText(marker)) || label;
+        // Current Meet puts (You) in a separate roster span. The local tile
+        // also uniquely exposes both camera reframe and background controls.
+        const rosterSelf = tile.getAttribute('role') === 'listitem' &&
+          [...tile.querySelectorAll('span')].some(el => /^\((you|bạn)\)$/i.test(visibleText(el)));
+        const controls = [...tile.querySelectorAll('button[aria-label]')].map(el => el.getAttribute('aria-label') || '');
+        const localControls = controls.some(label => /^(reframe|điều chỉnh khung hình)$/i.test(label)) &&
+          controls.some(label => /^(backgrounds and effects|nền và hiệu ứng)$/i.test(label));
+        if (!marker && !selfLabel && !rosterSelf && !localControls) continue;
+        const raw = marker?.getAttribute('data-self-name') || (marker && visibleText(marker)) || label ||
+          (localControls && visibleText(tile.querySelector('span.notranslate:not([aria-hidden="true"])'))) || '';
+
         const name = meet.cleanRosterName(raw);
         const id = tile.getAttribute('data-participant-id');
         if (id && name && !/^(you|bạn)$/i.test(name)) candidates.push({id, name});

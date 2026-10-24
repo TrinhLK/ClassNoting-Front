@@ -624,6 +624,14 @@ describe('Meet account attribution without web account guessing', () => {
     document.body.insertAdjacentHTML('beforeend','<div data-participant-id="other"><span data-self-name="Other">Other</span></div>');
     expect(meet.selfParticipant()).toBeNull();
   });
+  it('reads current Meet local camera controls and the separate roster You marker', () => {
+    setBody('<div data-participant-id="self"><button aria-label="Reframe"></button><button aria-label="Backgrounds and effects"></button><span class="notranslate">Meet account</span></div>');
+    expect(meet.selfParticipant()).toEqual({id:'self',name:'Meet account'});
+    document.body.insertAdjacentHTML('beforeend','<div role="listitem" data-participant-id="self" aria-label="Meet account"><span>Meet account</span><span>(You)</span></div>');
+    expect(meet.selfParticipant()).toEqual({id:'self',name:'Meet account'});
+    setBody('<div data-participant-id="remote"><button aria-label="Backgrounds and effects"></button><span class="notranslate">Remote</span></div>');
+    expect(meet.selfParticipant()).toBeNull();
+  });
   it('uses confirmed local Meet identity only for microphone audio', () => {
     const resolve = loadShared().resolveAudioSpeaker as any;
     const context = {fallbackName:'Chưa xác định', selfParticipant:{id:'meet-self',name:'Meet account'},captionLines:[],activeSpans:[]};

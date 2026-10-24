@@ -141,3 +141,7 @@ Audio tab vẫn luôn được thu; mic thiết bị chỉ mở khi toolbar Meet
 - Khi server trả nhãn giọng, liên kết giọng với tài khoản chỉ sau ít nhất 3 giây bằng chứng từ Meet trong cùng phiên; có bằng chứng mâu thuẫn thì bỏ liên kết.
 - WebSocket yêu cầu `language=auto`. Server dùng Whisper Tiny INT8 để nhận diện ngôn ngữ audio, chọn Gipformer tiếng Việt hoặc English Zipformer cho từng đoạn; vẫn giữ mốc âm thanh và sự kiện ngắt đoạn. Đoạn quá ngắn giữ ngôn ngữ gần nhất; không coi mọi ngôn ngữ khác tiếng Việt là tiếng Anh.
 - Popup báo khả năng nhận diện ngôn ngữ và ngôn ngữ đang dùng riêng cho mic/tab. Server cũ chưa hỗ trợ tự nhận diện sẽ có thông báo rõ.
+
+### 0.4.9 — cấu trúc Meet hiện tại
+
+Đọc nhãn `(You)` riêng trong danh sách người tham gia và ô tự xem có cả nút Reframe + Backgrounds and effects. Đối chiếu trực tiếp DOM Meet ngày 24/10/2026 xác nhận tên + participant ID khi mở hoặc đóng danh sách.

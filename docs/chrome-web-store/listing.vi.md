@@ -19,13 +19,13 @@ Ghi chú Google Meet: lời nói, người tham gia và chat được đồng b�
 
 Extension EzNoting kết nối Google Meet trên Chrome với ứng dụng web EzNoting, giúp bạn theo dõi lời nói và tin nhắn trong cùng một bản ghi cuộc họp.
 
-• Nhận dạng tiếng nói và hiển thị nội dung trực tiếp trên EzNoting.
+• Nhận dạng tiếng nói và hiển thị nội dung trực tiếp trên EzNoting; tự chọn mô hình tiếng Việt hoặc tiếng Anh theo âm thanh. Đoạn quá ngắn có thể giữ ngôn ngữ trước đó.
 • Hiển thị tên tài khoản từ dữ liệu người tham gia và phụ đề Google Meet khi có đủ bằng chứng; trường hợp chưa chắc chắn được ghi là chưa xác định hoặc đang xác minh.
 • Đồng bộ tin nhắn cùng tên người gửi từ khung chat đang mở.
 • Gom lời của cùng một tài khoản thành đoạn sau 5 nhịp im lặng, mỗi nhịp ít nhất 1 giây; đổi tài khoản mở đoạn mới khi nhận dạng có kết quả.
 • Kết thúc phiên để lưu biên bản; xem lại và sử dụng các công cụ xử lý biên bản trên web.
 
-Cách bắt đầu: cài extension, đăng nhập EzNoting trong cùng profile Chrome, mở Meet, bật phụ đề và mở khung chat. Bấm biểu tượng EzNoting rồi chọn “Bắt đầu tab này”. Cấp quyền micro nếu muốn ghi giọng của chính bạn; luồng micro chỉ mở khi extension xác nhận mic Meet đang bật. Có thể bật chế độ tự động ghi riêng trong Cài đặt nâng cao.
+Cách bắt đầu: cài extension, đăng nhập EzNoting trong cùng profile Chrome, mở Meet và mở khung chat. Extension thử bật phụ đề Meet khi bắt đầu để hỗ trợ xác định người nói; hãy kiểm tra phụ đề đã bật. Bấm biểu tượng EzNoting rồi chọn “Bắt đầu tab này”. Cấp quyền micro nếu muốn ghi giọng của chính bạn; luồng micro chỉ mở khi extension xác nhận mic Meet đang bật. Có thể bật chế độ tự động ghi riêng trong Cài đặt nâng cao.
 
 Extension cần kết nối Internet và tài khoản EzNoting. Âm thanh được gửi tới máy chủ nhận dạng; âm thanh bản ghi, transcript, chat và thông tin người tham gia được lưu trên hệ thống EzNoting. Hãy thông báo và có sự đồng ý phù hợp của người tham gia trước khi ghi.
 
