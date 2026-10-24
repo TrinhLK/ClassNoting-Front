@@ -74,8 +74,13 @@
   }
 
   function resolveAudioSpeaker(source, start, end, ctx) {
+    if (source === "mic" && ctx.selfParticipant?.id && ctx.selfParticipant?.name) {
+      return {name: normalizeName(ctx.selfParticipant.name), participantId: String(ctx.selfParticipant.id),
+        uncertain: false, speakerSource: "platform"};
+    }
     const captions = ctx.captionLines || [];
-    const localNames = new Set(captions.filter(c => c.isSelf === true).map(c => c.name));
+    const localNames = new Set(captions.filter(c => c.isSelf === true && c.name && !/^(you|bạn)$/i.test(c.name)).map(c => c.name));
+    if (ctx.selfParticipant?.name) localNames.add(ctx.selfParticipant.name);
     const resolved = resolveSpeakerName(start, end, {
       ...ctx,
       activeSpans: source === "mic" ? [] : (ctx.activeSpans || []).filter(s => !localNames.has(s.name)),
@@ -168,8 +173,29 @@
     };
   }
 
+  function createVoiceIdentityTracker() {
+    const voices = new Map();
+    return {
+      observe(group) {
+        if (!group.voiceId || /:-1$/.test(group.voiceId) || group.words?.some(w => w.overlap) ||
+            !group.participantId || !["caption", "platform"].includes(group.speakerSource)) return;
+        const key = String(group.participantId);
+        let value = voices.get(group.voiceId);
+        if (!value) { value = {key, name: group.speaker, seconds: 0, blocked: false}; voices.set(group.voiceId, value); }
+        if (value.key !== key) value.blocked = true;
+        if (!value.blocked) value.seconds += Math.max(0, group.end - group.start);
+        if (voices.size > 512) voices.delete(voices.keys().next().value);
+      },
+      resolve(voiceId) {
+        const value = voices.get(voiceId);
+        return value && !value.blocked && value.seconds >= 3 ? {participantId: value.key, name: value.name} : null;
+      },
+    };
+  }
+
   global.ClassNotingShared = {
     createMeetParagraphTracker,
+    createVoiceIdentityTracker,
     resolveCaptionPrefix,
     detectProvider,
     normalizeName,

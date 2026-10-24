@@ -12,7 +12,7 @@
 
   // Đồng bộ với manifest.json — hiện trong ô chẩn đoán để biết tab đang
   // chạy content bản nào (tránh cãi nhau chuyện reload chưa).
-  const CODE_VERSION = "0.4.6";
+  const CODE_VERSION = "0.4.8";
 
   const shared = globalThis.ClassNotingShared;
   const platforms = globalThis.ClassNotingPlatforms;
@@ -134,7 +134,7 @@
     const n = String(name || "").trim();
     if (!n) return "";
     try { selfName = platform.selfName?.() || selfName; } catch { /* keep known identity */ }
-    if (/^(you|bạn)$/i.test(n) && selfName) return selfName;
+    if (/^(you|bạn)$/i.test(n)) return selfName || "";
     return n;
   }
 
@@ -343,6 +343,7 @@
     seenCaption.clear();
     lastCaptionSnapshot = "";
     lastRosterKey = "";
+    try { platform.enableSpeakerCaptions?.(); } catch { /* leave capture running */ }
     pollRoster();
     pollChatBlocks();
     pollCaption();
@@ -370,7 +371,9 @@
     }
     if (!name) lastActive = { name: "", ts: now };
     // Gửi spans mới về background để fusion với ASR.
-    send({ type: "CN_SPANS", spans: activeSpans.slice(-50), sessionId: sessionId || undefined });
+    let selfParticipant = null;
+    try { selfParticipant = platform.selfParticipant?.() || null; } catch { /* unknown */ }
+    send({ type: "CN_SPANS", selfParticipant, spans: activeSpans.slice(-50), sessionId: sessionId || undefined });
   }, 500);
 
   // Mic vật lý chỉ được extension lấy khi Meet xác nhận mic đang bật.
@@ -424,7 +427,8 @@
       return;
     }
     if (msg?.type === "CN_SESSION") {
-      if (msg.ownerDisplayName) selfName = String(msg.ownerDisplayName);
+      // The signed-in web account may differ from the local Meet account.
+      // Only Meet DOM/caption evidence is allowed to name microphone audio.
       activateSession(msg.sessionId);
     }
     if (msg?.type === "CN_STOP") {

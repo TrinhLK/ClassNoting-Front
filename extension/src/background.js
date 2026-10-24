@@ -5,7 +5,7 @@
  */
 // Đổi theo manifest.json mỗi build — popup/diag hiện số này để biết chắc
 // cả 3 mảnh (popup/background/content) có đồng bộ không.
-const CODE_VERSION = "0.4.6";
+const CODE_VERSION = "0.4.8";
 const DEFAULT_APP_ORIGIN = "https://smart-noting.vercel.app";
 const FLUSH_MS = 2000;
 const HEARTBEAT_TIMEOUT_MS = 2 * 60 * 1000;
@@ -574,6 +574,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (!t && msg.sessionId) t = attachLight(tabId, msg.sessionId, msg);
     if (!t) return;
     t.spans = (msg.spans || []).slice(-200);
+    t.selfParticipant = msg.selfParticipant?.id && msg.selfParticipant?.name ? msg.selfParticipant : null;
     const last = t.spans[t.spans.length - 1];
     t.activeSpeaker = last && Date.now() / 1000 - last.end < 1.5 ? String(last.name || "") : "";
     return;
@@ -606,7 +607,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg?.type === "CN_GET_SPANS" && msg.tabId && tabs.has(msg.tabId)) {
     const t = tabs.get(msg.tabId);
-    sendResponse({ spans: t.spans.slice(-200), captions: t.captions.slice(-200), participants: t.participants || [] });
+    sendResponse({ selfParticipant: t.selfParticipant || null, spans: t.spans.slice(-200), captions: t.captions.slice(-200), participants: t.participants || [] });
     return;
   }
   if (msg?.type === "CN_ASR_FINAL" && msg.tabId) {

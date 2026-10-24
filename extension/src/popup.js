@@ -49,8 +49,8 @@
       const statuses = Object.entries(mine.speakerStatus || {}).map(([source, value]) => {
         const pauses = value.segmentation?.boundary_events && value.segmentation.pause_seconds === 1
           ? "ngắt đoạn sau 5 nhịp, mỗi nhịp 1 giây" : "server chưa xác nhận nhịp ngắt 1 giây";
-        const model = value.model?.family || "server chưa báo model";
-        return `${source}: ${model}; ${pauses}; ${value.diarization ? "diarization bật" : "diarization tắt"} (protocol ${value.protocol || "?"})`;
+        const model = value.language === "en" ? "English Zipformer" : value.model?.family || "server chưa báo model";
+        return `${source}: ${model}; ${value.autoLanguage ? `tự nhận diện Việt/Anh${value.language ? (value.language === "en" ? " · đang dùng tiếng Anh" : " · đang dùng tiếng Việt") : ""}` : "chưa có tự nhận diện ngôn ngữ"}; ${pauses}; ${value.diarization ? "diarization bật" : "diarization tắt"} (protocol ${value.protocol || "?"})`;
       });
       const active = mine.activeSpeaker ? `; active speaker: ${mine.activeSpeaker}` : "; chưa bắt được active speaker";
       const mic = mine.audioState?.micCapture === "enabled"
@@ -145,6 +145,7 @@
           ws_dead: "Audio LỖI: không nối được server ASR. Kiểm tra server asr-live.",
           diarization_disabled: `Audio vẫn nhận dạng chữ, nhưng server chưa nạp model diarization (${a.detail || ""}).`,
           protocol_error: `Audio đã kết nối nhưng server chưa hỗ trợ giao thức speaker (${a.detail || ""}).`,
+          language_unavailable: "Server chưa hỗ trợ tự nhận diện tiếng Việt/Anh. Audio vẫn được lưu; cần cập nhật dịch vụ STT.",
           speaker_status: "Audio: đã nhận được trạng thái diarization từ server.",
         };
         if (a.state === "mic_status") {

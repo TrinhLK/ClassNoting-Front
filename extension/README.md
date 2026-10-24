@@ -133,3 +133,11 @@ Audio tab vẫn luôn được thu; mic thiết bị chỉ mở khi toolbar Meet
 0.4.3 gắn mic cục bộ với tài khoản Meet đã được xác nhận duy nhất, kể cả khi phụ đề đến muộn. Server mới chỉ đưa audio có tiếng nói vào ASR, giữ đệm 2 giây trước VAD để tránh mất đầu câu; nút ghi âm trang chủ giữ hành vi cũ.
 
 0.4.4 ưu tiên roster có participant ID của Meet; không bổ sung tên từ nút điều khiển People khi đã có danh tính gốc. Server đã kiểm tra lại đệm đầu lời nói 2 giây bằng audio của phiên Chrome.
+
+## 0.4.8: tài khoản Meet và STT Việt/Anh
+
+- Bắt đầu ghi sẽ bật phụ đề Meet nếu nút đang ở trạng thái bật phụ đề; không bấm lại nút tắt phụ đề.
+- Mic chỉ lấy tên/ID từ dữ liệu tài khoản Meet đã xác nhận, không suy từ chủ tài khoản web. Audio tab vẫn cần tín hiệu người phát biểu hoặc phụ đề; không gán mic cho người đang nói từ xa.
+- Khi server trả nhãn giọng, liên kết giọng với tài khoản chỉ sau ít nhất 3 giây bằng chứng từ Meet trong cùng phiên; có bằng chứng mâu thuẫn thì bỏ liên kết.
+- WebSocket yêu cầu `language=auto`. Server dùng Whisper Tiny INT8 để nhận diện ngôn ngữ audio, chọn Gipformer tiếng Việt hoặc English Zipformer cho từng đoạn; vẫn giữ mốc âm thanh và sự kiện ngắt đoạn. Đoạn quá ngắn giữ ngôn ngữ gần nhất; không coi mọi ngôn ngữ khác tiếng Việt là tiếng Anh.
+- Popup báo khả năng nhận diện ngôn ngữ và ngôn ngữ đang dùng riêng cho mic/tab. Server cũ chưa hỗ trợ tự nhận diện sẽ có thông báo rõ.

@@ -719,6 +719,32 @@
       if (!a || !b) return false;
       return a === b || b.startsWith(a) || a.startsWith(b);
     },
+    enableSpeakerCaptions() {
+      // Only enable once when recording starts; never toggle an already-on CC.
+      const buttons = allMatches(['button[aria-label]', '[role="button"][aria-label]']);
+      const button = buttons.find(el => /^(turn on captions|bật phụ đề)(\s|\(|$)/i.test(el.getAttribute('aria-label') || ''));
+      if (button) { button.click(); return true; }
+      return false;
+    },
+    selfParticipant() {
+      const candidates = [];
+      for (const tile of allMatches(['[data-participant-id]'])) {
+        const label = tile.getAttribute('aria-label') || '';
+        const marker = tile.querySelector('[data-self-name]');
+        const selfLabel = /(?:\(|,|·)\s*(you|bạn)\s*\)?(?:$|[,·])/i.test(label);
+        if (!marker && !selfLabel) continue;
+        const raw = marker?.getAttribute('data-self-name') || (marker && visibleText(marker)) || label;
+        const name = meet.cleanRosterName(raw);
+        const id = tile.getAttribute('data-participant-id');
+        if (id && name && !/^(you|bạn)$/i.test(name)) candidates.push({id, name});
+      }
+      const unique = [...new Map(candidates.map(p => [p.id, p])).values()];
+      if (unique.length === 1) return unique[0];
+      // Fallback: a local caption avatar matched uniquely to a named tile.
+      const name = meet.selfName();
+      const roster = meet.scrapeRoster().filter(p => p.name === name && p.id);
+      return name && roster.length === 1 ? roster[0] : null;
+    },
     sampleActiveSpeaker() {
       // Tile đang nói của Meet có chỉ báo âm lượng/border — thử nhiều dấu hiệu.
       const speaking = allMatches([

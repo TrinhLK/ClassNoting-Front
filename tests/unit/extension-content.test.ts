@@ -62,12 +62,13 @@ it('publishes caption identity during continuous speech instead of waiting for s
   vi.stubGlobal('ClassNotingPlatforms', {meet:{
     chatRoot:()=>null, captionRoot:()=>root, scrapeRoster:()=>[],
     microphoneMuted:()=>false, sampleActiveSpeaker:()=>'',
+    selfName:()=> 'An',
     parseCaptionNode:()=>({name:'You', text:root.textContent}),
     captionMergeKey:(text: string)=>text,
     shouldMergeCaption:(a: any,b: any)=>b.body.startsWith(a.body),
   }});
   (0,eval)(source);
-  listeners[0]({type:'CN_SESSION', sessionId:'s',ownerDisplayName:'An'}, {}, ()=>{});
+  listeners[0]({type:'CN_SESSION', sessionId:'s',ownerDisplayName:'Wrong web account'}, {}, ()=>{});
   const captions = () => messages.flatMap(m=>m.events || []).flatMap(e=>e.captions || []);
   expect(captions()).toEqual([expect.objectContaining({speaker:'An',isSelf:true,text:'Xin chào'})]);
   await vi.advanceTimersByTimeAsync(300);

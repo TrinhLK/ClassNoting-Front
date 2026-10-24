@@ -86,6 +86,12 @@
     }
     const alt = data.channel?.alternatives?.[0];
     if (!data.is_final || !alt?.transcript) return;
+    if (["vi", "en"].includes(data.language) && source.language !== data.language) {
+      source.language = data.language;
+      report(cap, "speaker_status", "", {speakerStatus: {[source.name]: {
+        ...source.serverStatus, language: data.language,
+      }}});
+    }
     const context = await chrome.runtime.sendMessage({ type: "CN_GET_SPANS", tabId: cap.spansTabId }).catch(() => ({}));
     const relative = list => (list || []).map(s => ({ ...s, start: s.start - cap.epoch, end: s.end - cap.epoch }));
     const spans = relative(context?.spans), captions = relative(context?.captions);
@@ -101,10 +107,10 @@
       // Only explicit local captions can name mic speech. Remote captions must
       // never label the mic, and local captions must never label tab playback.
       const resolved = !w.overlap ? shared.resolveAudioSpeaker(source.name, w.start, w.end, {
-        activeSpans: spans, captionLines: captions, fallbackName: "Chưa xác định"
+        activeSpans: spans, captionLines: captions, selfParticipant: context?.selfParticipant, fallbackName: "Chưa xác định"
       }) : { name: "Chưa xác định", uncertain: true };
       const matches = (context?.participants || []).filter(p => (p.displayName || p.name) === resolved.name);
-      const participantId = matches.length === 1 && matches[0].id != null ? String(matches[0].id) : undefined;
+      const participantId = resolved.participantId || (matches.length === 1 && matches[0].id != null ? String(matches[0].id) : undefined);
       const speaker = resolved.name !== "Chưa xác định" ? resolved.name : voice >= 0 ? `Giọng ${source.name} ${voice + 1}` : "Chưa xác định";
       const identity = participantId ? `participant:${participantId}` : voiceId;
       const prev = groups[groups.length - 1];
@@ -126,6 +132,16 @@
       group.participantId = String(participants[0].id);
       group.speakerSource = match.speakerSource;
       group.uncertain = true;
+    }
+    cap.voiceIdentities ||= shared.createVoiceIdentityTracker();
+    for (const group of groups) cap.voiceIdentities.observe(group);
+    for (const group of groups) {
+      if (group.participantId || group.words.some(w => w.overlap)) continue;
+      const known = cap.voiceIdentities.resolve(group.voiceId);
+      if (!known) continue;
+      group.speaker = known.name; group.participantId = known.participantId;
+      group.identity = `participant:${known.participantId}`;
+      group.speakerSource = "diarization"; group.uncertain = true;
     }
     const packetId = `${source.name}:${data.speaker_scope || source.generation}:${data.utterance_id ?? ++source.packetSequence}`;
     for (const [index, group] of groups.entries()) {
@@ -153,7 +169,7 @@
     function connect() {
       if (cap.closed) return;
       source.generation++; source.protocol = 0;
-      const url = new URL(cap.wsBase); url.searchParams.set("language", "vi");
+      const url = new URL(cap.wsBase); url.searchParams.set("language", "auto");
       url.searchParams.set("client", "extension"); url.searchParams.set("source", name);
       url.searchParams.set("pause_seconds", "1");
       const ws = new WebSocket(url); source.ws = ws;
@@ -166,9 +182,12 @@
           source.protocol = data.protocol || 1;
           source.paragraphBoundaries = data.segmentation?.boundary_events === true && data.segmentation.pause_seconds === 1;
           const diarization = data.diarization === true;
+          source.serverStatus = {protocol: source.protocol, diarization, segmentation: data.segmentation || null,
+            model: data.model || null, autoLanguage: data.auto_language === true};
           report(cap, "speaker_status", "", { speakerStatus: {
-            [name]: { protocol: source.protocol, diarization, segmentation: data.segmentation || null, model: data.model || null },
+            [name]: source.serverStatus,
           } });
+          if (data.auto_language !== true) report(cap, "language_unavailable", "Server chưa sẵn sàng tự nhận diện Việt/Anh; cần cập nhật model ngôn ngữ.");
           if (source.protocol < 2) {
             report(cap, "protocol_error", `Server ${name} chưa hỗ trợ protocol 2; audio chưa được gửi để nhận dạng`);
           } else if (!diarization) {

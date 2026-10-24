@@ -608,3 +608,35 @@ it('uses native participant IDs without appending People controls or visitor bad
     </aside>`);
   expect(meet.scrapeRoster()).toEqual([{id:'p1',name:'Chủ phòng'},{id:'p2',name:'Trình Lê Khánh'}]);
 });
+
+
+describe('Meet account attribution without web account guessing', () => {
+  it('enables only the explicit turn-on captions control', () => {
+    setBody('<button aria-label="Turn on captions (c)"></button>');
+    const click = vi.fn(); document.querySelector('button')!.addEventListener('click', click);
+    expect(meet.enableSpeakerCaptions()).toBe(true); expect(click).toHaveBeenCalledOnce();
+    setBody('<button aria-label="Turn off captions (c)"></button>');
+    expect(meet.enableSpeakerCaptions()).toBe(false);
+  });
+  it('gets self identity from a unique Meet tile, rejects ambiguous self tiles', () => {
+    setBody('<div data-participant-id="meet-self"><span data-self-name="Meet account">Meet account</span></div>');
+    expect(meet.selfParticipant()).toEqual({id:'meet-self',name:'Meet account'});
+    document.body.insertAdjacentHTML('beforeend','<div data-participant-id="other"><span data-self-name="Other">Other</span></div>');
+    expect(meet.selfParticipant()).toBeNull();
+  });
+  it('uses confirmed local Meet identity only for microphone audio', () => {
+    const resolve = loadShared().resolveAudioSpeaker as any;
+    const context = {fallbackName:'Chưa xác định', selfParticipant:{id:'meet-self',name:'Meet account'},captionLines:[],activeSpans:[]};
+    expect(resolve('mic',1,2,context)).toMatchObject({name:'Meet account',participantId:'meet-self',speakerSource:'platform',uncertain:false});
+    expect(resolve('tab',1,2,context).name).toBe('Chưa xác định');
+  });
+  it('learns a voice only from sufficient Meet account evidence and blocks conflicting mappings', () => {
+    const tracker = (loadShared().createVoiceIdentityTracker as any)();
+    const sample = {voiceId:'tab:scope:1',participantId:'p1',speaker:'One',speakerSource:'caption',start:1,end:3,words:[]};
+    tracker.observe(sample); expect(tracker.resolve(sample.voiceId)).toBeNull();
+    tracker.observe({...sample,start:4,end:5}); expect(tracker.resolve(sample.voiceId)).toEqual({participantId:'p1',name:'One'});
+    tracker.observe({...sample,participantId:'p2',speaker:'Two'}); expect(tracker.resolve(sample.voiceId)).toBeNull();
+    tracker.observe({...sample,voiceId:'tab:scope:-1',end:30}); expect(tracker.resolve('tab:scope:-1')).toBeNull();
+    expect(tracker.resolve('tab:new-scope:1')).toBeNull();
+  });
+});
