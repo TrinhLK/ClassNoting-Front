@@ -9,6 +9,8 @@ import {
 
 describe("meeting-links (platform adapters)", () => {
   it("detects Google Meet links", () => {
+    expect(detectProvider("https://meet.google.com/meet/abc-defg-hij")).toBe("meet");
+    expect(meetCodeFromUrl("https://meet.google.com/meet/abc-defg-hij")).toBe("abc-defg-hij");
     expect(detectProvider("https://meet.google.com/abc-defg-hij")).toBe("meet");
     expect(detectProvider("https://meet.google.com/lookup/xyz123?pdk=1")).toBe("meet");
   });

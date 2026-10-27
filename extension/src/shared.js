@@ -9,7 +9,7 @@
   "use strict";
 
   const MEET_PATTERNS = [
-    /^https:\/\/(?:www\.)?meet\.google\.com\/[a-z]{3}-[a-z]{4}-[a-z]{3}(?:[/?#].*)?$/i,
+    /^https:\/\/(?:www\.)?meet\.google\.com\/(?:meet\/)?[a-z]{3}-[a-z]{4}-[a-z]{3}(?:[/?#].*)?$/i,
     /^https:\/\/(?:www\.)?meet\.google\.com\/lookup\/[\w-]+(?:[/?#].*)?$/i,
   ];
   function detectProvider(rawUrl) {

@@ -5,7 +5,7 @@
 export type MeetingProvider = "meet" | "zoom" | "teams";
 
 const MEET_PATTERNS = [
-  /^https:\/\/(?:www\.)?meet\.google\.com\/[a-z]{3}-[a-z]{4}-[a-z]{3}(?:[/?#].*)?$/i,
+  /^https:\/\/(?:www\.)?meet\.google\.com\/(?:meet\/)?[a-z]{3}-[a-z]{4}-[a-z]{3}(?:[/?#].*)?$/i,
   /^https:\/\/(?:www\.)?meet\.google\.com\/lookup\/[\w-]+(?:[/?#].*)?$/i,
 ];
 
@@ -35,7 +35,7 @@ export const PROVIDER_LABELS: Record<MeetingProvider, string> = {
 
 /** Trích mã phòng Meet (xxx-yyyy-zzz) từ URL để đặt tên bản ghi dễ nhớ. */
 export function meetCodeFromUrl(rawUrl: string): string {
-  const m = rawUrl.trim().match(/meet\.google\.com\/([a-z]{3}-[a-z]{4}-[a-z]{3})/i);
+  const m = rawUrl.trim().match(/meet\.google\.com\/(?:meet\/)?([a-z]{3}-[a-z]{4}-[a-z]{3})/i);
   return m ? m[1].toLowerCase() : "";
 }
 
