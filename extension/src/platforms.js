@@ -186,6 +186,14 @@
       } catch (e) { /* DOM lạ */ }
       return names;
     },
+    attendanceSnapshot() {
+      const participants = meet.scrapeRoster();
+      const buttons = allMatches(['button[aria-label], [role="button"][aria-label]']);
+      const counts = buttons.filter(b => /^(people|người tham gia)(?:\s|$|[,·-])/i.test(b.getAttribute('aria-label') || ''))
+        .map(b => ((b.getAttribute('aria-label') || '') + ' ' + visibleText(b)).match(/\d+/)?.[0]).filter(Boolean).map(Number);
+      const ids = new Set(participants.filter(p => p.id).map(p => p.id));
+      return {participants, complete: counts.length > 0 && counts.every(n => n === ids.size) && participants.every(p => p.id) && ids.size > 0};
+    },
     selfName() {
       // Meet's local caption uses "You"; match its avatar to the named tile,
       // so the signed-in web-app owner is not mistaken for the Meet account.

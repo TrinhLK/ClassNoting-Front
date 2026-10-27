@@ -5,7 +5,7 @@
  */
 // Đổi theo manifest.json mỗi build — popup/diag hiện số này để biết chắc
 // cả 3 mảnh (popup/background/content) có đồng bộ không.
-const CODE_VERSION = "0.4.10";
+const CODE_VERSION = "0.4.11";
 const DEFAULT_APP_ORIGIN = "https://smart-noting.vercel.app";
 const FLUSH_MS = 2000;
 const HEARTBEAT_TIMEOUT_MS = 2 * 60 * 1000;
@@ -119,12 +119,18 @@ async function flushTab(tabId) {
   if (t.flushing) return t.flushing;
   t.flushing = (async () => {
     if (!t.sessionId || !t.queue.length) return;
-    const batch = t.queue.splice(0, 100);
+    let bytes = 0, count = 0;
+    for (const item of t.queue.slice(0,100)) {
+      const size = new TextEncoder().encode(JSON.stringify(item)).length;
+      if (count && bytes + size > 400000) break;
+      bytes += size; count++;
+    }
+    const batch = t.queue.splice(0, count);
     const byKind = {};
     for (const ev of batch) (byKind[ev.kind] ||= []).push(ev.payload);
     const events = Object.entries(byKind).map(([kind, items]) => kind === "participants"
       ? { kind, participants: items[items.length - 1] } : kind === "chat"
-      ? { kind, messages: items } : { kind, segments: items });
+      ? { kind, messages: items } : kind === "attendance" ? {kind, observations:items} : { kind, segments: items });
     try {
       const res = await apiFetch("/api/extension/events", { sessionId: t.sessionId, events });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -538,6 +544,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         t.rosterCount = (ev.participants || []).length;
         t.queue.push({ kind: "participants", payload: ev.participants });
         if ((ev.participants || []).length > 0) gotData = true;
+      } else if (ev.kind === "attendance") {
+        for (const observation of ev.observations || []) t.queue.push({kind:"attendance",payload:observation});
+        if ((ev.observations || []).length) gotData = true;
       } else if (ev.kind === "chat") {
         for (const m of ev.messages || []) t.queue.push({ kind: "chat", payload: m });
         if ((ev.messages || []).length > 0) gotData = true;

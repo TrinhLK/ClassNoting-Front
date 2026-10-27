@@ -97,7 +97,7 @@ export default function MeetingDetailState({
     togglePlay, seekTo, skipTime, togglePlaybackRate, formatTime,
   } = useAudioPlayer(meeting.duration || 0);
 
-  const { exportTxt, exportDocx, exportPdf, downloadAudio } = useExport(meeting, toast, audioSrc);
+  const { exportParticipants, exportTxt, exportDocx, exportPdf, downloadAudio } = useExport(meeting, toast, audioSrc);
 
   const formatDate = useCallback((ts: number) => new Date(ts).toLocaleDateString("vi-VN"), []);
   const formatDuration = useCallback((sec: number) => formatTime(sec), [formatTime]);
@@ -155,6 +155,7 @@ export default function MeetingDetailState({
         onOpenDocsFill={() => setShowDocsFill(true)}
         onShare={handleShare}
         onDownloadAudio={downloadAudio}
+        onExportParticipants={exportParticipants}
         onExportTxt={exportTxt}
         onExportDocx={exportDocx}
         onExportPdf={exportPdf}

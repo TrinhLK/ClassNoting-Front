@@ -11,10 +11,17 @@ export async function saveMeetingContent(meeting: Meeting, expectedVersion?: Tim
     await persist(clean as unknown as Record<string, unknown>); return;
   }
   const generation = crypto.randomUUID();
-  const pages: Array<{ segments?: Meeting["segments"]; chatMessages?: Meeting["chatMessages"] }> = [];
-  for (const key of ["segments", "chatMessages"] as const) {
+  const pages: Array<{ segments?: Meeting["segments"]; chatMessages?: Meeting["chatMessages"]; attendanceObservations?: Meeting["attendanceObservations"]; participants?: Meeting["participants"] }> = [];
+  for (const key of ["segments", "chatMessages", "attendanceObservations", "participants"] as const) {
     const rows = clean[key] || [];
-    for (let i = 0; i < rows.length; i += 50) pages.push({ [key]: rows.slice(i, i + 50) });
+    let chunk: typeof rows = [];
+    let bytes = 0;
+    for (const row of rows) {
+      const size = Buffer.byteLength(JSON.stringify(row));
+      if (chunk.length && (bytes + size > 500_000 || chunk.length >= 50)) {pages.push({[key]:chunk});chunk=[];bytes=0;}
+      chunk.push(row as never);bytes+=size;
+    }
+    if (chunk.length) pages.push({[key]:chunk});
   }
   for (let i = 0; i < pages.length; i += 400) {
     const batch = getAdminDb().batch();
@@ -22,7 +29,7 @@ export async function saveMeetingContent(meeting: Meeting, expectedVersion?: Tim
     await batch.commit();
   }
   // Publish the generation only after all pages exist. Old pages remain recoverable.
-  await persist({ ...clean, segments: clean.segments.slice(-20), chatMessages: (clean.chatMessages || []).slice(-20), contentPaged: true, contentGeneration: generation });
+  await persist({ ...clean, participants: (clean.participants || []).slice(-200), attendanceObservations: [], segments: clean.segments.slice(-20), chatMessages: (clean.chatMessages || []).slice(-20), contentPaged: true, contentGeneration: generation });
 }
 
 export async function loadMeetingContent<T extends Meeting>(meeting: T): Promise<T> {
@@ -30,5 +37,5 @@ export async function loadMeetingContent<T extends Meeting>(meeting: T): Promise
   const generation = (meeting as T & { contentGeneration?: string }).contentGeneration;
   const pages = await getAdminDb().collection("meetings").doc(meeting.id).collection("content").where("generation", "==", generation).get();
   const rows = pages.docs.map(d => d.data()).sort((a, b) => a.index - b.index);
-  return { ...meeting, segments: rows.flatMap(r => r.segments || []), chatMessages: rows.flatMap(r => r.chatMessages || []) };
+  return { ...meeting, participants: rows.some(r => r.participants) ? rows.flatMap(r => r.participants || []) : meeting.participants, segments: rows.flatMap(r => r.segments || []), chatMessages: rows.flatMap(r => r.chatMessages || []), attendanceObservations: rows.flatMap(r => r.attendanceObservations || []) };
 }

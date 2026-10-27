@@ -100,6 +100,21 @@ describe("POST /api/extension/events + /end", () => {
     return (await res.json()).sessionId as string;
   };
 
+  it("keeps more than 20 queued attendance snapshots and rejects false complete rosters", async () => {
+    const sid=await newSession(); const at=Date.now();
+    const observations=Array.from({length:30},(_,i)=>({id:`o${i}`,at,complete:true,participants:[{id:"a",name:"An"}]}));
+    observations[29].participants.push({id:"b",name:""});
+    const result=await eventsPOST(authed({sessionId:sid,events:[{kind:"attendance",observations}]}));
+    expect(result.status).toBe(200);
+    const stored=[...store.entries()].filter(([key])=>key.includes(`/attendance/`)).map(([,value])=>value);
+    expect(stored).toHaveLength(30);
+    expect(stored.find(o=>o.id==='o29').complete).toBe(false);
+    expect(stored.find(o=>o.id==='o0').complete).toBe(true);
+    const response=await endPOST(authed({sessionId:sid}));expect(response.status).toBe(200);
+    const meeting=[...store.entries()].find(([key])=>key.startsWith('meetings/'))?.[1];
+    expect(meeting.attendanceObservations).toHaveLength(30);
+  });
+
   it("404 session lạ, 403 session của user khác", async () => {
     const r404 = await eventsPOST(authed({ sessionId: "nope", events: [] }));
     expect(r404.status).toBe(404);

@@ -149,3 +149,9 @@ Audio tab vẫn luôn được thu; mic thiết bị chỉ mở khi toolbar Meet
 ### 0.4.10 — không yêu cầu phụ đề để đọc tín hiệu người nói
 
 Không tự bật phụ đề. Đọc chỉ báo mức âm lượng trên ô Meet/danh sách người tham gia, gắn native participant ID và giữ các khoảng phát âm đồng thời. Phụ đề, nếu người dùng bật, vẫn là nguồn đối chiếu bổ sung. Người không có ô hoặc chỉ báo được render có thể chưa xác định; mức âm lượng không chứng minh đó là lời nói thay vì tạp âm. Chat của chính người ghi dùng tên Meet trực tiếp, không phụ thuộc phụ đề hay tài khoản web. Khung chat cần được Meet render để đọc tin nhắn.
+
+### 0.4.11 — báo cáo người tham gia
+
+- Lưu danh sách tài khoản và nhịp quan sát có mặt mỗi 5 giây từ lúc bắt đầu ghi.
+- Trong biên bản trên web, chọn Tải xuống → Người tham gia (.xlsx): tổng hợp, thời gian có mặt, tin nhắn, phát biểu.
+- Thời gian là tổng khoảng quan sát liên tục, không phải lịch sử điểm danh chính thức của Google Meet. Mở danh sách người tham gia giúp tăng độ phủ khi các ô bị ẩn. Khoảng mất quan sát không được cộng; biên bản cũ ghi Không có dữ liệu. ID đổi khi vào lại và người trùng tên không tự gộp.

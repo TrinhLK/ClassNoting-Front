@@ -37,7 +37,11 @@ it('starts collecting when a session arrives, survives restart, and uses durable
   dispatch({ type: 'CN_SESSION', sessionId: 's1', ownerDisplayName: 'An' });
   vi.advanceTimersByTime(6000);
   const batches = messages.filter(m => m.type === 'CN_EVENTS');
-  expect(batches).toHaveLength(1);
+  expect(batches).toHaveLength(2);
+  const observations = batches.flatMap(m => m.events).filter(e => e.kind === "attendance").flatMap(e => e.observations);
+  expect(observations.length).toBeGreaterThanOrEqual(2);
+  expect(observations[1].at - observations[0].at).toBeGreaterThan(0);
+  expect(observations[1].at - observations[0].at).toBeLessThanOrEqual(5000);
   expect(batches[0].events).toEqual(expect.arrayContaining([
     {kind: 'participants', participants: [{id: 'p1', name: 'An'}]},
     {kind: 'chat', messages: [expect.objectContaining({id: 'meet_spaces/test/messages/123', sender: 'An', text: 'Chào'})]},
@@ -45,7 +49,7 @@ it('starts collecting when a session arrives, survives restart, and uses durable
   dispatch({ type: 'CN_STOP' });
   dispatch({ type: 'CN_SESSION', sessionId: 's2', ownerDisplayName: 'An' });
   vi.advanceTimersByTime(2000);
-  expect(messages.filter(m => m.type === 'CN_EVENTS')).toHaveLength(2);
+  expect(messages.filter(m => m.type === 'CN_EVENTS' && m.sessionId === 's2')).toHaveLength(1);
 });
 
 it('publishes caption identity during continuous speech instead of waiting for silence', async () => {

@@ -18,7 +18,7 @@ export async function GET(req: Request, ctx: Context) {
   }
   const full = await loadMeetingContent(meeting);
   // Shared callers only need content, never internal job IDs or owner metadata.
-  return NextResponse.json({ segments: full.segments, chatMessages: full.chatMessages, speakers: full.speakers });
+  return NextResponse.json({ participants: full.participants, segments: full.segments, chatMessages: full.chatMessages, speakers: full.speakers, ...(!shareToken ? {attendanceObservations: full.attendanceObservations || []} : {}) });
 }
 export async function PUT(req: Request, ctx: Context) {
   const auth = await verifyExtensionAuth(req);
@@ -34,6 +34,7 @@ export async function PUT(req: Request, ctx: Context) {
     if (typeof body[key] === "string") editable[key] = body[key];
   }
   if (Array.isArray(body.actionItems)) editable.actionItems = body.actionItems;
-  await saveMeetingContent({ ...meeting, ...editable, segments: body.segments, speakers: body.speakers, chatMessages: body.chatMessages || meeting.chatMessages });
+  const full = await loadMeetingContent(meeting);
+  await saveMeetingContent({ ...full, ...editable, segments: body.segments, speakers: body.speakers, chatMessages: body.chatMessages || full.chatMessages });
   return NextResponse.json({ ok: true });
 }

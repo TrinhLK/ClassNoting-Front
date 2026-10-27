@@ -39,6 +39,7 @@ export type MeetingParticipant = {
 };
 
 export type ChatMessage = {
+  participantId?: string;
   id: string;
   sender: string;
   text: string;

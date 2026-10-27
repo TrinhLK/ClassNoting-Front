@@ -17,6 +17,17 @@ export function useExport(
   },
   audioSrc = ""
 ) {
+  const exportParticipants = useCallback(async () => {
+    const toastId=toast.loading("Đang xuất báo cáo người tham gia...") as string;
+    try {
+      const { participantXlsx }=await import('../lib/reports/participant-xlsx');
+      const blob=await participantXlsx(meeting);
+      saveAs(blob,`${meeting.title.replace(/[<>:"/\\|?*]/g,'_')}_nguoi-tham-gia.xlsx`);
+      toast.success('Đã xuất báo cáo người tham gia (.xlsx)');
+    } catch {toast.error('Không thể xuất báo cáo người tham gia');}
+    finally {toast.dismiss(toastId);}
+  }, [meeting, toast]);
+
   const exportTxt = useCallback(() => {
     try {
       const lines = meeting.segments.map((s) => `[${formatTime(s.start)}] ${s.text}`);
@@ -133,5 +144,5 @@ export function useExport(
     }
   }, [audioSrc, meeting, toast]);
 
-  return { exportTxt, exportDocx, exportPdf, downloadAudio };
+  return { exportParticipants, exportTxt, exportDocx, exportPdf, downloadAudio };
 }

@@ -94,6 +94,7 @@ export async function finalizeExtSession(
     extensionSessionId: session.id,
     meetingUrl: session.meetingUrl,
     provider: session.provider,
+    attendanceObservations: session.attendanceObservations || [],
     participants: session.participants,
     chatMessages: session.chatMessages,
     chatStats: computeChatStats(session.chatMessages, session.participants),

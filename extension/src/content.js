@@ -12,7 +12,7 @@
 
   // Đồng bộ với manifest.json — hiện trong ô chẩn đoán để biết tab đang
   // chạy content bản nào (tránh cãi nhau chuyện reload chưa).
-  const CODE_VERSION = "0.4.10";
+  const CODE_VERSION = "0.4.11";
 
   const shared = globalThis.ClassNotingShared;
   const platforms = globalThis.ClassNotingPlatforms;
@@ -34,6 +34,8 @@
   // Tên roster mới nhất — dùng để bóc "Tên nội dung" trong caption
   // (Meet mới không render dấu hai chấm).
   let lastRosterNames = [];
+  let lastRosterParticipants = [];
+  const attendanceObserver = Math.random().toString(36).slice(2);
   let lastActive = new Map();
   const activeSpans = [];
   let eventQueue = [];
@@ -62,6 +64,7 @@
     const events = Object.entries(byKind).map(([kind, items]) => {
       if (kind === "participants") return { kind, participants: items[items.length - 1] };
       if (kind === "chat") return { kind, messages: items };
+      if (kind === "attendance") return { kind, observations: items };
       // Caption CHỈ dùng fusion tên người nói cho ASR (background giữ trong
       // t.captions, không đẩy lên API) — không bao giờ thành segment transcript.
       if (kind === "caption") return { kind, captions: items };
@@ -301,6 +304,14 @@
     queue("chat", {
       id: messageId ? "meet_" + messageId : "chat_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8),
       sender: parsed.sender,
+      ...(() => {
+        const matches = lastRosterParticipants.filter(p => p.name === parsed.sender && p.id != null);
+        let self;
+        try { self = platform.selfParticipant?.(); } catch {}
+        const own = block.matches('.chmVPb') || !!block.querySelector('.chmVPb');
+        const id = own && self?.id ? self.id : matches.length === 1 ? matches[0].id : null;
+        return id != null ? {participantId:String(id)} : {};
+      })(),
       text: parsed.text,
       timestamp: Date.now(),
     });
@@ -317,13 +328,19 @@
   }
   setInterval(pollChatBlocks, 3000);
 
-  // Roster: quét mỗi 5s, chỉ gửi khi thay đổi.
+  // Attendance heartbeat every 5s; roster metadata only when changed.
   function pollRoster() {
     if (!running || !sessionId) return;
     let roster = [];
+    let complete = false;
     try {
-      roster = platform.scrapeRoster() || [];
+      const snapshot = platform.attendanceSnapshot?.();
+      roster = snapshot?.participants || platform.scrapeRoster() || [];
+      complete = snapshot?.complete === true;
     } catch (e) { /* DOM lạ */ }
+    lastRosterParticipants = roster;
+    const at = Date.now();
+    queue("attendance", {id:`attendance_${attendanceObserver}_${at}`, at, participants:roster, complete});
     lastRosterNames = roster.map((r) => r.name).filter(Boolean);
     const key = JSON.stringify(roster.map((r) => [r.name, r.id || null]));
     if (key !== lastRosterKey) {
@@ -444,6 +461,7 @@
       activateSession(msg.sessionId);
     }
     if (msg?.type === "CN_STOP") {
+      pollRoster();
       running = false;
       flushPendingCaption();
       flush();
@@ -469,6 +487,7 @@
   });
 
   window.addEventListener("beforeunload", () => {
+    pollRoster();
     flushPendingCaption();
     flush();
   });

@@ -36,3 +36,19 @@ describe("durable meeting history", () => {
     expect((await loadMeetingContent(stored)).segments).toHaveLength(550);
   });
 });
+
+it("persists all attendance snapshots through retries, preview bounds and meeting pages", async () => {
+  const session = await createExtSession({ownerUid:"u",provider:"meet",meetingUrl:"x",title:"presence"});
+  const observations=Array.from({length:120},(_,i)=>({id:`o${i}`,at:i*5000,complete:true,participants:[{id:"a",name:"An"}]}));
+  await patchExtSession(session.id,{attendanceObservations:observations});
+  await patchExtSession(session.id,{attendanceObservations:observations});
+  const preview=(await getExtSession(session.id))!;
+  expect(preview.attendanceObservations).toHaveLength(1);
+  const full=await loadExtHistory(preview);
+  expect(full.attendanceObservations).toHaveLength(120);
+  expect(full.participants).toEqual([{id:"a",name:"An"}]);
+  await saveMeetingContent(mockMeeting({contentPaged:true,attendanceObservations:full.attendanceObservations,participants:full.participants}));
+  const restored=await loadMeetingContent(store.get("meetings/meeting_test_1"));
+  expect(restored.attendanceObservations).toEqual(full.attendanceObservations);
+  expect(restored.participants).toEqual(full.participants);
+});

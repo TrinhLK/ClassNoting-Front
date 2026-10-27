@@ -26,6 +26,7 @@ export interface TaskItem {
 
 export interface Meeting {
   extensionSessionId?: string;
+  attendanceObservations?: import("../attendance").AttendanceObservation[];
   contentPaged?: boolean;
   summaryNeedsReview?: boolean;
   refinement?: { status: string; jobId?: string; error?: string };

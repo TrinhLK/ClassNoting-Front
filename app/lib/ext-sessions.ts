@@ -34,6 +34,7 @@ export interface ExtSession {
   liveSegments: ExtLiveSegment[];
   /** Đường dẫn các chunk audio đã upload (Storage), để ghép khi end. */
   audioManifest: string[];
+  attendanceObservations?: import("./attendance").AttendanceObservation[];
   historyVersion?: number;
   meetingId?: string;
   /** SHA-256 hashes of bearer tokens used to view this session publicly while live. */
@@ -218,6 +219,7 @@ export async function listLiveSessions(ownerUid: string): Promise<ExtSession[]> 
 
 export interface ExtSessionPatch {
   title?: string;
+  attendanceObservations?: import("./attendance").AttendanceObservation[];
   participants?: MeetingParticipant[];
   chatMessages?: ChatMessage[];
   liveSegments?: ExtLiveSegment[];
@@ -271,19 +273,20 @@ export async function patchExtSession(
     const snap = await tx.get(ref);
     if (!snap.exists) return null;
     const cur = snap.data() as ExtSession;
-    if (cur.status !== "live" && (patch.liveSegments?.length || patch.chatMessages?.length || patch.participants?.length)) throw new Error("Session ended");
+    if (cur.status !== "live" && (patch.liveSegments?.length || patch.chatMessages?.length || patch.participants?.length || patch.attendanceObservations?.length)) throw new Error("Session ended");
     const next: ExtSession = { ...cur, updatedAt: Date.now() };
     if (patch.title !== undefined) next.title = patch.title;
-    if (patch.participants) {
+    if (patch.participants || patch.attendanceObservations?.length) {
       const people = new Map(cur.participants.map(p => [String(p.id ?? p.name), p]));
-      patch.participants.forEach(p => people.set(String(p.id ?? p.name), p));
-      next.participants = [...people.values()];
+      [...(patch.participants || []), ...(patch.attendanceObservations || []).flatMap(o => o.participants)].forEach(p => people.set(String(p.id ?? p.name), p));
+      next.participants = [...people.values()].slice(-1000);
     }
     // Read every prior revision before making transaction writes.
     const candidates = [
+      ...(patch.attendanceObservations || []).map(value => ({ collection: "attendance", value })),
       ...(patch.chatMessages || []).map(value => ({ collection: "chat", value })),
       ...(patch.liveSegments || []).map(value => ({ collection: "segments", value })),
-    ].filter(c => c.value.id && c.value.text.trim());
+    ].filter(c => c.value.id && (!("text" in c.value) || c.value.text.trim()));
     const changeMap = new Map<string, typeof candidates[number]>();
     for (const c of candidates) {
       const key = `${c.collection}/${c.value.id}`;
@@ -311,11 +314,14 @@ export async function patchExtSession(
       });
       next.liveSegments = [...items.values()].sort((a, b) => a.start - b.start).slice(-EXT_MAX_SEGMENTS);
     }
+    if (patch.attendanceObservations?.length) next.attendanceObservations = patch.attendanceObservations.slice(-1);
     // The document is a bounded live preview; immutable history is in subcollections.
     while (Buffer.byteLength(JSON.stringify(next)) > 700_000 && (next.liveSegments.length || next.chatMessages.length)) {
       if (next.liveSegments.length > next.chatMessages.length) next.liveSegments.shift();
       else next.chatMessages.shift();
     }
+    // Observation history lives in its own collection, not the bounded preview.
+    if (patch.attendanceObservations?.length) next.attendanceObservations = patch.attendanceObservations.slice(-1);
     if (patch.audioManifestAppend?.length) next.audioManifest = [...new Set([...cur.audioManifest, ...patch.audioManifestAppend])];
     if (patch.status) next.status = patch.status;
     if (patch.meetingId) next.meetingId = patch.meetingId;
@@ -327,9 +333,12 @@ export async function patchExtSession(
 /** Full history for finalization, including legacy inline rows. */
 export async function loadExtHistory(session: ExtSession): Promise<ExtSession> {
   const ref = db().collection(COLLECTION).doc(session.id);
-  const [segments, chat] = await Promise.all([ref.collection("segments").get(), ref.collection("chat").get()]);
+  const [segments, chat, attendance] = await Promise.all([ref.collection("segments").get(), ref.collection("chat").get(), ref.collection("attendance").get()]);
   const merge = <T extends { id: string }>(inline: T[], stored: T[]) => [...new Map([...inline, ...stored].map(v => [v.id, v])).values()];
-  return { ...session,
+  const observations = merge(session.attendanceObservations || [], attendance.docs.map(d => d.data() as import("./attendance").AttendanceObservation));
+  const people = new Map([...session.participants, ...observations.flatMap(o => o.participants)].map(p => [String(p.id ?? p.name),p]));
+  return { ...session, participants: [...people.values()],
+    attendanceObservations: merge(session.attendanceObservations || [], attendance.docs.map(d => d.data() as import("./attendance").AttendanceObservation)).sort((a,b) => a.at-b.at),
     liveSegments: merge(session.liveSegments, segments.docs.map(d => d.data() as ExtLiveSegment)).sort((a, b) => a.start - b.start),
     chatMessages: merge(session.chatMessages, chat.docs.map(d => d.data() as ChatMessage)).sort((a, b) => a.timestamp - b.timestamp),
   };

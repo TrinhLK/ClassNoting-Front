@@ -15,6 +15,7 @@ interface MeetingHeaderProps {
   onOpenDocsFill: () => void;
   onShare: () => Promise<void>;
   onDownloadAudio: () => void;
+  onExportParticipants?: () => void;
   onExportTxt: () => void;
   onExportDocx: () => void;
   onExportPdf: () => void;
@@ -25,7 +26,7 @@ interface MeetingHeaderProps {
 export default function MeetingHeader({
   meeting, isReadOnly, showTemplateBtn,
   onBack, onEdit, onOpenTemplateModal, onOpenDocsFill,
-  onShare, onDownloadAudio, onExportTxt, onExportDocx, onExportPdf,
+  onShare, onDownloadAudio, onExportParticipants, onExportTxt, onExportDocx, onExportPdf,
   formatDate, formatDuration
 }: MeetingHeaderProps) {
   const [showExportMenu, setShowExportMenu] = useState(false);
@@ -66,6 +67,9 @@ export default function MeetingHeader({
                 <button onClick={() => { onDownloadAudio(); setShowExportMenu(false); }} className="w-full text-left px-4 py-3 text-sm hover:bg-slate-50 flex items-center gap-3 text-slate-700">
                   <Music className="w-4 h-4 text-pink-500" /> Audio
                 </button>
+                {!isReadOnly && onExportParticipants && <button onClick={() => { onExportParticipants(); setShowExportMenu(false); }} className="w-full text-left px-4 py-3 text-sm hover:bg-slate-50 flex items-center gap-3 text-slate-700 border-t border-slate-100">
+                  <FileText className="w-4 h-4 text-emerald-600" /> Người tham gia (.xlsx)
+                </button>}
                 <button onClick={() => { onExportTxt(); setShowExportMenu(false); }} className="w-full text-left px-4 py-3 text-sm hover:bg-slate-50 flex items-center gap-3 text-slate-700 border-t border-slate-100">
                   <FileText className="w-4 h-4 text-slate-400" /> Nội dung (.txt)
                 </button>

@@ -70,6 +70,7 @@ export function mergeMeetingDocs(existing: Meeting | null, incoming: Meeting): M
     speakers,
     participants,
     chatMessages,
+    attendanceObservations: unionById(existing.attendanceObservations || [], incoming.attendanceObservations || []).sort((a,b) => a.at-b.at),
     chatStats: computeChatStats(chatMessages, participants),
     summary: existing.summary || incoming.summary,
     status,
