@@ -127,16 +127,22 @@ export function useExport(
       const convertToastId = toast.loading("Đang chuyển đổi sang MP3...") as string;
       try {
         const { convertToMp3 } = await import("../lib/converter");
-        const mp3File = await convertToMp3(
-          new File([blob], "audio.webm", { type: blob.type || "audio/webm" }),
-          () => {}
-        );
-        toast.dismiss(convertToastId);
+        const mp3File = await convertToMp3(new File([blob], "audio.webm", { type: blob.type || "audio/webm" }));
         saveAs(mp3File, `${meeting.title}.mp3`);
         toast.success("Đã tải audio MP3");
       } catch {
+        // Keep the original bytes if the browser's MP3 encoder cannot run.
+        const bytes = new Uint8Array(await blob.slice(0, 12).arrayBuffer());
+        const ascii = (from: number, to: number) => String.fromCharCode(...bytes.slice(from, to));
+        const extension = bytes[0] === 0x1a && bytes[1] === 0x45 && bytes[2] === 0xdf && bytes[3] === 0xa3 ? "webm"
+          : ascii(0, 4) === "RIFF" && ascii(8, 12) === "WAVE" ? "wav"
+          : ascii(0, 4) === "OggS" ? "ogg"
+          : ascii(4, 8) === "ftyp" ? "m4a"
+          : ascii(0, 3) === "ID3" || blob.type === "audio/mpeg" ? "mp3" : "audio";
+        saveAs(blob, `${meeting.title.replace(/[<>:"/\\|?*]/g, "_")}.${extension}`);
+        toast.success("Không chuyển được sang MP3; đã tải audio gốc.");
+      } finally {
         toast.dismiss(convertToastId);
-        toast.error("Lỗi chuyển đổi MP3");
       }
     } catch {
       toast.dismiss(toastId);

@@ -64,6 +64,25 @@ describe("useExport downloadAudio", () => {
     expect(toast.error).toHaveBeenCalledWith("Lỗi khi tải audio");
   });
 
+  it("lưu nguyên byte WebM khi bộ mã hóa MP3 báo lỗi", async () => {
+    const bytes = new Uint8Array([0x1a, 0x45, 0xdf, 0xa3, 0x01]);
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(bytes, { headers: { "Content-Type": "application/octet-stream" } })
+    );
+    convertToMp3Mock.mockRejectedValueOnce(new Error("encoder unavailable"));
+    const toast = makeToast();
+    const meeting = mockMeeting({ title: "Họp 9/11" });
+    const { result } = renderHook(() => useExport(meeting, toast, "blob:recording"));
+
+    await act(() => result.current.downloadAudio());
+
+    expect(saveAsMock).toHaveBeenCalledTimes(1);
+    const [saved, filename] = saveAsMock.mock.calls[0];
+    expect(filename).toBe("Họp 9_11.webm");
+    expect(new Uint8Array(await saved.arrayBuffer())).toEqual(bytes);
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
   it("tiếp tục dùng proxy cho audio cloud", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(new Blob(["audio-data"], { type: "audio/mpeg" }), { status: 200 })

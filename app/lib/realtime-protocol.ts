@@ -364,8 +364,9 @@ export function splitSpeakerTurns(packet: ParsedServerPacket): ParsedServerPacke
 }
 
 export function speakersFromSegments(segments: Array<{ speakerId: string }>) {
-  return [...new Set(segments.map(s => s.speakerId))].map((id, index) => ({
-    id, name: id.includes("-1") ? "Chưa xác định" : `Người nói ${index + 1}`,
+  let ordinal = 0;
+  return [...new Set(segments.map(s => s.speakerId))].map(id => ({
+    id, name: id === "SPEAKER_-1" ? "Chưa xác định" : `Người nói ${++ordinal}`,
     color: "bg-indigo-50 text-indigo-700",
   }));
 }
