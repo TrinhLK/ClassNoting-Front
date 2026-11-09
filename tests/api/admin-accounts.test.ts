@@ -61,7 +61,7 @@ describe("root administrator boundary", () => {
     expect(normal).toMatchObject({ email: "user@example.com", freeUsed: 1, freeLimit: 10, hasPersonalKey: true });
     expect(JSON.stringify(data)).not.toContain("TOP-SECRET"); expect(JSON.stringify(data)).not.toContain("abcd");
     expect(data.accounts.find((u: any) => u.uid === SYSTEM_ADMIN_UID)).toMatchObject({ unlimited: true, freeLimit: null });
-    expect(state.db.getAll.mock.calls.some((args: any[]) => JSON.stringify(args.at(-1)) === '{"fieldMask":["removed"]}')).toBe(true);
+    expect(state.db.projections).toContainEqual(["removed"]);
   });
 });
 describe("quota grants and audit", () => {

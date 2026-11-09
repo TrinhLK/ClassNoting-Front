@@ -36,6 +36,8 @@ export const saveCustomTemplate = async (userId: string, template: Partial<Meeti
       name: template.name,
       description: template.description || "",
       structure: template.structure,
+      ...(template.sourceFileName ? { sourceFileName: template.sourceFileName } : {}),
+      ...(template.sourceMode ? { sourceMode: template.sourceMode } : {}),
       updatedAt: Date.now()
     };
     await setDoc(templateRef, dataToSave, { merge: true });

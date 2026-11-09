@@ -42,3 +42,7 @@ next-env.d.ts
 # Release artifacts and temporary design files
 /artifacts/
 /.superdesign/tmp/
+/dist/
+.vinext/
+.wrangler/
+.dev.vars*

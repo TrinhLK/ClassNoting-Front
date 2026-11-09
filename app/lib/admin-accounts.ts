@@ -17,7 +17,10 @@ export async function listAdminAccounts(cursor?: string, email?: string) {
     db.getAll(...refs.map(ref => ref.usage)), db.getAll(...refs.map(ref => ref.policy)),
     db.getAll(...refs.map(ref => ref.activity)),
     // Credential bytes never enter this listing path, even on the server.
-    db.getAll(...refs.map(ref => ref.key), { fieldMask: ["removed"] }),
+    Promise.all(refs.map(async ref => {
+      const snapshot = await ref.key.parent.where("__name__", "==", ref.key).select("removed").limit(1).get();
+      return { exists: !snapshot.empty, data: () => snapshot.docs[0]?.data() };
+    })),
   ]) : [[], [], [], []];
   return {
     accounts: result.users.map((user, i) => {
@@ -49,7 +52,7 @@ export async function changeAccountQuota(adminUid: string, targetUid: string, in
   if (body.action === "unlimited" && typeof body.unlimited !== "boolean") throw new AiAccountError("INVALID_LIMIT", "Trạng thái không giới hạn không hợp lệ.");
   const db = getAdminDb();
   const ref = db.collection("server_ai_policies").doc(targetUid);
-  const audit = db.collection("server_admin_audit").doc();
+  const audit = db.collection("server_admin_audit").doc(crypto.randomUUID());
   return db.runTransaction(async tx => {
     const snap = await tx.get(ref);
     const previous = effectiveAiQuota(targetUid, snap.data());

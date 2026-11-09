@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { FieldValue } from "firebase-admin/firestore";
+import { FieldValue } from "@ljoukov/firebase-admin-cloudflare/firestore";
 import { getAdminDb } from "@/app/lib/firebase-admin";
 import { verifyExtensionAuth } from "@/app/lib/extension-auth";
 

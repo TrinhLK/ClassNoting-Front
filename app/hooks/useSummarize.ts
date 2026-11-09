@@ -6,6 +6,7 @@ import { uploadAudioToFirebase, requestSummary } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { useGlobalUI } from "../context/GlobalUIProvider";
 import { meetingAiSessionId } from "../lib/ai-session";
+import { deleteFieldValue } from "../lib/utils/firestore";
 
 export function useSummarize(onRefresh?: () => void) {
   const { user } = useAuth();
@@ -64,6 +65,7 @@ export function useSummarize(onRefresh?: () => void) {
       await updateMeetingProcess(meetingId, {
         status: MEETING_STATUS.COMPLETED,
         summary: summary,
+        errorMessage: deleteFieldValue<string>(),
       });
 
       if (isDraft) {
@@ -86,7 +88,8 @@ export function useSummarize(onRefresh?: () => void) {
       });
 
       await updateMeetingProcess(meetingId, {
-        status: [402, 409].includes(error.status) && !isDraft ? meeting.status : MEETING_STATUS.FAILED,
+        status: !isDraft && meeting.summary?.trim() ? MEETING_STATUS.COMPLETED
+          : [402, 409].includes(error.status) && !isDraft ? meeting.status : MEETING_STATUS.FAILED,
         errorMessage: error.message,
       });
 
@@ -96,7 +99,7 @@ export function useSummarize(onRefresh?: () => void) {
       } else if (error.status === 400) {
         userMessage = "Transcript trống hoặc không hợp lệ. Không thể tóm tắt.";
       } else if (error.status === 503 || error.status === 502 || error.status === 504) {
-        userMessage = "Server AI tạm thời không khả dụng. Thử lại sau ít phút.";
+        userMessage = error.message || "Server AI tạm thời không khả dụng. Thử lại sau ít phút.";
       } else if (error.name === "AbortError") {
         userMessage = "Quá thời gian chờ (7 phút). Mạng chậm hoặc model bận. Thử lại sau.";
       } else if (typeof navigator !== "undefined" && !navigator.onLine) {

@@ -3,6 +3,7 @@ import { meetingEvidence } from "../lib/meeting-evidence";
 import { useState, useCallback } from "react";
 import { Meeting, generateMeetingShareToken } from "../lib/db";
 import type { MeetingTemplate } from "../lib/templates";
+import { meetingTemplateInstruction } from "../lib/templates";
 
 export type MeetingTab = "transcript" | "summary" | "chat";
 
@@ -37,7 +38,7 @@ export function useMeetingDetail(
   const handleSummarizeRequest = useCallback((template: MeetingTemplate) => {
     if (!onSummarize) return;
     const fullText = meetingEvidence(meeting, { includeEvidenceIds: false });
-    onSummarize(meeting, fullText, template.structure);
+    onSummarize(meeting, fullText, meetingTemplateInstruction(template));
     toast?.info(`Đang tóm tắt theo mẫu: ${template.name}...`);
     setShowTemplateModal(false);
     onBack?.();

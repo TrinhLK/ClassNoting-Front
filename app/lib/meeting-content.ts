@@ -5,7 +5,15 @@ import type { Meeting } from "./db";
 /** Keep large meetings below the Firestore document limit without discarding history. */
 export async function saveMeetingContent(meeting: Meeting, expectedVersion?: Timestamp) {
   const ref = getAdminDb().collection("meetings").doc(meeting.id);
-  const persist = (data: Record<string, unknown>) => expectedVersion ? ref.update(data, { lastUpdateTime: expectedVersion }) : ref.set(data);
+  const persist = (data: Record<string, unknown>) => expectedVersion
+    ? getAdminDb().runTransaction(async tx => {
+      const current = await tx.get(ref);
+      if (!current.updateTime?.isEqual(expectedVersion)) {
+        throw Object.assign(new Error("Meeting changed while saving content"), { code: 9 });
+      }
+      tx.update(ref, data);
+    })
+    : ref.set(data);
   const clean = JSON.parse(JSON.stringify(meeting)) as Meeting;
   if (Buffer.byteLength(JSON.stringify(clean)) < 700_000 && !meeting.contentPaged) {
     await persist(clean as unknown as Record<string, unknown>); return;

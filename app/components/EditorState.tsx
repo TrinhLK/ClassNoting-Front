@@ -13,7 +13,7 @@ import type { Word } from "../lib/mockData";
 import { formatTime as formatTimestamp } from "../lib/format";
 import { useGlobalUI } from "../context/GlobalUIProvider";
 import { useAuth } from "../context/AuthContext";
-import { MeetingTemplate, DEFAULT_TEMPLATES } from "../lib/templates";
+import { MeetingTemplate, DEFAULT_TEMPLATES, meetingTemplateInstruction } from "../lib/templates";
 import TemplateManagerModal from "./TemplateManagerModal";
 import SegmentList from "./Editor/SegmentList";
 import EditorHeader from "./Editor/Header";
@@ -418,7 +418,7 @@ export default function EditorState({
   const handleSummarizeRequest = useCallback(() => {
     const fullText = segments.map(s => `[${formatTimestamp(s.start)}] [${speakers.find(sp => sp.id === s.speakerId)?.name}]: ${s.text}`).join("\n");
     // [UPDATE] Truyền structure của template đang chọn
-    onSummarize(initialData, fullText, selectedTemplate.structure);
+    onSummarize(initialData, fullText, meetingTemplateInstruction(selectedTemplate));
     toast.info(`Đang tóm tắt theo mẫu: ${selectedTemplate.name}...`);
     onBack();
   }, [segments, speakers, selectedTemplate, formatTimestamp, initialData, onSummarize, toast, onBack]);

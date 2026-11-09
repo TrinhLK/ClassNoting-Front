@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
+import { createElement, StrictMode } from "react";
 import useLocalTranscription from "@/app/hooks/useLocalTranscription";
 
 // ---------------------------------------------------------------------------
@@ -19,6 +20,14 @@ class MockWebSocket {
   onmessage: ((e: { data: string }) => void) | null = null;
   onerror: (() => void) | null = null;
   sent: unknown[] = [];
+  listeners = new Set<(event: { data: string }) => void>();
+  addEventListener(_type: string, handler: (event: { data: string }) => void) { this.listeners.add(handler); }
+  removeEventListener(_type: string, handler: (event: { data: string }) => void) { this.listeners.delete(handler); }
+  receive(data: unknown) {
+    const event = { data: JSON.stringify(data) };
+    this.onmessage?.(event);
+    for (const handler of this.listeners) handler(event);
+  }
 
   constructor(url: string) {
     this.url = url;
@@ -97,6 +106,49 @@ describe("useLocalTranscription — WebSocket reconnect", () => {
     vi.useRealTimers();
     restoreGlobal("WebSocket", originalWsDesc);
     restoreGlobal("AudioContext", originalAcDesc);
+  });
+
+  it("keeps complete interim text, repeated finals, and the final flush on pause/resume", async () => {
+    const onFinal = vi.fn();
+    const { result } = renderHook(() => useLocalTranscription(onFinal), {
+      wrapper: ({ children }) => createElement(StrictMode, null, children),
+    });
+    await act(async () => result.current.startListening(fakeStream));
+    const socket = lastInstance();
+    act(() => {
+      socket.simulateOpen();
+      socket.receive({ type: "ready", protocol: 2 });
+    });
+    const packet = (text: string, start: number, final = true) => ({
+      protocol: 2, is_final: final, channel: { alternatives: [{ transcript: text, words: [
+        { word: "Are", start, end: start + .2, speaker: 0 },
+        { word: "ready?", start: start + .3, end: start + .5, speaker: 1 },
+      ] }] },
+    });
+    act(() => socket.receive(packet("Are you ready? Let's begin.", 0, false)));
+    expect(result.current.interimContent).toBe("Are you ready? let's begin.");
+    act(() => socket.receive(packet("Are you ready? Let's begin.", 0)));
+    expect(result.current.interimContent).toBe("");
+    expect(result.current.segments[0].content).toBe("Are you ready? let's begin.");
+    act(() => socket.receive(packet("Are you ready? Let's begin.", .6)));
+    expect(result.current.segments[0].content).toBe("Are you ready? let's begin. Are you ready? let's begin.");
+
+    let stopped!: Promise<void>;
+    act(() => { stopped = result.current.stopListening(); });
+    expect(socket.sent).toContain(JSON.stringify({ type: "flush" }));
+    act(() => {
+      socket.receive(packet("The last complete sentence.", 2));
+      socket.receive({ type: "flushed" });
+    });
+    await act(async () => stopped);
+    expect(result.current.segments.map(s => s.content).join(" ")).toContain("The last complete sentence.");
+    expect(onFinal.mock.calls.map(([event]) => event.content)).toEqual([
+      "Are you ready? let's begin.", "Are you ready? let's begin.", "The last complete sentence.",
+    ]);
+    expect(result.current.isListening).toBe(false);
+    await act(async () => result.current.startListening(fakeStream, 3));
+    act(() => lastInstance().receive(packet("Resume keeps the full text.", 3)));
+    expect(result.current.segments.map(s => s.content).join(" ")).toContain("The last complete sentence. Resume keeps the full text.");
   });
 
   it("retry đúng 5 lần rồi báo lỗi vĩnh viễn (không kẹt ở 1/5)", async () => {

@@ -151,12 +151,13 @@ export const mergeText = (prev: string, next: string): string => {
   const n = next.trim();
   if (!p) return n;
   if (!n) return p;
-  if (n.startsWith(p)) return n;
+  if (n === p || (n.startsWith(p) && /\s|[.,!?;:]/u.test(n.charAt(p.length)))) return n;
   const overlapMax = Math.min(p.length, n.length, 20);
   for (let i = overlapMax; i > 0; i--) {
     const suffix = p.slice(-i);
     const prefix = n.slice(0, i);
-    if (suffix === prefix) return p + n.slice(i);
+    if (suffix === prefix && (i === p.length || /\s/u.test(p.charAt(p.length - i - 1)))
+      && (i === n.length || /\s|[.,!?;:]/u.test(n.charAt(i)))) return p + n.slice(i);
   }
   if (/^[.,!?;:]/.test(n)) return p + n;
   return p + " " + n;
@@ -193,7 +194,7 @@ export function mergeFinalSegment(
   const currentStart = words.length > 0 ? words[0].start : prevLastEnd + 0.1;
   const gap = currentStart - prevLastEnd;
   const lastEnd =
-    words.length > 0 ? words[words.length - 1].end : prevLastEnd;
+    words.length > 0 ? Math.max(prevLastEnd, words[words.length - 1].end) : prevLastEnd;
 
   if (lastSegment && lastSegment.speaker === speaker && gap < 1.0) {
     return {
@@ -201,7 +202,11 @@ export function mergeFinalSegment(
         ...prev.slice(0, -1),
         {
           ...lastSegment,
-          content: mergeText(lastSegment.content, transcript),
+          // Final packets on a forward timeline are independent utterances.
+          // Text similarity alone must never delete spoken words.
+          content: words.length > 0 && gap < 0
+            ? mergeText(lastSegment.content, transcript)
+            : lastSegment.content.trimEnd() + (/^[.,!?;:]/.test(transcript) ? "" : " ") + transcript.trim(),
           words: (lastSegment.words || []).concat(words),
         },
       ],
@@ -348,6 +353,13 @@ export function splitSpeakerTurns(packet: ParsedServerPacket): ParsedServerPacke
     group.rawTranscript += (group.rawTranscript ? " " : "") + word.word;
   }
   if (groups.length <= 1) return [{ ...packet, rawWords: words, serverSpeaker: groups[0]?.serverSpeaker ?? packet.serverSpeaker }];
+  // Word metadata can be sparse (or lose invalid timestamps). Never replace a
+  // complete ASR sentence with only the words that happened to have labels.
+  const reconstructed = groups.map(group => group.rawTranscript).join(" ");
+  const normalize = (text: string) => text.trim().replace(/\s+/gu, " ");
+  if (normalize(reconstructed) !== normalize(packet.rawTranscript)) {
+    return [{ ...packet, rawWords: words, serverSpeaker: -1 }];
+  }
   return groups;
 }
 

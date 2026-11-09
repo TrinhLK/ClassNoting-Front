@@ -69,18 +69,17 @@ export default function useLocalTranscription(
         if (data?.type === "ready") { protocolRef.current = data.protocol || 1; return; }
         const parsed = parseServerMessage(data);
         if (!parsed) return;
+        // Interim text is a complete replaceable hypothesis, not speaker turns.
+        if (parsed.kind === "interim") {
+            setInterimContent(formatTranscriptText(parsed.rawTranscript));
+            return;
+        }
+        setInterimContent("");
         for (const packet of splitSpeakerTurns(parsed)) {
         // null = keepalive / message rỗng / sai định dạng → bỏ qua.
         if (!packet) return;
 
         const transcript = formatTranscriptText(packet.rawTranscript);
-
-        if (packet.kind === "interim") {
-            setInterimContent(transcript);
-            return;
-        }
-
-        setInterimContent("");
 
         const rawWords = packet.rawWords.map((w) => {
             if (serverStartOffsetRef.current === null) {
@@ -110,15 +109,18 @@ export default function useLocalTranscription(
         const speaker = packet.serverSpeaker < 0 ? -1 : speakerMapRef.current.get(key)!;
         if (onFinal) onFinal({ speaker, content: transcript });
 
+        // Capture timing before scheduling React state; updaters must remain pure
+        // because React can replay them in Strict Mode.
+        const previousEnd = lastEndTimestampRef.current;
+        if (words.length) lastEndTimestampRef.current = Math.max(previousEnd, words[words.length - 1].end);
         setSegments(prev => {
             const result = mergeFinalSegment(
                 prev,
                 transcript,
                 words,
                 speaker,
-                lastEndTimestampRef.current
+                previousEnd
             );
-            lastEndTimestampRef.current = result.lastEnd;
             return result.segments.map(s => ({ ...s, uncertain: s.speaker < 0 }));
         });
         }
