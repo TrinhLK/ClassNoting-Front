@@ -13,10 +13,11 @@ manifest["host_permissions"] = [
     "https://meet.google.com/*",
     "https://smart-noting.vercel.app/*",
     "https://noting.io.vn/*",
+    "https://ez.noting.io.vn/*",
     "https://asr-live.noting.io.vn/*",
 ]
 manifest["externally_connectable"]["matches"] = [
-    "https://smart-noting.vercel.app/*", "https://noting.io.vn/*"
+    "https://smart-noting.vercel.app/*", "https://noting.io.vn/*", "https://ez.noting.io.vn/*"
 ]
 manifest["homepage_url"] = "https://smart-noting.vercel.app/extension"
 files = sorted((SOURCE / "src").glob("*.js")) + sorted((SOURCE / "src").glob("*.html"))

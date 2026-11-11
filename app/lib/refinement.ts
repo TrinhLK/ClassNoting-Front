@@ -53,9 +53,10 @@ export async function startRefinement(meeting: Meeting) {
 
 /** Transfer names only when a whole offline cluster has consistent, strong named evidence. */
 export function applyRefinement(original: Meeting, refined: Segment[]): Meeting {
-  const speakers: Speaker[] = [...original.speakers];
+  const isUnknownVoice = (id: string) => /(?:^|:)(?:SPEAKER_)?-1$/i.test(id);
   const names = new Map<string, string>();
   for (const voice of new Set(refined.map(s => s.speakerId))) {
+    if (isUnknownVoice(voice)) continue;
     const votes = new Map<string, number>();
     for (const seg of refined.filter(s => s.speakerId === voice)) for (const live of original.segments) {
       if (live.uncertain || !live.participantId) continue;
@@ -93,12 +94,24 @@ export function applyRefinement(original: Meeting, refined: Segment[]): Meeting 
     flush();
   }
   const segments = unlocked.map(s => {
-    const speakerId = names.get(s.speakerId) || `offline:${s.speakerId}`;
-    if (!speakers.some(p => p.id === speakerId)) speakers.push({ id: speakerId, name: `Người nói ${speakers.length + 1}`, color: "bg-indigo-50 text-indigo-700" });
+    const speakerId = isUnknownVoice(s.speakerId) ? "SPEAKER_-1" : names.get(s.speakerId) || `offline:${s.speakerId}`;
     const namedEvidence = original.segments.find(live => live.speakerId === speakerId && live.participantId && !live.uncertain);
     return { ...s, ...(namedEvidence?.participantId ? { participantId: namedEvidence.participantId } : {}), speakerId, uncertain: !names.has(s.speakerId), speakerSource: "diarization" as const, revision: 2 };
   });
-  return { ...original, segments: [...segments, ...manual].sort((a, b) => a.start - b.start), speakers,
+  const ordered = [...segments, ...manual].sort((a, b) => a.start - b.start);
+  const activeIds = [...new Set(ordered.map(s => s.speakerId))];
+  const existing = new Map(original.speakers.map(s => [s.id, s]));
+  const usedNames = new Set(activeIds.flatMap(id => existing.has(id) ? [existing.get(id)!.name] : []));
+  let ordinal = 0;
+  const speakers: Speaker[] = activeIds.map(id => {
+    const saved = existing.get(id);
+    if (saved) return saved;
+    if (id === "SPEAKER_-1") return { id, name: "Chưa xác định", color: "bg-indigo-50 text-indigo-700" };
+    let name: string;
+    do { name = `Người nói ${++ordinal}`; } while (usedNames.has(name));
+    return { id, name, color: "bg-indigo-50 text-indigo-700" };
+  });
+  return { ...original, segments: ordered, speakers,
     summaryNeedsReview: !!original.summary, refinement: { status: "completed" } };
 }
 

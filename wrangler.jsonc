@@ -1,0 +1,23 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ez-noting",
+  "compatibility_date": "2026-11-06",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  // Gemini rejects requests from some edge locations. Keep backend execution
+  // near a supported Google Cloud US region; assets still use the global CDN.
+  "placement": { "region": "gcp:us-east4" },
+  "main": "vinext/server/fetch-handler",
+  "assets": {
+    "directory": "dist/client",
+    "html_handling": "none",
+    "not_found_handling": "none",
+    "binding": "ASSETS",
+    "run_worker_first": [
+      "/*",
+      "!/_next/static/*",
+      "!/*/_next/static/*"
+    ]
+  }
+}

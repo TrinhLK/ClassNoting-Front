@@ -19,6 +19,7 @@
     "https://noting.io.vn/*",
     "https://*.noting.io.vn/*",
     "http://localhost:3000/*",
+    "http://localhost:6789/*",
     "https://asr-live.noting.io.vn/*"
   ],
   "background": {
@@ -50,6 +51,7 @@
   "externally_connectable": {
     "matches": [
       "http://localhost:3000/*",
+    "http://localhost:6789/*",
       "https://smart-noting.vercel.app/*",
       "https://noting.io.vn/*",
       "https://*.noting.io.vn/*"

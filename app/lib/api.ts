@@ -3,8 +3,18 @@ import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { storage, auth } from "./firebase";
 import { parseAiJson } from "./json-parser";
 import { isValidAiSessionId } from "./ai-session";
-const RUNPOD_API_KEY = process.env.NEXT_PUBLIC_RUNPOD_API_KEY;
-const RUNPOD_ENDPOINT_ID = process.env.NEXT_PUBLIC_RUNPOD_ENDPOINT_ID;
+async function transcriptionRequest(body?: Record<string, unknown>, jobId?: string) {
+  const token = await auth.currentUser?.getIdToken();
+  if (!token) throw new Error("Vui lòng đăng nhập để phiên âm.");
+  const response = await fetch(jobId ? `/api/transcription?id=${encodeURIComponent(jobId)}` : "/api/transcription", {
+    method: body ? "POST" : "GET",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || "Không thể gọi dịch vụ phiên âm.");
+  return data;
+}
 
 interface SendTaskEmailResult {
   count: number;
@@ -49,7 +59,7 @@ export async function postGemini(body: Record<string, unknown> & { sessionId: st
       const err = new Error(data.error || `HTTP ${response.status}`);
       (err as any).status = response.status;
       (err as any).code = data.code;
-      if (data.settingsUrl && typeof window !== "undefined") {
+      if (data.settingsUrl && ["PERSONAL_AI_ERROR", "AI_KEY_REQUIRED", "AI_CONFIG"].includes(data.code) && typeof window !== "undefined") {
         const { toast } = await import("sonner");
         toast.error(data.error, { id: "ai-account", action: { label: "Thiết lập Gemini", onClick: () => window.location.assign("/settings#gemini") } });
       }
@@ -135,25 +145,13 @@ export const uploadAudioToFirebase = (
 };
 
 // 2. Gọi RunPod (Chỉ gửi URL, server ko cần sửa gì cả)
-export const startTranscriptionJob = async (audioUrl: string, language: "vi" | "en" = "vi"): Promise<string> => {
-  const response = await fetch(`https://api.runpod.ai/v2/${RUNPOD_ENDPOINT_ID}/run`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${RUNPOD_API_KEY}`
-    },
-    body: JSON.stringify({
-      input: {
-        action: "transcribe",
-        audio_url: audioUrl,
-        language: language
-      }
-    })
-  });
-
-  const data = await response.json();
-  if (data.id) return data.id;
-  throw new Error("RunPod Error: " + JSON.stringify(data));
+export const startTranscriptionJob = async (
+  audioUrl: string,
+  language: "vi" | "en" = "vi",
+  options: { enhanceAudio?: boolean } = {},
+): Promise<string> => {
+  const data = await transcriptionRequest({ audioUrl, language, ...options });
+  return data.id;
 };
 
 
@@ -273,15 +271,7 @@ export interface RunPodJobStatus {
 // --- HÀM 4: CHECK TRẠNG THÁI JOB ---
 export const checkJobStatusOnce = async (jobId: string): Promise<RunPodJobStatus> => {
   try {
-    const statusUrl = `https://api.runpod.ai/v2/${RUNPOD_ENDPOINT_ID}/status/${jobId}`;
-    const response = await fetch(statusUrl, {
-      method: "GET",
-      headers: {
-        "Authorization": `Bearer ${RUNPOD_API_KEY}`,
-        "Content-Type": "application/json"
-      }
-    });
-    return await response.json();
+    return await transcriptionRequest(undefined, jobId);
   } catch (error) {
     console.error("Lỗi check status:", error);
     return { status: "FAILED", error: "Network error" };
@@ -290,29 +280,6 @@ export const checkJobStatusOnce = async (jobId: string): Promise<RunPodJobStatus
 
 // --- HÀM 5: HYBRID TRANSCRIPTION (RunPod Serverless) ---
 export const startHybridTranscriptionJob = async (audioUrl: string, diarization: Record<string, unknown>[], language: "vi" | "en" = "vi"): Promise<string> => {
-  try {
-    const response = await fetch(`https://api.runpod.ai/v2/${RUNPOD_ENDPOINT_ID}/run`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${RUNPOD_API_KEY}`
-      },
-      body: JSON.stringify({
-        input: {
-          action: "transcribe_hybrid",
-          audio_url: audioUrl,
-          diarization: diarization,
-          language: language
-        }
-      })
-    });
-
-    const data = await response.json();
-    if (data.id) return data.id;
-    throw new Error(`RunPod Error: ${JSON.stringify(data)}`);
-
-  } catch (error) {
-    console.warn("⚠️ Hybrid Transcription Failed:", error);
-    throw error;
-  }
+  const data = await transcriptionRequest({ audioUrl, diarization, language });
+  return data.id;
 };

@@ -113,6 +113,25 @@ describe("realtime-protocol — merge text/segment", () => {
     expect(r.lastEnd).toBe(2);
   });
 
+  it("preserves repeated final chunks and word boundaries on a forward timeline", () => {
+    let result = mergeFinalSegment([], "Are", [w(0, 1, "Are")], -1, 0);
+    result = mergeFinalSegment(result.segments, "Are you ready?", [w(1.1, 2, "Are")], -1, result.lastEnd);
+    expect(result.segments[0].content).toBe("Are Are you ready?");
+    result = mergeFinalSegment(result.segments, "ready?", [w(2.1, 3, "ready?")], -1, result.lastEnd);
+    expect(result.segments[0].content).toBe("Are Are you ready? ready?");
+
+    const previous = [{ speaker: 0, content: "học", isFinal: true, words: [w(0, 1)] }];
+    expect(mergeFinalSegment(previous, "cách làm", [w(1.1, 2)], 0, 1).segments[0].content).toBe("học cách làm");
+  });
+
+  it("retains finals without word timestamps and only deduplicates a timed overlap", () => {
+    const first = mergeFinalSegment([], "Vâng", [], 0, 0);
+    expect(mergeFinalSegment(first.segments, "Vâng", [], 0, 0).segments[0].content).toBe("Vâng Vâng");
+    const prev = [{ speaker: 0, content: "xin chào các", isFinal: true, words: [w(0, 2)] }];
+    expect(mergeFinalSegment(prev, "các bạn", [w(1.5, 3)], 0, 2).segments[0].content).toBe("xin chào các bạn");
+    expect(mergeText("học", "cách làm")).toBe("học cách làm");
+  });
+
   it("tách segment khi đổi speaker hoặc gap >= 1s", () => {
     const prev = [{ speaker: 0, content: "Xin chào", isFinal: true, words: [w(0, 1)] }];
     const diffSpeaker = mergeFinalSegment(prev, "Vâng", [w(1.2, 2)], 1, 1);

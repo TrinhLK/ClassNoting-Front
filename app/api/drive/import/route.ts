@@ -2,7 +2,8 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { getAdminStorage } from '@/app/lib/firebase-admin';
-import { startTranscriptionJob } from "@/app/lib/api";
+import { startRunpodJob } from "@/app/lib/runpod-server";
+import { verifyExtensionAuth } from "@/app/lib/extension-auth";
 import { checkRateLimit } from '@/app/lib/rate-limit';
 
 // Helper to download file from Drive
@@ -50,6 +51,8 @@ async function getValidAccessToken(): Promise<string | null> {
 }
 
 export async function POST(request: Request) {
+    const user = await verifyExtensionAuth(request);
+    if (user instanceof NextResponse) return user;
     const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
     const { allowed } = checkRateLimit(`drive:import:${ip}`, 10, 60 * 1000);
     if (!allowed) {
@@ -69,8 +72,8 @@ export async function POST(request: Request) {
 
         const timestamp = Date.now();
         const safeName = fileName.replace(/[^a-zA-Z0-9.-]/g, '_');
-        const storagePath = `imports/drive/${timestamp}-${safeName}`;
-        const bucket = getAdminStorage().bucket();
+        const storagePath = `users/${user.uid}/uploads/drive_${timestamp}-${safeName}`;
+        const bucket = getAdminStorage().bucket(process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET);
         const fileRef = bucket.file(storagePath);
 
         await fileRef.save(Buffer.from(fileBuffer), {
@@ -82,7 +85,7 @@ export async function POST(request: Request) {
             expires: Date.now() + 365 * 24 * 60 * 60 * 1000,
         });
 
-        const jobId = await startTranscriptionJob(signedUrl);
+        const jobId = await startRunpodJob(user.uid, signedUrl, "vi");
 
         return NextResponse.json({ success: true, jobId, firebaseUrl: signedUrl });
 

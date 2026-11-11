@@ -1,10 +1,10 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { X, LayoutTemplate, Plus, Trash2, Check, Sparkles, Loader2 } from "lucide-react";
+import { X, LayoutTemplate, Plus, Trash2, Check, Sparkles, Loader2, Upload } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useGlobalUI } from "../context/GlobalUIProvider";
-import { MeetingTemplate, DEFAULT_TEMPLATES } from "../lib/templates";
+import { MeetingTemplate, DEFAULT_TEMPLATES, MAX_TEMPLATE_CHARACTERS } from "../lib/templates";
 import { getCustomTemplates, saveCustomTemplate, deleteCustomTemplate } from "../lib/db";
 
 export default function TemplateManagerModal({
@@ -32,14 +32,47 @@ export default function TemplateManagerModal({
   const [newTemplateName, setNewTemplateName] = useState("");
   const [newTemplateDesc, setNewTemplateDesc] = useState("");
   const [newTemplateStructure, setNewTemplateStructure] = useState("");
+  const [sourceFileName, setSourceFileName] = useState("");
+  const [sourceMode, setSourceMode] = useState<NonNullable<MeetingTemplate["sourceMode"]>>("auto");
+  const [isImporting, setIsImporting] = useState(false);
+  const [importError, setImportError] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const importVersion = useRef(0);
   const templateStructRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     if (isOpen && user) {
       loadTemplates();
       setIsCreatingTemplate(false);
+      setIsSubmitting(false);
+      setIsImporting(false);
+      setImportError("");
     }
+    return () => { importVersion.current++; };
   }, [isOpen, user]);
+
+  const resetDraft = () => {
+    importVersion.current++;
+    setIsImporting(false);
+    setNewTemplateName(""); setNewTemplateDesc(""); setNewTemplateStructure("");
+    setSourceFileName(""); setSourceMode("auto"); setImportError("");
+  };
+
+  const handleImportWord = async (file: File) => {
+    const version = ++importVersion.current;
+    setIsImporting(true); setImportError("");
+    try {
+      const { readWordTemplate } = await import("../lib/docx/templateReader");
+      const structure = await readWordTemplate(file);
+      if (version !== importVersion.current) return;
+      setNewTemplateStructure(structure);
+      setNewTemplateName(file.name.replace(/\.(docx|dotx)$/i, ""));
+      setNewTemplateDesc(""); setSourceMode("auto"); setSourceFileName(file.name);
+      setIsCreatingTemplate(true);
+    } catch (error) {
+      if (version === importVersion.current) setImportError(error instanceof Error ? error.message : "Không đọc được mẫu Word.");
+    } finally { if (version === importVersion.current) setIsImporting(false); }
+  };
 
   const loadTemplates = async () => {
     if (!user) return;
@@ -67,21 +100,29 @@ export default function TemplateManagerModal({
   const handleCreateTemplate = async () => {
     if (!user) return;
     if (!newTemplateName.trim() || !newTemplateStructure.trim()) return toast.warning("Nhập tên và cấu trúc!");
+    if (newTemplateStructure.length > MAX_TEMPLATE_CHARACTERS) return toast.warning("Mẫu tối đa 40.000 ký tự.");
+    if (isSubmitting || isImporting) return;
+    setIsSubmitting(true);
     try {
-      await saveCustomTemplate(user.uid, {
-        name: newTemplateName,
+      const draft = {
+        name: newTemplateName.trim(),
         description: newTemplateDesc,
         structure: newTemplateStructure,
-      });
+        sourceMode,
+        ...(sourceFileName ? { sourceFileName } : {}),
+      };
+      const id = await saveCustomTemplate(user.uid, draft);
+      if (id) setSelectedTemplate({ ...draft, id, isCustom: true, userId: user.uid });
       toast.success("Đã tạo mẫu mới!");
       setIsCreatingTemplate(false);
       setNewTemplateName("");
       setNewTemplateDesc("");
       setNewTemplateStructure("");
-      loadTemplates();
+      resetDraft();
+      await loadTemplates();
     } catch (e) {
       toast.error("Lỗi tạo mẫu");
-    }
+    } finally { setIsSubmitting(false); }
   };
 
   const handleDeleteTemplate = async (tmplId: string) => {
@@ -105,6 +146,8 @@ export default function TemplateManagerModal({
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4 animate-in fade-in">
       <div className="bg-white w-full max-w-4xl h-[85vh] rounded-2xl shadow-xl flex flex-col overflow-hidden">
+        <input ref={fileInputRef} type="file" accept=".docx,.dotx" aria-label="Chọn file Word làm mẫu biên bản" className="hidden"
+          onChange={e => { const file = e.target.files?.[0]; e.target.value = ""; if (file) void handleImportWord(file); }} />
         <div className="p-4 border-b flex justify-between items-center bg-slate-50">
           <h3 className="font-bold text-lg flex items-center gap-2">
             <LayoutTemplate className="w-5 h-5 text-indigo-600" />
@@ -120,6 +163,7 @@ export default function TemplateManagerModal({
           </button>
         </div>
 
+        {importError && <p role="alert" className="px-4 py-3 text-sm text-red-700 bg-red-50 border-b">{importError}</p>}
         <div className="flex-1 overflow-hidden flex flex-col md:flex-row min-h-0">
           {/* SIDEBAR LIST */}
           {!isCreatingTemplate && (
@@ -171,8 +215,14 @@ export default function TemplateManagerModal({
                   </div>
                 ))}
 
+              <button type="button" disabled={isImporting} onClick={() => fileInputRef.current?.click()}
+                className="w-full py-3 mt-4 border border-indigo-200 bg-indigo-50 rounded-lg text-indigo-700 font-medium flex items-center justify-center gap-2 disabled:opacity-50">
+                {isImporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                {isImporting ? "Đang đọc mẫu Word..." : "Tải mẫu Word lên"}
+              </button>
+              <p className="text-xs text-slate-500 px-2 mt-2">.docx, .dotx · tối đa 5 MB. Hỗ trợ khung tiêu đề và báo cáo có nội dung mẫu.</p>
               <button
-                onClick={() => setIsCreatingTemplate(true)}
+                onClick={() => { resetDraft(); setIsCreatingTemplate(true); }}
                 className="w-full py-3 mt-4 border-2 border-dashed border-slate-300 rounded-lg text-slate-500 font-medium hover:border-indigo-500 hover:text-indigo-600 hover:bg-indigo-50 transition flex items-center justify-center gap-2"
               >
                 <Plus className="w-4 h-4" /> Tạo mẫu mới
@@ -184,9 +234,18 @@ export default function TemplateManagerModal({
           <div className="flex-1 bg-white overflow-y-auto flex flex-col p-4 md:p-8 min-h-0">
             {isCreatingTemplate ? (
               <div className="flex flex-col h-full space-y-4 animate-in slide-in-from-right duration-200">
+                <div className="rounded-lg border bg-indigo-50 p-3 text-sm text-indigo-900">
+                  <button type="button" disabled={isImporting || isSubmitting} onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 font-medium disabled:opacity-50">
+                    {isImporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                    {isImporting ? "Đang đọc mẫu Word..." : sourceFileName ? "Thay file Word" : "Tải mẫu Word lên"}
+                  </button>
+                  {sourceFileName && <p className="mt-1 break-all">{sourceFileName}</p>}
+                  <p className="text-xs mt-1">Kiểm tra nội dung đã đọc bên dưới trước khi lưu. Mẫu hướng dẫn bố cục và cách viết; dữ kiện báo cáo lấy từ cuộc họp mới.</p>
+                </div>
                 <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">Tên mẫu</label>
+                  <label htmlFor="template-name" className="block text-sm font-bold text-slate-700 mb-1">Tên mẫu</label>
                   <input
+                    id="template-name"
                     value={newTemplateName}
                     onChange={(e) => setNewTemplateName(e.target.value)}
                     className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
@@ -203,8 +262,14 @@ export default function TemplateManagerModal({
                   />
                 </div>
                 <div className="flex flex-col">
-                  <label className="block text-sm font-bold text-slate-700 mb-1">
-                    Cấu trúc Prompt (AI Instruction)
+                  <label htmlFor="template-mode" className="block text-sm font-bold text-slate-700 mb-1">Cách sử dụng mẫu</label>
+                  <select id="template-mode" value={sourceMode} onChange={e => setSourceMode(e.target.value as typeof sourceMode)} className="p-2 border rounded-lg mb-2">
+                    <option value="auto">Tự nhận diện khung tiêu đề hoặc bản có ví dụ</option>
+                    <option value="outline">Chỉ dùng khung tiêu đề</option>
+                    <option value="example">Tham khảo bố cục và văn phong của bản có ví dụ</option>
+                  </select>
+                  <label htmlFor="template-content" className="block text-sm font-bold text-slate-700 mb-1">
+                    Nội dung mẫu
                   </label>
 
                   <div className="flex flex-wrap gap-2 mb-2">
@@ -235,26 +300,29 @@ export default function TemplateManagerModal({
                   </div>
 
                   <textarea
+                    id="template-content"
                     ref={templateStructRef}
                     value={newTemplateStructure}
+                    maxLength={MAX_TEMPLATE_CHARACTERS}
                     onChange={(e) => setNewTemplateStructure(e.target.value)}
                     className="w-full min-h-[160px] p-3 border rounded-lg font-mono text-sm focus:ring-2 focus:ring-indigo-500 outline-none resize-none bg-slate-50"
                     placeholder={`# MẪU BIÊN BẢN \n\n## 1. PHẦN 1...\n## 2. PHẦN 2...`}
                   />
-                  <p className="text-xs text-slate-500 mt-1">Hoặc nhập trực tiếp bằng Markdown.</p>
+                  <p className="text-xs text-slate-500 mt-1">Có thể sửa hoặc nhập Markdown trực tiếp. {newTemplateStructure.length.toLocaleString("vi-VN")} / 40.000 ký tự. Bố cục trang, hình ảnh và chữ ký Word không được sao chép.</p>
                 </div>
                 <div className="flex justify-end gap-3 pt-4 border-t">
                   <button
-                    onClick={() => setIsCreatingTemplate(false)}
+                    onClick={() => { resetDraft(); setIsCreatingTemplate(false); }}
                     className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg"
                   >
                     Hủy
                   </button>
                   <button
                     onClick={handleCreateTemplate}
-                    className="px-6 py-2 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 shadow-md"
+                    disabled={isSubmitting || isImporting}
+                    className="px-6 py-2 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 shadow-md disabled:opacity-50"
                   >
-                    Lưu mẫu mới
+                    {isSubmitting ? "Đang lưu..." : "Lưu mẫu mới"}
                   </button>
                 </div>
               </div>
@@ -263,6 +331,8 @@ export default function TemplateManagerModal({
                 <div className="mb-6">
                   <h2 className="text-2xl font-bold text-slate-800">{selectedTemplate.name}</h2>
                   <p className="text-slate-500">{selectedTemplate.description}</p>
+                  {selectedTemplate.sourceFileName && <p className="text-xs text-indigo-600 mt-2 break-all">File mẫu: {selectedTemplate.sourceFileName}</p>}
+                  {selectedTemplate.sourceMode && <p className="text-xs text-slate-500 mt-1">{selectedTemplate.sourceMode === "outline" ? "Dùng các tiêu đề làm khung tóm tắt." : selectedTemplate.sourceMode === "example" ? "Viết báo cáo mới theo bố cục và văn phong mẫu; không dùng lại dữ kiện ví dụ." : "Tự nhận diện khung tiêu đề hoặc báo cáo có ví dụ để áp dụng cho cuộc họp mới."}</p>}
                 </div>
                 <div className="flex-1 overflow-y-auto bg-slate-50 rounded-xl border p-6">
                   <pre className="whitespace-pre-wrap font-mono text-sm text-slate-600 leading-relaxed">

@@ -7,6 +7,17 @@ vi.mock("@/app/lib/firebase-admin", () => ({ getAdminDb: vi.fn(), getAdminStorag
 import { applyRefinement } from "@/app/lib/refinement";
 
 describe("speaker pipeline", () => {
+  it("replaces obsolete live speaker groups and keeps unassigned turns in one bucket", () => {
+    const original = mockMeeting({
+      segments: [mockSegment({ speakerId: "live:10", uncertain: true })],
+      speakers: [mockSpeaker({ id: "live:10", name: "Người nói 10" })],
+    });
+    const result = applyRefinement(original, ["0", "1", "0", "tab:SPEAKER_-1"].map((speakerId, index) =>
+      mockSegment({ id: `refined:${index}`, speakerId, start: index, end: index + 1 }),
+    ));
+    expect(result.segments.map(segment => segment.speakerId)).toEqual(["offline:0", "offline:1", "offline:0", "SPEAKER_-1"]);
+    expect(result.speakers.map(speaker => speaker.name)).toEqual(["Người nói 1", "Người nói 2", "Chưa xác định"]);
+  });
   it("retains Meet account evidence and paragraphs during offline refinement", () => {
     const live = mockSegment({ id: "meet-account", start: 1, end: 4, text: "Đoạn của tài khoản Meet", participantId: "meet:a", speakerSource: "caption", uncertain: true });
     const original = mockMeeting({ segments: [live], speakers: [mockSpeaker()] });
@@ -35,6 +46,11 @@ describe("speaker pipeline", () => {
   });
   it("preserves original text when tokenization does not require a speaker split", () => {
     expect(splitSpeakerTurns({ kind: "final", rawTranscript: "Xin chào!", rawWords: [], serverSpeaker: -1 })[0].rawTranscript).toBe("Xin chào!");
+  });
+  it("retains the full transcript when word metadata only covers part of the sentence", () => {
+    const packet = { kind: "final" as const, rawTranscript: "Are you ready? Let's begin.", serverSpeaker: -1,
+      rawWords: [{ word: "Are", start: 0, end: 1, speaker: 0 }, { word: "begin.", start: 3, end: 4, speaker: 1 }] };
+    expect(splitSpeakerTurns(packet).map(p => p.rawTranscript).join(" ")).toBe(packet.rawTranscript);
   });
   it("Zoom namespaced participant IDs disambiguate identical names", () => {
     const event = { msg_type: 17, content: { user_id: 5, user_name: "An", start_time: 11000, end_time: 12000, timestamp: 13000, data: "Xin chào" } };

@@ -100,7 +100,7 @@ export async function createExtSession(
   data: Pick<ExtSession, "ownerUid" | "meetingUrl" | "provider" | "title"> & { startedAt?: number }
 ): Promise<ExtSession> {
   const now = Date.now();
-  const ref = db().collection(COLLECTION).doc();
+  const ref = db().collection(COLLECTION).doc(crypto.randomUUID());
   const session: ExtSession = {
     id: ref.id,
     ...data,
@@ -183,7 +183,7 @@ export async function getOrCreateLiveSession(
       if (s.status === "live") return { session: s, reused: true };
     }
     // Doc cũ đã ended trong ngày → phiên mới dùng id hậu tố.
-    const ref = col.doc();
+    const ref = col.doc(crypto.randomUUID());
     const session: ExtSession = { ...base, id: ref.id };
     await ref.set(session);
     return { session, reused: false };

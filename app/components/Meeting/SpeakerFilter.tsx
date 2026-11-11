@@ -9,6 +9,7 @@ interface SpeakerFilterProps {
 }
 
 export default function SpeakerFilter({ speakers, filteredSpeakerId, onFilterChange }: SpeakerFilterProps) {
+  const identified = speakers.filter(s => s.id !== "SPEAKER_-1" && s.name.trim().toLowerCase() !== "chưa xác định");
   return (
     <div className="px-4 py-3 md:px-8 border-b border-slate-200 flex items-center gap-2 overflow-x-auto whitespace-nowrap scrollbar-hide sticky top-0 bg-white z-20 shadow-sm">
       <span className="text-xs font-bold text-slate-500 uppercase flex items-center mr-2 shrink-0">
@@ -22,7 +23,7 @@ export default function SpeakerFilter({ speakers, filteredSpeakerId, onFilterCha
             : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
         }`}
       >
-        Tất cả ({speakers.length})
+        Tất cả ({identified.length})
       </button>
       {speakers.map((speaker) => (
         <button

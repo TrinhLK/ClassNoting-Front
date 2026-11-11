@@ -4,6 +4,7 @@ import { useSummarize } from "@/app/hooks/useSummarize";
 import { useTaskExtraction } from "@/app/hooks/useTaskExtraction";
 import { postGemini, requestSummary } from "@/app/lib/api";
 import { mockMeeting } from "@/tests/helpers/fixtures";
+import { updateMeetingProcess } from "@/app/lib/db";
 
 vi.mock("@/app/lib/api", () => ({ postGemini: vi.fn(), requestSummary: vi.fn(), uploadAudioToFirebase: vi.fn() }));
 vi.mock("@/app/lib/db", () => ({ updateMeetingProcess: vi.fn(async () => {}) }));
@@ -17,6 +18,24 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 beforeEach(() => {
   vi.mocked(postGemini).mockReset().mockResolvedValue({ summary: "[]" });
   vi.mocked(requestSummary).mockReset().mockResolvedValue("Summary");
+  vi.mocked(updateMeetingProcess).mockClear();
+});
+
+it("retains an existing report and completed state when regenerating fails", async () => {
+  vi.mocked(requestSummary).mockRejectedValueOnce(Object.assign(new Error("Provider unavailable"), {status:503}));
+  const meeting = mockMeeting({summary:"Previous verified report",status:"completed"});
+  const hook = renderHook(()=>useSummarize());
+  await act(async()=>{await hook.result.current(meeting,"Transcript","Template");});
+  const update = vi.mocked(updateMeetingProcess).mock.calls.at(-1)?.[1];
+  expect(update).toMatchObject({status:"completed",errorMessage:"Provider unavailable"});
+  expect(update).not.toHaveProperty("summary");
+});
+
+it("clears a stale error after a successful summary", async () => {
+  const hook = renderHook(()=>useSummarize());
+  await act(async()=>{await hook.result.current(mockMeeting({status:"failed",errorMessage:"Old error"}),"Transcript");});
+  expect(vi.mocked(updateMeetingProcess).mock.calls.at(-1)?.[1]).toMatchObject({status:"completed",summary:"Summary"});
+  expect(vi.mocked(updateMeetingProcess).mock.calls.at(-1)?.[1]).toHaveProperty("errorMessage");
 });
 
 it("summary and task hooks reuse meeting-scoped IDs on rerun/remount and separate workflows/meetings", async () => {

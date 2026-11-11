@@ -690,6 +690,7 @@ export default function LiveRecordingState({
         end: s.words?.[s.words.length - 1]?.end || 0,
         text: s.content,
         speakerId: `SPEAKER_${String(s.speaker).padStart(2, '0')}`,
+        uncertain: s.speaker < 0 || s.uncertain === true,
         words: s.words || []
       }));
 

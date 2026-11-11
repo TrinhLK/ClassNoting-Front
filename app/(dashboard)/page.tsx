@@ -98,7 +98,8 @@ export default function DashboardPage() {
         toast.info("Đang gửi lệnh xử lý lại...");
         const newJobId = await startTranscriptionJob(
           meeting.audioUrl,
-          meeting.language ?? "vi"
+          meeting.language ?? "vi",
+          { enhanceAudio: true }
         );
         // Snapshot trước khi wipe — job fail vẫn khôi phục được bản cũ.
         if (!snapshotMeetingForReprocess(meeting)) {
