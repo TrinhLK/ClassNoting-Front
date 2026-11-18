@@ -3,7 +3,7 @@ import { makeRequest as makeBaseRequest } from "@/tests/helpers/fixtures";
 import { meetingTemplateInstruction, DEFAULT_TEMPLATES } from "@/app/lib/templates";
 
 const makeRequest = (body: Record<string, unknown>, options?: Parameters<typeof makeBaseRequest>[1]) =>
-  makeBaseRequest({ sessionId: "test-conversation", ...body }, options);
+  makeBaseRequest({ sessionId: "test-conversation", ...body }, { ip: crypto.randomUUID(), ...options });
 
 vi.mock("@/app/lib/rate-limit", async () => {
   const actual = await vi.importActual<typeof import("@/app/lib/rate-limit")>(
@@ -19,8 +19,11 @@ vi.mock("@/app/lib/ai-account", async () => {
 });
 
 const fetchMock = vi.fn();
+const naming = vi.hoisted(() => ({ resolve: vi.fn() }));
+vi.mock("@/app/lib/resolve-speaker-names", () => ({ resolveSpeakerNames: naming.resolve }));
 
 beforeEach(() => {
+  naming.resolve.mockReset().mockImplementation(async (_id, _uid, text) => text);
   fetchMock.mockReset();
   vi.stubGlobal("fetch", fetchMock);
   // Route đọc GOOGLE_AI_API_KEY lúc import module — phải set trước import động
@@ -32,6 +35,22 @@ describe("POST /api/gemini — retry + validate (bug unknown, test logic mới)"
 
   beforeEach(async () => {
     POST = (await import("@/app/api/gemini/route")).POST;
+  });
+
+  it("resolves and persists names before summarizing an existing meeting", async () => {
+    naming.resolve.mockResolvedValue("[00:03] [Lan]: Báo cáo đã xong.");
+    fetchMock.mockResolvedValue({ok:true,json:async()=>({choices:[{message:{content:"Biên bản"}}]})});
+    const res = await POST(makeRequest({mode:"full", sessionId:"summary-old-meeting", text:"[00:03] [Người nói 2]: Báo cáo đã xong."}));
+    expect(res.status).toBe(200);
+    expect(naming.resolve).toHaveBeenCalledWith("old-meeting", "test-user", expect.any(String), expect.any(Function));
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).messages[0].content).toContain("[Lan]: Báo cáo đã xong.");
+  });
+
+  it("supports naming saved recordings without generating an extra summary", async () => {
+    const res = await POST(makeRequest({mode:"speaker_names", text:"Đối chiếu tên", aiMeeting:{kind:"meeting",id:"saved-meeting"}}));
+    expect(res.status).toBe(200);
+    expect(naming.resolve).toHaveBeenCalledWith("saved-meeting", "test-user", "", expect.any(Function));
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("trả 400 khi thiếu text", async () => {

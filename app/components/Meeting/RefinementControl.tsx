@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { postGemini } from "@/app/lib/api";
 import { auth } from "@/app/lib/firebase";
 import { getMeetingById, type Meeting } from "@/app/lib/db";
 import { explainRefinementError } from "@/app/lib/refinementError";
@@ -14,6 +15,11 @@ export default function RefinementControl({ meeting, onUpdate }: { meeting: Meet
     if (!res.ok) throw new Error(explainRefinementError(data.error || "Hậu xử lý thất bại"));
     setStatus(data.refinement?.status || ""); setError(data.refinement?.error || "");
     if (data.refinement?.status === "completed") {
+      try {
+        await postGemini({ mode: "speaker_names", text: "Đối chiếu tên sau phân tích audio", sessionId: `speakers-${meeting.id}`, aiMeeting: { kind: "meeting", id: meeting.id } });
+      } catch (error) {
+        setError(error instanceof Error ? error.message : "Chưa đối chiếu được tên người nói");
+      }
       const updated = await getMeetingById(meeting.id); if (updated) onUpdate(updated);
     }
   }

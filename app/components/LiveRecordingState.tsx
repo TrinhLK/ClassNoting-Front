@@ -3,7 +3,7 @@ import { speakersFromSegments } from "../lib/realtime-protocol";
 
 import React, { useCallback, useMemo, useState, useEffect, useRef } from "react";
 import { Sparkles, AlignLeft, AlertCircle } from "lucide-react";
-import { requestSegmentSummary, uploadAudioToFirebase } from "../lib/api";
+import { requestSegmentSummary, uploadAudioToFirebase, postGemini } from "../lib/api";
 import { saveMeeting, createLiveSession, updateLiveSession, endLiveSession } from "../lib/db";
 import { useAuth } from "../context/AuthContext";
 import useLocalTranscription from "../hooks/useLocalTranscription";
@@ -738,6 +738,12 @@ export default function LiveRecordingState({
         isDeleted: false,
         objectives: objectives.trim() || undefined
       });
+
+      try {
+        await postGemini({ mode: "speaker_names", text: "Đối chiếu tên sau khi lưu ghi âm", sessionId: `speakers-${savedMeetingId}`, aiMeeting: { kind: "meeting", id: savedMeetingId } });
+      } catch (error) {
+        toast.warning(error instanceof Error ? error.message : "Đã lưu audio, chưa đối chiếu được tên người nói");
+      }
 
       try {
         const { deleteDraft } = await import("../lib/indexedDB");

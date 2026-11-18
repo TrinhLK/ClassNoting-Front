@@ -30,6 +30,9 @@ export type Speaker = {
   id: string;
   name: string;
   color: string;
+  nameSource?: "conversation";
+  nameConfidence?: "high" | "medium";
+  nameEvidence?: import("./speaker-names").SpeakerNameEvidence[];
 };
 
 export type MeetingParticipant = {

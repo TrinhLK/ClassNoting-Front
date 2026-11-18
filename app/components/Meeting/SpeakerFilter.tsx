@@ -28,6 +28,7 @@ export default function SpeakerFilter({ speakers, filteredSpeakerId, onFilterCha
       {speakers.map((speaker) => (
         <button
           key={speaker.id}
+          title={speaker.nameSource === "conversation" ? `Tên suy ra từ hội thoại (${speaker.nameConfidence === "high" ? "bằng chứng rõ" : "có căn cứ"}). Có thể chỉnh sửa trong biên bản.` : speaker.name}
           onClick={() => onFilterChange(filteredSpeakerId === speaker.id ? null : speaker.id)}
           className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
             filteredSpeakerId === speaker.id

@@ -1,4 +1,5 @@
 // app/api/gemini/route.ts
+import { resolveSpeakerNames } from "@/app/lib/resolve-speaker-names";
 import { NextResponse } from "next/server";
 import { checkRateLimit } from "@/app/lib/rate-limit";
 import { stripCjk, stripEvidenceReferences, stripThinking } from "@/app/lib/text";
@@ -17,6 +18,7 @@ const MODELS = {
   fill_placeholders: "gemini-3.7-flash",
   detect_fill: "gemini-3.7-flash",
   extract_json: "gemini-3.7-flash",
+  speaker_names: "gemini-3.7-flash",
 };
 const DEFAULT_MODEL = "gemini-3.7-flash";
 const FALLBACK_MODELS = ["gemini-3.6-flash"];
@@ -157,7 +159,7 @@ export async function POST(req: Request) {
 
   let access: Awaited<ReturnType<typeof authorizeAiUsage>> | undefined;
   try {
-    const { text, mode, sessionId, aiMeeting, dateContext, previousSummary, departments, teams, question, history, templateStructure, meetingObjectives, placeholders, context, duration, createdAt } = await req.json();
+    let { text, mode, sessionId, aiMeeting, dateContext, previousSummary, departments, teams, question, history, templateStructure, meetingObjectives, placeholders, context, duration, createdAt } = await req.json();
     if (templateStructure !== undefined && (typeof templateStructure !== "string" || templateStructure.length > 100_000)) {
       return NextResponse.json({ error: "Mẫu biên bản không hợp lệ hoặc quá dài." }, { status: 400 });
     }
@@ -191,6 +193,16 @@ export async function POST(req: Request) {
       : [primaryModel];
 
     let prompt = "";
+
+    if (mode === "speaker_names") {
+      if (aiMeeting?.kind !== "meeting" || typeof aiMeeting.id !== "string") {
+        await access.finish(false);
+        return NextResponse.json({ error: "Thiếu cuộc họp cần xác định người nói" }, { status: 400 });
+      }
+      await resolveSpeakerNames(aiMeeting.id, auth.uid, "", prompt =>
+        generateWithFallback(prompt, chosenModels, mode, sessionId, requestId, access!.apiKey));
+      return await complete("Đã đối chiếu tên người nói từ hội thoại");
+    }
 
     if (mode === "extract_json") {
       const deptListStr = departments?.join(", ") || "";
@@ -374,6 +386,10 @@ export async function POST(req: Request) {
       4. Sử dụng format Markdown cho câu trả lời dễ đọc (bold, list...).
       `;
     } else {
+      if (inferredMeeting) {
+        text = await resolveSpeakerNames(inferredMeeting.id, auth.uid, text, prompt =>
+          generateWithFallback(prompt, chosenModels, mode, `${sessionId.slice(0, 110)}-speakers`, requestId, access!.apiKey));
+      }
       const structureInstruction = templateStructure || `
       # BIÊN BẢN TÓM TẮT CUỘC HỌP
 
@@ -462,6 +478,7 @@ export async function POST(req: Request) {
       3. Kiểm tra số liệu, đơn vị và mốc thời gian trực tiếp với transcript; nếu không rõ, ghi là chưa xác định.
 
       XÁC ĐỊNH NGƯỜI NÓI TRƯỚC KHI VIẾT (KHÔNG IN BẢNG SUY LUẬN):
+      - Tên trong nhãn lượt nói đã được đối chiếu trước bước viết biên bản. Giữ nhất quán các tên đó; không tự đổi tên hoặc gộp các nhóm giọng. Với nhãn còn là Người nói x, giữ nhãn nếu thiếu căn cứ chắc chắn, không tạo một danh tính mới chỉ để lấp chỗ trống.
       - Đọc các lượt theo thời gian, xác định riêng người phát biểu, người được gọi, người được nhắc đến và người được giao việc. Ưu tiên tên đã xác nhận và lời tự giới thiệu rõ ràng.
       - Dùng lời gọi kèm lượt đáp trực tiếp, đúng nội dung và liền mạch để gán tên cho người đáp nếu ngữ cảnh đủ rõ. Ví dụ, sau “Chị Lan, phần báo cáo đã xong chưa?”, câu “Tôi đã gửi báo cáo sáng nay” từ một lượt khác có thể là của Lan nếu các lượt xung quanh xác nhận. Tên Lan trong câu hỏi là người được gọi.
       - Kiểm tra đối chiếu ở các mốc khác trước khi dùng tên cho nhiều lượt. Nhãn giọng tự động có thể tách một người thành nhiều nhóm hoặc trộn hai người. Chỉ mở rộng gán tên khi bằng chứng nhất quán. Nếu có người chen lời, nhiều người có thể đáp hoặc bằng chứng mâu thuẫn, giữ nhãn gốc hoặc ghi “Chưa xác định”.

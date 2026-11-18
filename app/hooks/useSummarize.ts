@@ -65,6 +65,7 @@ export function useSummarize(onRefresh?: () => void) {
       await updateMeetingProcess(meetingId, {
         status: MEETING_STATUS.COMPLETED,
         summary: summary,
+        summaryNeedsReview: false,
         errorMessage: deleteFieldValue<string>(),
       });
 
