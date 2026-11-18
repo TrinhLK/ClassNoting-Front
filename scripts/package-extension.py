@@ -14,12 +14,11 @@ manifest["host_permissions"] = [
     "https://smart-noting.vercel.app/*",
     "https://noting.io.vn/*",
     "https://ez.noting.io.vn/*",
-    "https://asr-live.noting.io.vn/*",
 ]
 manifest["externally_connectable"]["matches"] = [
     "https://smart-noting.vercel.app/*", "https://noting.io.vn/*", "https://ez.noting.io.vn/*"
 ]
-manifest["homepage_url"] = "https://smart-noting.vercel.app/extension"
+manifest["homepage_url"] = "https://noting.io.vn/extension"
 files = sorted((SOURCE / "src").glob("*.js")) + sorted((SOURCE / "src").glob("*.html"))
 files += [SOURCE / "icons" / f"icon{size}.png" for size in (16, 48, 128)]
 out = ROOT / "artifacts" / "chrome-web-store"

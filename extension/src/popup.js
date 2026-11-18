@@ -117,7 +117,7 @@
     $("startBtn").style.flex = mine ? "" : "1";
     $("endBtn").style.flex = mine ? "1" : "";
     if (mine && mine.unhealthy) {
-      showActionMsg("Không đọc được dữ liệu phòng họp — thử mở panel People/Chat trong Meet và bật phụ đề (CC).", true);
+      showActionMsg("Không đọc được dữ liệu phòng họp — thử mở panel People/Chat trong Meet.", true);
     }
     // Trạng thái thu audio realtime (offscreen): tốt thì hiện số câu ASR,
     // lỗi thì hiện đúng nguyên nhân (tab chưa phát tiếng / WS chết...).
@@ -128,7 +128,8 @@
       } else {
         const AUDIO_MSGS = {
           starting: "Audio: đang xin quyền thu âm tab...",
-          capturing: "Audio: đã thu được tiếng tab, đang nối ASR...",
+          capturing: "Audio: đã thu được tiếng tab.",
+          web_recording: "Ghi âm và STT tại EzNoting. Bấm Bắt đầu trên web, chọn tab họp và chia sẻ âm thanh.",
           ws_connecting: "Audio: đang nối server ASR...",
           ws_open: "Audio: đã nối ASR, chờ câu nói đầu tiên...",
           transcribing: null, // hiện số câu bên dưới
@@ -335,39 +336,10 @@
           refresh();
         });
       });
-      // Ghi thêm tiếng tab hiện tại (vd tab YouTube đang share) vào phiên này.
-      // Bấm khi đang đứng ở tab đó → có gesture/activeTab.
-      const addBtn = document.createElement("button");
-      addBtn.className = "ghost";
-      addBtn.textContent = "＋ tab này";
-      addBtn.title = "Thu thêm tiếng của tab đang mở vào phiên này (dùng khi share màn hình có tiếng)";
-      addBtn.addEventListener("click", () => {
-        addBtn.disabled = true;
-        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-          const tab = tabs[0];
-          if (!tab) {
-            addBtn.disabled = false;
-            return;
-          }
-          chrome.runtime.sendMessage(
-            { type: "CN_CAPTURE_EXTRA", tabId: tab.id, sessionId: s.sessionId },
-            (res) => {
-              addBtn.disabled = false;
-              if (res && res.ok) {
-                showActionMsg("Đã bắt đầu thu thêm tiếng tab này vào phiên.", false);
-              } else {
-                showActionMsg("Không thu được tab này — thử phát tiếng trong tab rồi bấm lại.", true);
-              }
-              refresh();
-            }
-          );
-        });
-      });
       row.appendChild(name);
       const btns = document.createElement("span");
       btns.style.display = "flex";
       btns.style.gap = "4px";
-      btns.appendChild(addBtn);
       btns.appendChild(btn);
       row.appendChild(btns);
       box.appendChild(row);
@@ -459,42 +431,8 @@
 
   // Quyền micro: phải xin trong popup (có gesture). Quyền lưu theo origin
   // extension nên offscreen sau đó lấy mic im lặng. Không có mic thì họp solo câm.
-  async function refreshMicState() {
-    const el = $("micState");
-    try {
-      if (!navigator.permissions || !navigator.permissions.query) {
-        el.textContent = "không kiểm tra được";
-        return;
-      }
-      const st = await navigator.permissions.query({ name: "microphone" });
-      if (st.state === "granted") {
-        el.textContent = "Đã cho phép";
-        el.className = "ok";
-      } else if (st.state === "denied") {
-        el.textContent = "Bị chặn — mở khóa trong cài đặt Chrome";
-        el.className = "muted";
-      } else {
-        el.textContent = "Chưa hỏi";
-        el.className = "muted";
-      }
-    } catch (e) {
-      el.textContent = "không kiểm tra được";
-    }
-  }
-
-  // Mở tab onboarding để xin quyền (popup sập khi mất focus nên hộp
-  // Allow không bao giờ hiện nếu xin trực tiếp trong popup).
-  $("micBtn").addEventListener("click", () => {
-    try {
-      chrome.tabs.create({ url: chrome.runtime.getURL("src/onboarding.html") });
-    } catch (e) {
-      showActionMsg("Không mở được trang cấp quyền — thử lại.", true);
-    }
-  });
-
   refresh();
   refreshServerSessions();
-  refreshMicState();
   // Audio starts asynchronously after session creation. Keep diagnostics live
   // while this popup is open instead of freezing the initial "starting" state.
   setInterval(refresh, 1000);

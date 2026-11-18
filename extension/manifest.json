@@ -1,16 +1,14 @@
 {
   "manifest_version": 3,
   "name": "EzNoting",
-  "version": "0.4.11",
-  "description": "Tự phát hiện phòng họp Google Meet đang mở, ghi chú người tham gia + chat + transcript live về EzNoting.",
+  "version": "0.5.0",
+  "description": "Thu thập người tham gia và chat Google Meet, mở ghi âm tab và STT realtime trên EzNoting.",
   "minimum_chrome_version": "116",
   "permissions": [
     "activeTab",
-    "tabCapture",
     "storage",
     "notifications",
     "alarms",
-    "offscreen",
     "scripting"
   ],
   "host_permissions": [
@@ -19,8 +17,7 @@
     "https://noting.io.vn/*",
     "https://*.noting.io.vn/*",
     "http://localhost:3000/*",
-    "http://localhost:6789/*",
-    "https://asr-live.noting.io.vn/*"
+    "http://localhost:6789/*"
   ],
   "background": {
     "service_worker": "src/background.js",
@@ -51,7 +48,7 @@
   "externally_connectable": {
     "matches": [
       "http://localhost:3000/*",
-    "http://localhost:6789/*",
+      "http://localhost:6789/*",
       "https://smart-noting.vercel.app/*",
       "https://noting.io.vn/*",
       "https://*.noting.io.vn/*"

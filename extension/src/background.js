@@ -1,12 +1,12 @@
 /* eslint-disable */
 /**
  * background.js — Service worker (MV3 module): phát hiện tab họp, quản lý
- * session, gom batch events, điều phối offscreen audio, tự end khi rời phòng.
+ * session, gom batch events, mở ghi âm web, tự end khi rời phòng.
  */
 // Đổi theo manifest.json mỗi build — popup/diag hiện số này để biết chắc
 // cả 3 mảnh (popup/background/content) có đồng bộ không.
-const CODE_VERSION = "0.4.11";
-const DEFAULT_APP_ORIGIN = "https://smart-noting.vercel.app";
+const CODE_VERSION = "0.5.0";
+const DEFAULT_APP_ORIGIN = "https://noting.io.vn";
 const FLUSH_MS = 2000;
 const HEARTBEAT_TIMEOUT_MS = 2 * 60 * 1000;
 
@@ -238,26 +238,6 @@ async function ensureSession(tabId, info, opts) {
   return r.sessionId || null;
 }
 
-// ---- Audio tab → offscreen document ----
-let offscreenReady = null;
-async function ensureOffscreen() {
-  if (offscreenReady) return offscreenReady;
-  offscreenReady = (async () => {
-    const contexts = await chrome.runtime.getContexts({ contextTypes: ["OFFSCREEN_DOCUMENT"] });
-    if (contexts.length === 0) {
-      await chrome.offscreen.createDocument({
-        url: "src/offscreen.html",
-        reasons: ["USER_MEDIA", "AUDIO_PLAYBACK"],
-        justification: "Thu âm thanh cuộc họp để tạo bản chép lời trực tiếp trên EzNoting.",
-      });
-    }
-  })().catch((e) => {
-    offscreenReady = null;
-    throw e;
-  });
-  return offscreenReady;
-}
-
 function setAudioState(tabId, audioState) {
   const t = tabs.get(tabId);
   if (!t) return;
@@ -267,72 +247,22 @@ function setAudioState(tabId, audioState) {
 // Audio coi là khỏe khi đang thu/nối tốt — các trạng thái còn lại đều đáng thử lại.
 function isAudioHealthy(t) {
   const s = t && t.audioState && t.audioState.state;
-  return s === "capturing" || s === "ws_open" || s === "transcribing" || s === "speaker_status" || s === "diarization_disabled" || s === "protocol_error" || s === "ws_connecting" || s === "ws_retrying" || s === "starting";
+  return s === "web_recording" || s === "capturing" || s === "ws_open" || s === "transcribing" || s === "speaker_status" || s === "diarization_disabled" || s === "protocol_error" || s === "ws_connecting" || s === "ws_retrying" || s === "starting";
 }
 
-async function startAudioCapture(tabId, sessionId, provider, opts) {
-  setAudioState(tabId, { state: "starting", detail: "Đang mở luồng audio cuộc họp" });
-  // Tab phụ (vd tab YouTube đang share): fusion tên dùng spans của tab Meet
-  // cùng session — truyền spansTabId để offscreen hỏi đúng chỗ.
-  let spansTabId = (opts && opts.spansTabId) || undefined;
-  if (!spansTabId) {
-    for (const [id, t] of tabs.entries()) {
-      if (t.sessionId === sessionId && id !== tabId) {
-        spansTabId = id;
-        break;
-      }
-    }
-  }
-  try {
-    await ensureOffscreen();
-  } catch (e) {
-    setAudioState(tabId, { state: "offscreen_failed", detail: String((e && e.message) || e) });
-    throw e;
-  }
+async function startAudioCapture(tabId, sessionId) {
+  const t = tabs.get(tabId);
+  setAudioState(tabId, { state: "starting", detail: "Đang mở ghi âm trên EzNoting" });
   const { appOrigin } = await getSettings();
-  let streamId;
-  try {
-    streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tabId });
-  } catch (e) {
-    // Hay gặp: tab chưa phát tiếng / thiếu gesture — hiện rõ ra popup.
-    setAudioState(tabId, { state: "capture_failed", detail: String((e && e.message) || e) });
-    throw e;
+  if (t?.recorderTabId) {
+    const existing = await chrome.tabs.get(t.recorderTabId).catch(() => null);
+    if (existing) { await chrome.tabs.update(existing.id, { active: true }); return; }
   }
-  const auth = await getAuth();
-  let micMuted = tabs.get(tabId)?.micMuted;
-  if (provider === "meet" && typeof micMuted !== "boolean") {
-    try {
-      const micState = await chrome.tabs.sendMessage(tabId, { type: "CN_GET_MIC_STATE" });
-      micMuted = typeof micState?.muted === "boolean" ? micState.muted : null;
-    } catch { micMuted = null; }
-  }
-  if (tabs.has(tabId)) {
-    tabs.get(tabId).micMuted = typeof micMuted === "boolean" ? micMuted : null;
-    await persistTabs();
-  }
-  // Bắt buộc .catch: offscreen chưa chạy thì promise reject → lỗi
-  // "Could not establish connection" tràn trang Errors (đã thấy thực tế).
-  try {
-    const result = await chrome.runtime.sendMessage({
-      type: "CN_AUDIO_START",
-      tabId,
-      sessionId,
-      provider,
-      streamId,
-      wsBase: "wss://asr-live.noting.io.vn",
-      startedAt: tabs.get(tabId)?.startedAt || (await (await apiFetch(`/api/extension/live?sessionId=${sessionId}`, null, "GET")).json()).startedAt,
-      appOrigin,
-      idToken: auth?.idToken,
-      // Để offscreen gán tiếng share-màn-hình (không ai sáng tên) cho chủ phiên.
-      ownerDisplayName: auth?.displayName || auth?.email || "",
-      spansTabId,
-      micMuted: provider === "meet" ? micMuted : true,
-    });
-    if (result?.error) throw new Error(result.error);
-  } catch (e) {
-    setAudioState(tabId, { state: "capture_failed", detail: String(e?.message || e) });
-    throw e;
-  }
+  const query = new URLSearchParams({ extensionSessionId: sessionId, capture: "tab" });
+  const recorder = await chrome.tabs.create({ url: `${appOrigin}/live?${query}` });
+  if (t) t.recorderTabId = recorder.id;
+  await persistTabs();
+  setAudioState(tabId, { state: "web_recording", detail: "Mở EzNoting, bấm Bắt đầu rồi chọn tab cuộc họp và chia sẻ âm thanh." });
 }
 
 async function stopAudioCapture(tabId) {
@@ -401,6 +331,7 @@ async function persistTabs() {
       rosterCount: t.rosterCount,
       activeSpeaker: t.activeSpeaker,
       micMuted: t.micMuted,
+      recorderTabId: t.recorderTabId,
     }));
     await chrome.storage.session.set({ liveTabs: dump });
   } catch (e) { /* storage chưa sẵn — bỏ qua */ }
@@ -424,6 +355,7 @@ async function rehydrateTabs() {
         spans: [],
         captions: [],
         audioState: d.audioState || null,
+        recorderTabId: d.recorderTabId,
         speakerStatus: d.speakerStatus || {},
         rosterCount: Number.isFinite(d.rosterCount) ? d.rosterCount : undefined,
         activeSpeaker: d.activeSpeaker || "",
@@ -523,15 +455,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     ensureSession(sender.tab.id, msg).then((sid) => sendResponse({ sessionId: sid }));
     return true;
   }
-  if (msg?.type === "CN_MIC_STATE" && sender.tab?.id) {
-    const t = tabs.get(sender.tab.id);
-    if (t) {
-      t.micMuted = typeof msg.muted === "boolean" ? msg.muted : null;
-      persistTabs();
-      chrome.runtime.sendMessage({ type: "CN_AUDIO_MIC_GATE", tabId: sender.tab.id, muted: t.micMuted }).catch(() => {});
-    }
-    return;
-  }
   if (msg?.type === "CN_EVENTS" && tabId) {
     let t = tabs.get(tabId);
     if (!t && msg.sessionId) t = attachLight(tabId, msg.sessionId, msg);
@@ -619,33 +542,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     sendResponse({ selfParticipant: t.selfParticipant || null, spans: t.spans.slice(-200), captions: t.captions.slice(-200), participants: t.participants || [] });
     return;
   }
-  if (msg?.type === "CN_ASR_FINAL" && msg.tabId) {
-    // Segment ASR đã fusion tên ở offscreen → đẩy vào queue transcript.
-    let t = tabs.get(msg.tabId);
-    if (!t && msg.sessionId) t = attachLight(msg.tabId, msg.sessionId, msg);
-    if (!t) return;
-    t.lastSeen = Date.now();
-    t.queue.push({
-      kind: "transcript",
-      payload: {
-        id: msg.id,
-        paragraphId: msg.paragraphId,
-        speaker: msg.speaker,
-        voiceId: msg.voiceId, participantId: msg.participantId,
-        speakerSource: msg.speakerSource, words: msg.words, revision: msg.revision,
-        text: msg.text,
-        start: msg.start,
-        end: msg.end,
-        uncertain: msg.uncertain !== false,
-      },
-    });
-    persistTabs();
-    sendResponse({ ok: true });
-    if (msg.splitAt) {
-      // Báo split để lần sau offscreen tự tách — ở đây chỉ ghi nhận.
-    }
-    return;
-  }
   if (msg?.type === "CN_MANUAL_START" && msg.tabId) {
     (async () => {
       try {
@@ -690,60 +586,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse({ ok: false, reason: "no_session" });
       }
     });
-    return true;
-  }
-  // Thu thêm tiếng 1 tab khác (vd tab YouTube đang share) vào cùng session.
-  // Bấm khi đang đứng ở tab đó → có gesture/activeTab. Offscreen thu đa-tab sẵn.
-  if (msg?.type === "CN_CAPTURE_EXTRA" && msg.tabId && msg.sessionId) {
-    (async () => {
-      try {
-        const tab = await chrome.tabs.get(msg.tabId).catch(() => null);
-        tabs.set(msg.tabId, {
-          sessionId: msg.sessionId,
-          provider: "extra",
-          url: (tab && tab.url) || "",
-          extraTab: true,
-          lastSeen: Date.now(),
-          queue: [],
-          spans: [],
-          captions: [],
-          emptyStreak: 0,
-        });
-        persistTabs();
-        await startAudioCapture(msg.tabId, msg.sessionId, "extra");
-        sendResponse({ ok: true, sessionId: msg.sessionId });
-      } catch (e) {
-        sendResponse({ ok: false, reason: "error" });
-      }
-    })();
-    return true;
-  }
-  // Thu thêm tiếng 1 tab khác vào session có sẵn (nút "＋ tab này").
-  // Dùng khi share màn hình có tiếng: tiếng share phát ở tab nguồn,
-  // không qua tab Meet nên phải thu trực tiếp tab đó.
-  if (msg?.type === "CN_CAPTURE_EXTRA" && msg.tabId && msg.sessionId) {
-    (async () => {
-      try {
-        const tab = await chrome.tabs.get(msg.tabId).catch(() => null);
-        tabs.set(msg.tabId, {
-          sessionId: msg.sessionId,
-          provider: "extra",
-          url: (tab && tab.url) || "",
-          extraTab: true,
-          lastSeen: Date.now(),
-          queue: [],
-          spans: [],
-          captions: [],
-          emptyStreak: 0,
-        });
-        persistTabs();
-        await startAudioCapture(msg.tabId, msg.sessionId, "extra");
-        setBadge(msg.tabId, "REC", "#dc2626");
-        sendResponse({ ok: true, sessionId: msg.sessionId });
-      } catch (e) {
-        sendResponse({ ok: false, reason: "error" });
-      }
-    })();
     return true;
   }
   // Kết thúc 1 session theo id (dọn được cả phiên mồ côi trong popup "kết thúc tất cả").
@@ -920,7 +762,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   const t = tabs.get(tabId);
   if (!t || !t.sessionId) return;
   const st = t.audioState && t.audioState.state;
-  if (st === "capturing" || st === "ws_open" || st === "transcribing" || st === "starting" || st === "ws_connecting" || st === "ws_retrying") return;
+  if (st === "web_recording" || st === "capturing" || st === "ws_open" || st === "transcribing" || st === "starting" || st === "ws_connecting" || st === "ws_retrying") return;
   startAudioCapture(tabId, t.sessionId, t.provider).catch(() => {});
 });
 

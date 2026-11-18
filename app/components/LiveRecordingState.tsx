@@ -41,13 +41,15 @@ const MobileTabBtn = ({ active, onClick, icon: Icon, label }: MobileTabBtnProps)
 );
 
 export default function LiveRecordingState({
-  onFinish, onBack, initialLanguage = "vi", initialTitle, initialObjectives
+  onFinish, onBack, initialLanguage = "vi", initialTitle, initialObjectives, extensionSessionId, initialCaptureSystemAudio = false
 }: {
   onFinish: () => void,
   onBack: () => void,
   initialLanguage?: "vi" | "en",
   initialTitle?: string,
-  initialObjectives?: string
+  initialObjectives?: string,
+  extensionSessionId?: string,
+  initialCaptureSystemAudio?: boolean
 }) {
   const { user } = useAuth();
   const [summaries, setSummaries] = useState<SummaryItem[]>([]);
@@ -63,6 +65,16 @@ export default function LiveRecordingState({
   const [liveSessionId, setLiveSessionId] = useState<string | null>(null);
   const liveSessionIdRef = useRef<string | null>(null);
   const [isCopied, setIsCopied] = useState(false);
+
+  const recordingStartedAtRef = useRef(Date.now());
+
+  const loadExtensionMetadata = async () => {
+    if (!extensionSessionId) return {};
+    const token = await user?.getIdToken();
+    const response = await fetch(`/api/extension/recording?sessionId=${encodeURIComponent(extensionSessionId)}`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!response.ok) throw new Error("Không thể tải người tham gia và chat của phiên extension");
+    return response.json();
+  };
 
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
 
@@ -88,12 +100,12 @@ export default function LiveRecordingState({
   const isSizeWarningShownRef = useRef(false);
 
 
-  const [captureSystemAudio, setCaptureSystemAudio] = useState(false);
+  const [captureSystemAudio, setCaptureSystemAudio] = useState(initialCaptureSystemAudio);
 
   useEffect(() => {
     const saved = localStorage.getItem("captureSystemAudio");
-    if (saved === "true") setCaptureSystemAudio(true);
-  }, []);
+    if (initialCaptureSystemAudio || saved === "true") setCaptureSystemAudio(true);
+  }, [initialCaptureSystemAudio]);
 
   const toggleCaptureSystemAudio = useCallback(() => {
     setCaptureSystemAudio(prev => {
@@ -478,7 +490,10 @@ export default function LiveRecordingState({
       // [CASE 2] NẾU LÀ LẦN ĐẦU -> KHỞI TẠO MỚI
 
       if (!liveSessionIdRef.current && user) {
-        const newSessionId = `live-${crypto.randomUUID().substring(0, 8)}`;
+        const metadata = await loadExtensionMetadata();
+        if (metadata.title && extensionSessionId) setMeetingTitle(metadata.title);
+        recordingStartedAtRef.current = Date.now();
+        const newSessionId = extensionSessionId ? `ext_${extensionSessionId}` : `live-${crypto.randomUUID().substring(0, 8)}`;
         setLiveSessionId(newSessionId);
         liveSessionIdRef.current = newSessionId;
 
@@ -702,11 +717,14 @@ export default function LiveRecordingState({
 
       // 4. Lưu vào Firestore với trạng thái COMPLETED (Xong luôn)
       const savedMeetingId = liveSessionIdRef.current || draftIdRef.current;
+      const extensionMetadata = await loadExtensionMetadata();
       await saveMeeting({
+        ...extensionMetadata,
+        ...(extensionSessionId ? { extensionSessionId } : {}),
         id: savedMeetingId,
         userId: user.uid,
         title: meetingTitle.trim() || fileName.replace(".mp3", ""),
-        createdAt: Date.now(),
+        createdAt: recordingStartedAtRef.current,
         duration: timer,
         audioUrl: audioUrl,
 

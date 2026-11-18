@@ -20,3 +20,21 @@ it('manual start without a provider uses the API provider so Meet mic gating sta
   expect(startAudioCapture).toHaveBeenCalledWith(9, 's', 'meet');
   expect(tabs.get(9).provider).toBe('meet');
 });
+
+it('opens the web tab recorder for the same metadata session and reuses its tab', async () => {
+  const code = readFileSync(path.resolve('extension/src/background.js'), 'utf8');
+  const tabs = new Map([[9, { sessionId: 'session-a' }]]);
+  const createTab = vi.fn(async () => ({ id: 42 }));
+  const updateTab = vi.fn();
+  const create = vm.runInNewContext(
+    code.slice(code.indexOf('async function startAudioCapture('), code.indexOf('\nasync function stopAudioCapture')) + '\nstartAudioCapture',
+    { tabs, URLSearchParams, getSettings: async () => ({appOrigin:'https://noting.io.vn'}), setAudioState: vi.fn(), persistTabs: vi.fn(),
+      chrome: { tabs: { create: createTab, get: async () => ({id:42}), update: updateTab } },
+    },
+  );
+  await create(9, 'session-a');
+  expect(createTab).toHaveBeenCalledWith({url:'https://noting.io.vn/live?extensionSessionId=session-a&capture=tab'});
+  await create(9, 'session-a');
+  expect(createTab).toHaveBeenCalledOnce();
+  expect(updateTab).toHaveBeenCalledWith(42, {active:true});
+});

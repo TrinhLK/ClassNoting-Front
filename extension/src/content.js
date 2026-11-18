@@ -12,7 +12,7 @@
 
   // Đồng bộ với manifest.json — hiện trong ô chẩn đoán để biết tab đang
   // chạy content bản nào (tránh cãi nhau chuyện reload chưa).
-  const CODE_VERSION = "0.4.11";
+  const CODE_VERSION = "0.5.0";
 
   const shared = globalThis.ClassNotingShared;
   const platforms = globalThis.ClassNotingPlatforms;
@@ -29,7 +29,6 @@
   let sessionId = null;
   let running = true;
   const seenChat = new Set();
-  const seenCaption = new Set();
   let lastRosterKey = "";
   // Tên roster mới nhất — dùng để bóc "Tên nội dung" trong caption
   // (Meet mới không render dấu hai chấm).
@@ -94,104 +93,7 @@
     chatScanTimer = setTimeout(pollChatBlocks, 150);
   }
 
-  // Caption Meet chảy từng ký tự (characterData) — debounce: chỉ gửi khi câu
-  // đứng yên CAPTION_SETTLE_MS, nếu không mỗi ký tự thành 1 segment (flood).
-  const CAPTION_SETTLE_MS = 1500;
-  let pendingCaption = null;
-  let lastCaptionSnapshot = "";
-  let lastCaptionContextAt = 0;
-  const captionClocks = new WeakMap();
-
-  function publishCaptionContext(p, force) {
-    if (!p || !sessionId || (!force && Date.now() - lastCaptionContextAt < 250)) return;
-    lastCaptionContextAt = Date.now();
-    // Identity metadata must reach audio fusion while speech is still growing,
-    // rather than waiting indefinitely for a pause in continuous speech.
-    send({ type: "CN_EVENTS", sessionId, events: [{ kind: "caption", captions: [{
-      id: p.id, speaker: p.name || "", text: p.text, isSelf: p.isSelf === true,
-      start: p.firstSeen, end: p.lastSeen,
-    }] }] });
-  }
-
-  function flushPendingCaption() {
-    const p = pendingCaption;
-    pendingCaption = null;
-    if (!p) return;
-    const key = p.name + "\n" + p.text;
-    if (seenCaption.has(key)) return;
-    seenCaption.add(key);
-    if (seenCaption.size > 1000) {
-      const first = seenCaption.values().next().value;
-      seenCaption.delete(first);
-    }
-    const now = Date.now() / 1000;
-    // Caption chỉ phục vụ fusion tên cho ASR (kind riêng, background không
-    // đẩy lên API) — transcript lấy từ audio qua model STT.
-    publishCaptionContext(p, true);
-  }
-
-  // Resolve the local Meet account independently of captions and web login.
   let selfName = "";
-  function normalizeSelfName(name) {
-    const n = String(name || "").trim();
-    if (!n) return "";
-    try { selfName = platform.selfParticipant?.()?.name || platform.selfName?.() || selfName; } catch { /* keep known identity */ }
-    if (/^(you|bạn)$/i.test(n)) return selfName || "";
-    return n;
-  }
-
-  // Thân câu để so gộp (logic nằm ở platform.captionMergeKey để test được).
-  function captionBody(text) {
-    return platform.captionMergeKey(String(text || ""), lastRosterNames);
-  }
-
-  function handleCaptionNode(node) {
-    if (!sessionId || !running) return;
-    let parsed = null;
-    try {
-      parsed = platform.parseCaptionNode(node, lastRosterNames);
-    } catch (e) { /* DOM lạ */ }
-    if (!parsed || !parsed.text) return;
-    const snapshot = parsed.name + "\n" + parsed.text;
-    if (snapshot === lastCaptionSnapshot) return;
-    lastCaptionSnapshot = snapshot;
-    const speaker = normalizeSelfName(parsed.name);
-    const isSelf = /^(you|bạn)$/i.test(parsed.name || "");
-    const row = node.closest?.('.nMcdL') || [...(node.querySelectorAll?.('.nMcdL') || [])].at(-1) || node;
-    if (!captionClocks.has(row)) captionClocks.set(row, Date.now() / 1000);
-    const body = captionBody(parsed.text);
-    if (!body) return;
-    if (
-      pendingCaption && (!speaker || !pendingCaption.name || speaker === pendingCaption.name) &&
-      platform.shouldMergeCaption({ body: captionBody(pendingCaption.text) }, { body })
-    ) {
-      clearTimeout(pendingCaption.timer);
-      // Giữ bản dài hơn (câu đang lớn dần), tên non-empty mới nhất.
-      if (body.length >= captionBody(pendingCaption.text).length) {
-        pendingCaption.text = body;
-      }
-      if (speaker) pendingCaption.name = speaker;
-      pendingCaption.isSelf = isSelf;
-      pendingCaption.lastSeen = Date.now() / 1000;
-    } else {
-      flushPendingCaption();
-      pendingCaption = {
-        id: "cap_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8),
-        name: speaker,
-        isSelf,
-        text: body,
-        // Google revises earlier words as it recognizes a sentence. Those
-        // revisions must not reset the speaker interval to its last word.
-        firstSeen: captionClocks.get(row),
-        lastSeen: Date.now() / 1000,
-        timer: setTimeout(flushPendingCaption, CAPTION_SETTLE_MS),
-      };
-      publishCaptionContext(pendingCaption, true);
-      return;
-    }
-    pendingCaption.timer = setTimeout(flushPendingCaption, CAPTION_SETTLE_MS);
-    publishCaptionContext(pendingCaption, false);
-  }
 
   function observeSubtree(root, onAdd) {
     if (!root) return null;
@@ -231,9 +133,7 @@
   // bao giờ bắn nữa (đã thấy thực tế với caption). Mỗi vòng kiểm tra root đang
   // watch còn sống và đúng root hiện tại không, khác thì gắn lại.
   let chatWatched = null;
-  let captionWatched = null;
   let chatObs = null;
-  let captionObs = null;
 
   function watchedAlive(obs, watched) {
     if (!obs || !watched) return false;
@@ -256,16 +156,7 @@
         chatWatched = null;
       }
     } catch (e) { /* thử lại vòng sau */ }
-    try {
-      const root = platform.captionRoot();
-      if (root && (root !== captionWatched || !watchedAlive(captionObs, captionWatched))) {
-        if (captionObs) { try { captionObs.disconnect(); } catch (e) { /* bỏ qua */ } }
-        captionObs = observeSubtree(root, handleCaptionNode);
-        captionWatched = root;
-      } else if (!root) {
-        captionWatched = null;
-      }
-    } catch (e) { /* thử lại vòng sau */ }
+
   }
 
   // Panel họp là SPA mở muộn → thử gắn lại mỗi 5s.
@@ -274,15 +165,6 @@
 
   // Lưới an toàn cho caption: đọc thẳng text root hiện tại mỗi 5s, kể cả khi
   // observer trượt. Debounce gộp câu trong handleCaptionNode lo phần còn lại.
-  function pollCaption() {
-    if (!running) return;
-    try {
-      const root = platform.captionRoot();
-      if (root) handleCaptionNode(root);
-    } catch (e) { /* DOM lạ */ }
-  }
-  setInterval(pollCaption, 5000);
-
   // Quét block tin nhắn theo timestamp (neo ổn định hơn selector class của
   // Meet). Tin nhắn tồn tại trong DOM nên poll bắt được cả khi observer trượt.
   function handleChatBlock(block) {
@@ -356,67 +238,15 @@
     sessionId = id;
     running = true;
     seenChat.clear();
-    seenCaption.clear();
-    lastCaptionSnapshot = "";
     lastRosterKey = "";
     // Captions remain optional; never change the user's Meet caption setting.
     activeSpans.length = 0;
     lastActive.clear();
     pollRoster();
     pollChatBlocks();
-    pollCaption();
-    lastMicMuted = undefined;
-    reportMicState();
-  }
 
-  // Sample native Meet audio indicators every 200ms; keep simultaneous account spans.
-  setInterval(() => {
-    if (!running) return;
-    let active = [];
-    try {
-      active = platform.activeParticipants?.() || [];
-      if (!active.length) {
-        const name = (platform.sampleActiveSpeaker() || '').trim();
-        if (name) active = [{name}];
-      }
-    } catch { /* DOM unknown */ }
-    const now = Date.now() / 1000;
-    const next = new Map();
-    for (const person of active) {
-      const key = person.id || person.name;
-      let span = lastActive.get(key);
-      if (span && now - span.end <= 0.75) { span.end = now; span.lastSeen = now; }
-      else {
-        span = {name:person.name, ...(person.id ? {participantId:person.id} : {}), start:now - 0.2, end:now, lastSeen:now};
-        activeSpans.push(span);
-      }
-      next.set(key, span);
-    }
-    // Brief low-volume frames are part of the same turn. Never hold a prior
-    // account over a newly detected account or erase simultaneous activity.
-    if (!active.length) for (const [key, span] of lastActive) {
-      if (now - span.lastSeen <= 0.6) { span.end = now; next.set(key, span); }
-    }
-    lastActive = next;
-    if (activeSpans.length > 200) activeSpans.splice(0, activeSpans.length - 200);
-    // Gửi spans mới về background để fusion với ASR.
-    let selfParticipant = null;
-    try { selfParticipant = platform.selfParticipant?.() || null; } catch { /* unknown */ }
-    send({ type: "CN_SPANS", selfParticipant, spans: activeSpans.slice(-100), sessionId: sessionId || undefined });
-  }, 200);
 
-  // Mic vật lý chỉ được extension lấy khi Meet xác nhận mic đang bật.
-  // Nếu nhãn nút chưa đọc được thì fail-closed: không cấp mic riêng cho extension.
-  let lastMicMuted;
-  function reportMicState() {
-    let muted = null;
-    try { muted = platform.microphoneMuted(); } catch (e) { /* giữ trạng thái an toàn */ }
-    if (muted === lastMicMuted) return;
-    lastMicMuted = muted;
-    send({ type: "CN_MIC_STATE", muted, sessionId: sessionId || undefined });
   }
-  reportMicState();
-  setInterval(reportMicState, 250);
 
   // Heartbeat + self-check selector.
   setInterval(() => {
@@ -426,7 +256,6 @@
     try {
       rosterCount = (platform.scrapeRoster() || []).length;
     } catch (e) { /* bỏ qua */ }
-    try { activeSpeaker = (platform.sampleActiveSpeaker() || "").trim(); } catch (e) { /* bỏ qua */ }
     send({
       type: "CN_HEARTBEAT",
       provider,
@@ -463,7 +292,6 @@
     if (msg?.type === "CN_STOP") {
       pollRoster();
       running = false;
-      flushPendingCaption();
       flush();
     }
     // Chẩn đoán DOM theo yêu cầu popup (đồng bộ — không cần return true).
@@ -476,7 +304,7 @@
         diag.sessionId = sessionId;
         diag.queuePending = eventQueue.length;
         diag.chatObserved = watchedAlive(chatObs, chatWatched);
-        diag.captionObserved = watchedAlive(captionObs, captionWatched);
+        diag.captionObserved = false;
         sendResponse({ ok: true, diag });
       } catch (e) {
         try {
@@ -488,7 +316,6 @@
 
   window.addEventListener("beforeunload", () => {
     pollRoster();
-    flushPendingCaption();
     flush();
   });
 })();

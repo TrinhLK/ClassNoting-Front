@@ -23,6 +23,7 @@
     "deploy:cloudflare": "wrangler deploy --config dist/server/wrangler.json"
   },
   "dependencies": {
+    "@breezystack/lamejs": "1.2.7",
     "@deepgram/sdk": "^4.11.2",
     "@ffmpeg/ffmpeg": "^0.12.15",
     "@ffmpeg/util": "^0.12.2",

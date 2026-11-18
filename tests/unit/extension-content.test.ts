@@ -52,39 +52,6 @@ it('starts collecting when a session arrives, survives restart, and uses durable
   expect(messages.filter(m => m.type === 'CN_EVENTS' && m.sessionId === 's2')).toHaveLength(1);
 });
 
-it('publishes caption identity during continuous speech instead of waiting for silence', async () => {
-  vi.useFakeTimers();
-  const messages: any[] = [];
-  const listeners: any[] = [];
-  const root = document.createElement('div');
-  root.innerHTML = '<div class="nMcdL"><span>Xin chào</span></div>';
-  vi.stubGlobal('chrome', {runtime:{
-    sendMessage: (msg: any, cb: any) => {messages.push(msg); cb?.({});},
-    onMessage:{addListener:(fn: any) => listeners.push(fn)},
-  }});
-  vi.stubGlobal('ClassNotingShared', {detectProvider:()=> 'meet'});
-  vi.stubGlobal('ClassNotingPlatforms', {meet:{
-    chatRoot:()=>null, captionRoot:()=>root, scrapeRoster:()=>[],
-    microphoneMuted:()=>false, sampleActiveSpeaker:()=>'',
-    selfName:()=> 'An',
-    parseCaptionNode:()=>({name:'You', text:root.textContent}),
-    captionMergeKey:(text: string)=>text,
-    shouldMergeCaption:(a: any,b: any)=>b.body.startsWith(a.body),
-  }});
-  (0,eval)(source);
-  listeners[0]({type:'CN_SESSION', sessionId:'s',ownerDisplayName:'Wrong web account'}, {}, ()=>{});
-  const captions = () => messages.flatMap(m=>m.events || []).flatMap(e=>e.captions || []);
-  expect(captions()).toEqual([expect.objectContaining({speaker:'An',isSelf:true,text:'Xin chào'})]);
-  await vi.advanceTimersByTimeAsync(300);
-  root.querySelector('span')!.textContent = 'Xin chào mọi người';
-  await vi.advanceTimersByTimeAsync(1);
-  expect(captions()).toHaveLength(2);
-  expect(captions()[1]).toMatchObject({id:captions()[0].id, speaker:'An',text:'Xin chào mọi người'});
-  await vi.advanceTimersByTimeAsync(300);
-  root.querySelector('span')!.textContent = 'Chào các bạn'; // Google revises earlier words
-  await vi.advanceTimersByTimeAsync(1);
-  expect(captions().at(-1)).toMatchObject({start:captions()[0].start, speaker:'An',text:'Chào các bạn'});
-});
 
 it('allows collector recovery when Meet /new becomes a room without a document reload', () => {
   vi.useFakeTimers();
@@ -129,7 +96,7 @@ it('keeps own chat with the Meet account while captions are off and the web acco
   expect(chat).toEqual([expect.objectContaining({sender:'Meet account',text:'Tin của chính tôi'})]);
 });
 
-it('collects simultaneous native account indicators without enabling captions', () => {
+it('collects metadata without polling speech indicators or sending caption audio identity', () => {
   vi.useFakeTimers();
   const messages:any[]=[],listeners:any[]=[];const captions=vi.fn();
   vi.stubGlobal('chrome',{runtime:{sendMessage:(msg:any,cb:any)=>{messages.push(msg);cb?.({});},onMessage:{addListener:(fn:any)=>listeners.push(fn)}}});
@@ -141,7 +108,6 @@ it('collects simultaneous native account indicators without enabling captions', 
   (0,eval)(source);listeners[0]({type:'CN_SESSION',sessionId:'no-caption'}, {}, ()=>{});
   vi.advanceTimersByTime(1500);
   expect(captions).not.toHaveBeenCalled();
-  const spans=messages.filter(m=>m.type==='CN_SPANS').at(-1).spans;
-  expect(spans).toHaveLength(2);
-  expect(spans).toEqual(expect.arrayContaining([expect.objectContaining({participantId:'one',name:'One'}),expect.objectContaining({participantId:'two',name:'Two'})]));
+  expect(messages.filter(m=>m.type==='CN_SPANS')).toEqual([]);
+  expect(messages.filter(m=>m.type==='CN_MIC_STATE')).toEqual([]);
 });

@@ -15,6 +15,8 @@ function LiveRecordingContent() {
 
   return (
     <LiveRecordingState
+      extensionSessionId={searchParams.get("extensionSessionId") || undefined}
+      initialCaptureSystemAudio={searchParams.get("capture") === "tab"}
       initialLanguage={language}
       initialTitle={title || `Cuộc họp trực tiếp ${new Date().toLocaleDateString("vi-VN")}`}
       initialObjectives={objectives}
