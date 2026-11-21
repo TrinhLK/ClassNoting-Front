@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { completeSpeakers } from "../lib/speakers";
 import RefinementControl from "./Meeting/RefinementControl";
+import SummaryProgress from "./Meeting/SummaryProgress";
 import { Sparkles, FileText as FileIcon, Share2, AlignLeft, MessageSquare, AlertTriangle, History } from "lucide-react";
 import { Meeting, saveMeeting, updateMeetingProcess } from "../lib/db";
 import type { Segment, Speaker, ChatMessage } from "../lib/db";
@@ -163,6 +164,7 @@ export default function MeetingDetailState({
         formatDuration={formatDuration}
       />
 
+      {!isReadOnly && <div className="mx-4 md:mx-8"><SummaryProgress meeting={meeting} /></div>}
       {meeting.status === MEETING_STATUS.FAILED && (
         <div className="mx-4 md:mx-8 mt-4 p-4 bg-red-50 border border-red-200 rounded-xl flex items-start gap-3 shrink-0" role="alert">
           <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />

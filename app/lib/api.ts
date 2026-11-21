@@ -170,7 +170,8 @@ export const requestSummary = async (
   templateStructure?: string,
   objectives?: string,
   createdAt?: number,
-  duration?: number
+  duration?: number,
+  summaryOperationId?: string
 ): Promise<string> => {
   try {
     const data = await postGemini({
@@ -180,7 +181,8 @@ export const requestSummary = async (
       templateStructure: templateStructure,
       meetingObjectives: objectives,
       createdAt: createdAt,
-      duration: duration
+      duration: duration,
+      summaryOperationId,
     });
 
     if (data.summary) {

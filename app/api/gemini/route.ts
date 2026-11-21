@@ -1,5 +1,7 @@
 // app/api/gemini/route.ts
 import { resolveSpeakerNames } from "@/app/lib/resolve-speaker-names";
+import { updateSummaryStage } from "@/app/lib/summary-progress-server";
+import type { SummaryStage } from "@/app/lib/summary-progress";
 import { validWordSlots, validateWordEdits, wordFillPrompt } from "@/app/lib/docx/wordFillPrompt";
 import { NextResponse } from "next/server";
 import { checkRateLimit } from "@/app/lib/rate-limit";
@@ -160,8 +162,9 @@ export async function POST(req: Request) {
   }
 
   let access: Awaited<ReturnType<typeof authorizeAiUsage>> | undefined;
+  let reportStage: (stage: SummaryStage) => Promise<void> = async () => {};
   try {
-    let { text, mode, sessionId, aiMeeting, dateContext, previousSummary, departments, teams, question, history, templateStructure, meetingObjectives, placeholders, context, duration, createdAt, wordSlots } = await req.json();
+    let { text, mode, sessionId, aiMeeting, dateContext, previousSummary, departments, teams, question, history, templateStructure, meetingObjectives, placeholders, context, duration, createdAt, wordSlots, summaryOperationId } = await req.json();
     if (templateStructure !== undefined && (typeof templateStructure !== "string" || templateStructure.length > 100_000)) {
       return NextResponse.json({ error: "Mẫu biên bản không hợp lệ hoặc quá dài." }, { status: 400 });
     }
@@ -187,6 +190,13 @@ export async function POST(req: Request) {
     const inferredMeeting = sessionId.startsWith("summary-") || sessionId.startsWith("tasks-")
       ? { kind: "meeting", id: sessionId.replace(/^(summary|tasks)-/, "") } : undefined;
     access = await authorizeAiUsage(auth.uid, aiMeeting || inferredMeeting, requestId);
+    if (mode === 'full' && inferredMeeting && typeof summaryOperationId === 'string' && /^[a-zA-Z0-9-]{1,80}$/.test(summaryOperationId)) {
+      reportStage = async stage => {
+        try { await updateSummaryStage(inferredMeeting.id, auth.uid, summaryOperationId, stage); }
+        catch { console.warn('[gemini]', {event:'progress_update_failed',requestId}); }
+      };
+      await reportStage('naming');
+    }
     const complete = async (summary: string) => {
       await access!.finish(true);
       return NextResponse.json({ summary });
@@ -535,11 +545,14 @@ export async function POST(req: Request) {
       `;
     }
 
+    await reportStage('generating');
     const generated = stripCjk(await generateWithFallback(prompt, chosenModels, mode, sessionId, requestId, access.apiKey));
     const summary = mode === "full" ? stripEvidenceReferences(generated) : generated;
+    await reportStage('saving');
     return await complete(summary);
 
   } catch (error: any) {
+    await reportStage('failed');
     try { await access?.finish(false); } catch { /* Lease expires if Firestore is unavailable. */ }
     console.error("[gemini]", { event: "route_failure", requestId });
     if (error instanceof AiAccountError) {

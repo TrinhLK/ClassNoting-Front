@@ -1,4 +1,5 @@
 "use client";
+import SummaryProgress from "./Meeting/SummaryProgress";
 
 import React, { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
@@ -312,6 +313,17 @@ export default function DashboardState({
       <div className="flex-1 overflow-y-auto p-4 md:p-8 pb-24 md:pb-8">
         {currentTab === "all" && <ExtensionSetupCard />}
         {currentTab === "all" && <ExtLiveBanner />}
+        {currentTab === "all" && meetings.some(m => !m.isDeleted && m.status === MEETING_STATUS.SUMMARIZING) && (
+          <section aria-label="Các cuộc họp đang tóm tắt" className="mb-6 rounded-2xl border border-indigo-200 bg-white p-4">
+            <h2 className="font-bold text-indigo-900">Đang tóm tắt ({meetings.filter(m => !m.isDeleted && m.status === MEETING_STATUS.SUMMARIZING).length})</h2>
+            <div className="mt-3 grid gap-3 md:grid-cols-2">
+              {meetings.filter(m => !m.isDeleted && m.status === MEETING_STATUS.SUMMARIZING).map(m => <div key={m.id}>
+                <button className="font-semibold text-primary-600 hover:underline" onClick={() => onOpenMeeting(m)}>{m.title}</button>
+                <SummaryProgress meeting={m} />
+              </div>)}
+            </div>
+          </section>
+        )}
         {currentTab === "all" && (
             <StatsCards
               onFileSelected={(file) => {

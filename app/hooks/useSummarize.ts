@@ -31,6 +31,11 @@ export function useSummarize(onRefresh?: () => void) {
     try {
     const isDraft = meeting.status === MEETING_STATUS.DRAFT;
     const meetingId = meeting.id;
+    const operationId = crypto.randomUUID();
+    const startedAt = Date.now();
+    const progress = (stage: import('../lib/summary-progress').SummaryStage) => ({
+      operationId, stage, startedAt, updatedAt: Date.now(), templateName: wordTemplate?.name || 'Họp Tổng Quát (Mặc định)',
+    });
 
     if (isDraft) {
       toast.info("Đang đồng bộ bản nháp lên Cloud trước khi tóm tắt...");
@@ -49,6 +54,7 @@ export function useSummarize(onRefresh?: () => void) {
             ...draftFull.meta,
             audioUrl: url,
             status: MEETING_STATUS.SUMMARIZING,
+            summaryProgress: progress('preparing'),
             jobId: undefined,
           };
           const { saveMeeting } = await import("../lib/db");
@@ -59,7 +65,7 @@ export function useSummarize(onRefresh?: () => void) {
         return;
       }
     } else {
-      await updateMeetingProcess(meetingId, { status: MEETING_STATUS.SUMMARIZING });
+      await updateMeetingProcess(meetingId, { status: MEETING_STATUS.SUMMARIZING, summaryProgress: progress('preparing') });
     }
 
     onRefresh?.();
@@ -71,11 +77,14 @@ export function useSummarize(onRefresh?: () => void) {
         templateStructure,
         meeting.objectives,
         meeting.createdAt,
-        meeting.duration
+        meeting.duration,
+        operationId
       );
 
+      await updateMeetingProcess(meetingId, { summaryProgress: progress('saving') });
       await updateMeetingProcess(meetingId, {
         status: MEETING_STATUS.COMPLETED,
+        summaryProgress: progress('completed'),
         summary: summary,
         summaryWordTemplate: wordTemplate?.wordSource || deleteFieldValue(),
         summaryDocx: deleteFieldValue(),
@@ -110,6 +119,7 @@ export function useSummarize(onRefresh?: () => void) {
         status: !isDraft && meeting.summary?.trim() ? MEETING_STATUS.COMPLETED
           : [402, 409].includes(error.status) && !isDraft ? meeting.status : MEETING_STATUS.FAILED,
         errorMessage: error.message,
+        summaryProgress: progress('failed'),
       });
 
       let userMessage: string;

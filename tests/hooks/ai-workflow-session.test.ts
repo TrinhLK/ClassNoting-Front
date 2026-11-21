@@ -94,5 +94,5 @@ it("does not overwrite another request's state when the server reports an active
   const hook=renderHook(()=>useSummarize());
   await act(async()=>{await hook.result.current(mockMeeting(),"Transcript");});
   expect(updateMeetingProcess).toHaveBeenCalledTimes(1);
-  expect(updateMeetingProcess).toHaveBeenCalledWith(expect.any(String),{status:"summarizing"});
+  expect(updateMeetingProcess).toHaveBeenCalledWith(expect.any(String),expect.objectContaining({status:"summarizing",summaryProgress:expect.objectContaining({stage:"preparing"})}));
 });

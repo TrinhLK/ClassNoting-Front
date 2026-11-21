@@ -5,6 +5,8 @@ import { getMeetingById, Meeting } from "@/app/lib/db";
 import { resolveAudioUrl } from "@/app/lib/utils/audio";
 import { useSummarize } from "@/app/hooks/useSummarize";
 import MeetingDetailState from "@/app/components/MeetingDetailState";
+import { doc, onSnapshot } from "firebase/firestore";
+import { db } from "@/app/lib/firebase";
 
 export default function MeetingDetailPage() {
   const params = useParams();
@@ -16,6 +18,17 @@ export default function MeetingDetailPage() {
   const [audioUrl, setAudioUrl] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!meetingId) return;
+    return onSnapshot(doc(db, 'meetings', meetingId), snapshot => {
+      const data = snapshot.data();
+      if (!data) return;
+      setMeeting(current => current ? { ...current, status: data.status,
+        summaryProgress: data.summaryProgress, summary: data.summary,
+        errorMessage: data.errorMessage } : current);
+    }, () => { /* Keep the loaded report usable if the live connection drops. */ });
+  }, [meetingId]);
 
   useEffect(() => {
     if (!meetingId) return;

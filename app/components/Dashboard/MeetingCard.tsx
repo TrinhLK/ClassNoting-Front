@@ -6,6 +6,7 @@ import { MEETING_STATUS, type MeetingStatus } from "@/app/lib/constants";
 import { cn } from "@/app/lib/cn";
 import Avatar from "@/app/components/ui/Avatar";
 import Badge from "@/app/components/ui/Badge";
+import SummaryProgress from "@/app/components/Meeting/SummaryProgress";
 import Tooltip from "@/app/components/ui/Tooltip";
 
 interface MeetingCardProps {
@@ -188,6 +189,7 @@ export default function MeetingCard({
           <div className="mt-2">
             <Badge status={meeting.status} />
           </div>
+          <SummaryProgress meeting={meeting} />
           {meeting.status === MEETING_STATUS.FAILED && meeting.errorMessage && (
             <p className="mt-1.5 text-xs text-red-600 truncate" title={meeting.errorMessage}>
               {meeting.errorMessage}

@@ -20,9 +20,12 @@ vi.mock("@/app/lib/ai-account", async () => {
 
 const fetchMock = vi.fn();
 const naming = vi.hoisted(() => ({ resolve: vi.fn() }));
+const progressUpdates = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock("@/app/lib/summary-progress-server", () => ({ updateSummaryStage: progressUpdates }));
 vi.mock("@/app/lib/resolve-speaker-names", () => ({ resolveSpeakerNames: naming.resolve }));
 
 beforeEach(() => {
+  progressUpdates.mockClear();
   naming.resolve.mockReset().mockImplementation(async (_id, _uid, text) => text);
   fetchMock.mockReset();
   vi.stubGlobal("fetch", fetchMock);
@@ -44,6 +47,16 @@ describe("POST /api/gemini — retry + validate (bug unknown, test logic mới)"
     expect(res.status).toBe(200);
     expect(naming.resolve).toHaveBeenCalledWith("old-meeting", "test-user", expect.any(String), expect.any(Function));
     expect(JSON.parse(fetchMock.mock.calls[0][1].body).messages[0].content).toContain("[Lan]: Báo cáo đã xong.");
+  });
+  it("publishes real process stages for the requested report operation", async () => {
+    fetchMock.mockImplementation(async () => {
+      expect(progressUpdates.mock.calls.at(-1)?.[3]).toBe('generating');
+      return {ok:true,json:async()=>({choices:[{message:{content:'Biên bản'}}]})};
+    });
+    const res = await POST(makeRequest({mode:'full',sessionId:'summary-old-meeting',text:'Transcript',summaryOperationId:'report-1'}));
+    expect(res.status).toBe(200);
+    expect(progressUpdates.mock.calls.map(call=>call[3])).toEqual(['naming','generating','saving']);
+    expect(progressUpdates.mock.calls[0].slice(0,3)).toEqual(['old-meeting','test-user','report-1']);
   });
 
   it("supports naming saved recordings without generating an extra summary", async () => {

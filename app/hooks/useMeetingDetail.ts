@@ -1,6 +1,6 @@
 "use client";
 import { meetingEvidence } from "../lib/meeting-evidence";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Meeting, generateMeetingShareToken } from "../lib/db";
 import type { MeetingTemplate } from "../lib/templates";
 import { meetingTemplateInstruction } from "../lib/templates";
@@ -14,6 +14,11 @@ export function useMeetingDetail(
   toast?: { success: (m: string) => void; info: (m: string) => void; error: (m: string) => void }
 ) {
   const [meeting, setMeeting] = useState(initialMeeting);
+  useEffect(() => {
+    setMeeting(current => ({ ...current, status: initialMeeting.status,
+      summaryProgress: initialMeeting.summaryProgress, summary: initialMeeting.summary,
+      errorMessage: initialMeeting.errorMessage }));
+  }, [initialMeeting.status, initialMeeting.summaryProgress, initialMeeting.summary, initialMeeting.errorMessage]);
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [activeTab, setActiveTab] = useState<MeetingTab>("transcript");
   const [filteredSpeakerId, setFilteredSpeakerId] = useState<string | null>(null);
