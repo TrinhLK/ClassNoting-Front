@@ -1,6 +1,7 @@
 import { defineConfig } from "vite";
 import vinext from "vinext";
 import { cloudflare } from "@cloudflare/vite-plugin";
+import { staticAssetsAdapter } from "@vinext/cloudflare/cache/static-assets-adapter";
 
 export default defineConfig({
   // PDF export runs in the browser; jsPDF has no workerd export condition.
@@ -10,7 +11,7 @@ export default defineConfig({
     ],
   },
   plugins: [
-    vinext(),
+    vinext({ prerender: true, cache: { cdn: staticAssetsAdapter() } }),
     cloudflare({
       viteEnvironment: {
         name: "rsc",

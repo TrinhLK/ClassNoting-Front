@@ -1,0 +1,23 @@
+import {act,render,screen} from '@testing-library/react';
+import {afterEach,expect,it,vi} from 'vitest';
+import {mockMeeting} from '@/tests/helpers/fixtures';
+vi.mock('@/app/lib/firebase',()=>({auth:{currentUser:{getIdToken:async()=> 'test-token'}}}));
+vi.mock('@/app/lib/db',()=>({getMeetingById:vi.fn()}));
+vi.mock('@/app/lib/api',()=>({postGemini:vi.fn()}));
+import RefinementControl from '@/app/components/Meeting/RefinementControl';
+afterEach(()=>{vi.useRealTimers();vi.unstubAllGlobals();});
+it('backs off on server failures and stops polling after three consecutive failures',async()=>{
+ vi.useFakeTimers();
+ const fetch=vi.fn(async()=>new Response('',{status:503}));vi.stubGlobal('fetch',fetch);
+ render(<RefinementControl meeting={mockMeeting({audioUrl:'https://audio.example/test.webm',refinement:{status:'running'}})} onUpdate={vi.fn()}/>);
+ await act(async()=>{await vi.advanceTimersByTimeAsync(1000);});
+ expect(fetch).toHaveBeenCalledTimes(1);
+ await act(async()=>{await vi.advanceTimersByTimeAsync(10000);});
+ expect(fetch).toHaveBeenCalledTimes(2);
+ await act(async()=>{await vi.advanceTimersByTimeAsync(20000);});
+ expect(fetch).toHaveBeenCalledTimes(3);
+ await act(async()=>{await vi.advanceTimersByTimeAsync(180000);});
+ expect(fetch).toHaveBeenCalledTimes(3);
+ expect(screen.getByRole('alert')).toHaveTextContent('HTTP 503');
+ expect(screen.getByRole('button',{name:'Phân tích lại người nói từ audio'})).toBeEnabled();
+});

@@ -12,7 +12,7 @@ async function request(path: string, body?: unknown) {
   const res = await fetch(c.url + path, { method: body ? "POST" : "GET", headers: {
     Authorization: `Bearer ${c.key}`, "Content-Type": "application/json"
   }, ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(20_000) });
-  if (!res.ok) throw new Error(`ASR HTTP ${res.status}`);
+  if (!res.ok) throw Object.assign(new Error(`ASR HTTP ${res.status}`), { httpStatus: res.status });
   return res.json();
 }
 
@@ -117,8 +117,21 @@ export function applyRefinement(original: Meeting, refined: Segment[]): Meeting 
 
 export async function pollRefinement(meeting: Meeting) {
   if (!meeting.refinement?.jobId || !["queued", "running"].includes(meeting.refinement.status)) return;
-  const result = await request(`/status/${encodeURIComponent(meeting.refinement.jobId)}`);
   const ref = getAdminDb().collection("meetings").doc(meeting.id);
+  let result;
+  try { result = await request(`/status/${encodeURIComponent(meeting.refinement.jobId)}`); }
+  catch (error) {
+    const status = (error as { httpStatus?: number })?.httpStatus;
+    if (![400, 401, 403, 404, 410].includes(status || 0)) throw error;
+    // An invalid/expired job cannot recover by polling forever. Only close the
+    // same job; a concurrent retry may already have created a replacement.
+    await getAdminDb().runTransaction(async tx => {
+      const current = (await tx.get(ref)).data() as Meeting | undefined;
+      if (!current?.refinement || current.refinement.jobId !== meeting.refinement!.jobId || !["queued", "running"].includes(current.refinement.status)) return;
+      tx.update(ref, { refinement: { ...current.refinement, status: "failed", error: error instanceof Error ? error.message : "ASR không thể tiếp tục tác vụ" } });
+    });
+    return;
+  }
   if (result.status === "COMPLETED") {
     if (result.output?.status !== "success" || !Array.isArray(result.output.transcript)) throw new Error("ASR trả kết quả không hợp lệ");
     const refined = result.output.transcript as Segment[];

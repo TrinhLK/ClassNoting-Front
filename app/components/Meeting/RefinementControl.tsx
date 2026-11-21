@@ -11,7 +11,7 @@ export default function RefinementControl({ meeting, onUpdate }: { meeting: Meet
   async function request(method: "POST" | "GET") {
     const token = await auth.currentUser?.getIdToken();
     const res = await fetch(`/api/meetings/${encodeURIComponent(meeting.id)}/refine`, { method, headers: { Authorization: `Bearer ${token}` } });
-    const data = await res.json();
+    const data = await res.json().catch(() => ({error:`Máy chủ tạm thời không phản hồi (HTTP ${res.status}). Vui lòng thử lại sau.`}));
     if (!res.ok) throw new Error(explainRefinementError(data.error || "Hậu xử lý thất bại"));
     setStatus(data.refinement?.status || ""); setError(data.refinement?.error || "");
     if (data.refinement?.status === "completed") {
@@ -27,9 +27,17 @@ export default function RefinementControl({ meeting, onUpdate }: { meeting: Meet
     if (!["queued", "running"].includes(status)) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
+    let failures = 0;
     const poll = async () => {
-      try { await request("GET"); } catch (e) { if (!cancelled) setError(String(e instanceof Error ? e.message : e)); }
-      if (!cancelled) timer = setTimeout(poll, 5000);
+      try { await request("GET"); failures = 0; }
+      catch (e) {
+        failures++;
+        if (!cancelled) {
+          setError(String(e instanceof Error ? e.message : e));
+          if (failures >= 3) { setStatus("failed"); return; }
+        }
+      }
+      if (!cancelled) timer = setTimeout(poll, failures ? 5000 * 2 ** failures : 5000);
     };
     timer = setTimeout(poll, 1000);
     return () => { cancelled = true; clearTimeout(timer); };
