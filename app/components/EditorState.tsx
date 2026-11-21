@@ -31,7 +31,7 @@ export default function EditorState({
   audioSrc: string,
   initialData: Meeting,
   onBack: () => void,
-  onSummarize: (meeting: Meeting, text: string, templateStructure?: string) => void
+  onSummarize: (meeting: Meeting, text: string, templateStructure?: string, wordTemplate?: MeetingTemplate) => void
 }) {
   const { user } = useAuth();
 
@@ -418,7 +418,7 @@ export default function EditorState({
   const handleSummarizeRequest = useCallback(() => {
     const fullText = meetingEvidence({ ...initialData, segments, speakers }, { includeEvidenceIds: false });
     // [UPDATE] Truyền structure của template đang chọn
-    onSummarize(initialData, fullText, meetingTemplateInstruction(selectedTemplate));
+    onSummarize(initialData, fullText, meetingTemplateInstruction(selectedTemplate), selectedTemplate);
     toast.info(`Đang tóm tắt theo mẫu: ${selectedTemplate.name}...`);
     onBack();
   }, [segments, speakers, selectedTemplate, initialData, onSummarize, toast, onBack]);

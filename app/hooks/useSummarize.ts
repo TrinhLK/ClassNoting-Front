@@ -1,5 +1,6 @@
 "use client";
 import { useCallback } from "react";
+import type { MeetingTemplate } from "../lib/templates";
 import { Meeting, updateMeetingProcess } from "../lib/db";
 import { MEETING_STATUS } from "../lib/constants";
 import { uploadAudioToFirebase, requestSummary } from "../lib/api";
@@ -15,7 +16,8 @@ export function useSummarize(onRefresh?: () => void) {
   return useCallback(async (
     meeting: Meeting,
     transcriptText: string,
-    templateStructure?: string
+    templateStructure?: string,
+    wordTemplate?: MeetingTemplate
   ) => {
     const isDraft = meeting.status === MEETING_STATUS.DRAFT;
     const meetingId = meeting.id;
@@ -65,6 +67,8 @@ export function useSummarize(onRefresh?: () => void) {
       await updateMeetingProcess(meetingId, {
         status: MEETING_STATUS.COMPLETED,
         summary: summary,
+        summaryWordTemplate: wordTemplate?.wordSource || deleteFieldValue(),
+        summaryDocx: deleteFieldValue(),
         summaryNeedsReview: false,
         errorMessage: deleteFieldValue<string>(),
       });

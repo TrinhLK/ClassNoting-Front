@@ -47,7 +47,7 @@ export function templateHtmlToMarkdown(html: string): string {
   return Array.from(doc.body.children).map(e => block(e)).join("").trim();
 }
 
-/** Files stay in the browser. Only reviewed extracted text is saved as a template. */
+/** Extract prompt context only. The caller separately retains the original Word package for export. */
 export async function readWordTemplate(file: File): Promise<string> {
   if (!/\.(docx|dotx)$/i.test(file.name)) throw new Error("Chọn file Word .docx hoặc .dotx. Với .doc, hãy lưu lại thành .docx trước.");
   if (file.size > MAX_TEMPLATE_FILE_BYTES) throw new Error("File mẫu tối đa 5 MB. Hãy bỏ bớt hình ảnh hoặc nội dung không cần thiết.");

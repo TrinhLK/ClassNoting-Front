@@ -1,5 +1,5 @@
 "use client";
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import { saveAs } from "file-saver";
 import { Meeting } from "../lib/db";
 import { escapeHtml, summaryToHtml } from "../lib/docx/pdfRenderer";
@@ -17,6 +17,7 @@ export function useExport(
   },
   audioSrc = ""
 ) {
+  const wordExport = useRef<{key: string; result: Promise<Blob>} | null>(null);
   const exportParticipants = useCallback(async () => {
     const toastId=toast.loading("Đang xuất báo cáo người tham gia...") as string;
     try {
@@ -47,7 +48,19 @@ export function useExport(
   }, [meeting, toast]);
 
   const exportDocx = useCallback(async () => {
+    const toastId = toast.loading(meeting.summaryWordTemplate ? "Đang điền biên bản vào mẫu Word gốc..." : "Đang xuất Word...") as string;
     try {
+      if (meeting.summaryWordTemplate) {
+        const { exportWordTemplate } = await import("../lib/docx/exportWordTemplate");
+        const key = JSON.stringify([meeting.userId, meeting.id, meeting.summary, meeting.summaryWordTemplate]);
+        if (wordExport.current?.key !== key) wordExport.current = { key, result: exportWordTemplate(meeting) };
+        let blob: Blob;
+        try { blob = await wordExport.current.result; }
+        catch (error) { wordExport.current = null; throw error; }
+        saveAs(blob, `${meeting.title.replace(/[<>:"/\\|?*]/g, "_")}.docx`);
+        toast.success("Đã xuất Word theo định dạng mẫu gốc");
+        return;
+      }
       const cleanSummary = normalizeMinuteMarkdown(stripLeadingCommas(stripTimestamps(stripEvidenceReferences(meeting.summary || ""))));
       const nodes = parseSummaryToDocx(cleanSummary);
       const blob = await buildSummaryDocx(
@@ -57,9 +70,9 @@ export function useExport(
       );
       saveAs(blob, `${meeting.title}.docx`);
       toast.success("Đã xuất file .docx");
-    } catch {
-      toast.error("Lỗi khi xuất file .docx");
-    }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Lỗi khi xuất file .docx");
+    } finally { toast.dismiss(toastId); }
   }, [meeting, toast]);
 
   const exportPdf = useCallback(async () => {

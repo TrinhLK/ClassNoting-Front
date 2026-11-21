@@ -9,6 +9,8 @@ const { saveAsMock, convertToMp3Mock } = vi.hoisted(() => ({
 
 vi.mock("file-saver", () => ({ saveAs: saveAsMock }));
 vi.mock("@/app/lib/converter", () => ({ convertToMp3: convertToMp3Mock }));
+const wordMock=vi.hoisted(()=>vi.fn());
+vi.mock("@/app/lib/docx/exportWordTemplate",()=>({exportWordTemplate:wordMock}));
 
 import { useExport } from "@/app/hooks/useExport";
 
@@ -21,12 +23,21 @@ const makeToast = () => ({
 
 describe("useExport downloadAudio", () => {
   beforeEach(() => {
+    wordMock.mockReset().mockResolvedValue(new Blob(["source-formatted-word"]));
     saveAsMock.mockReset();
     convertToMp3Mock.mockReset();
     convertToMp3Mock.mockImplementation(async () =>
       new File(["mp3-data"], "converted.mp3", { type: "audio/mpeg" })
     );
     vi.restoreAllMocks();
+  });
+
+  it("reuses the exact formatted Word for repeated downloads in the same view", async () => {
+    const meeting=mockMeeting({summary:"Report",summaryWordTemplate:{path:"users/owner/uploads/word/source.docx",name:"Template.docx"}});
+    const hook=renderHook(()=>useExport(meeting,makeToast()));
+    await act(()=>hook.result.current.exportDocx());
+    await act(()=>hook.result.current.exportDocx());
+    expect(wordMock).toHaveBeenCalledTimes(1);expect(saveAsMock).toHaveBeenCalledTimes(2);
   });
 
   it("tải audio draft từ blob URL, chuyển MP3 rồi lưu", async () => {

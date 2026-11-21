@@ -9,7 +9,7 @@ export type MeetingTab = "transcript" | "summary" | "chat";
 
 export function useMeetingDetail(
   initialMeeting: Meeting,
-  onSummarize?: (m: Meeting, text: string, structure?: string) => void,
+  onSummarize?: (m: Meeting, text: string, structure?: string, wordTemplate?: MeetingTemplate) => void,
   onBack?: () => void,
   toast?: { success: (m: string) => void; info: (m: string) => void; error: (m: string) => void }
 ) {
@@ -38,7 +38,7 @@ export function useMeetingDetail(
   const handleSummarizeRequest = useCallback((template: MeetingTemplate) => {
     if (!onSummarize) return;
     const fullText = meetingEvidence(meeting, { includeEvidenceIds: false });
-    onSummarize(meeting, fullText, meetingTemplateInstruction(template));
+    onSummarize(meeting, fullText, meetingTemplateInstruction(template), template);
     toast?.info(`Đang tóm tắt theo mẫu: ${template.name}...`);
     setShowTemplateModal(false);
     onBack?.();

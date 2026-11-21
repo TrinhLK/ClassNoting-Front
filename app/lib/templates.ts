@@ -6,6 +6,7 @@ export interface MeetingTemplate {
     isCustom?: boolean; // To distinguish between system and user templates
     userId?: string; // Owner of the custom template
     sourceFileName?: string;
+    wordSource?: import("./docx/wordTemplate").WordSource;
     sourceMode?: "auto" | "outline" | "example";
 }
 

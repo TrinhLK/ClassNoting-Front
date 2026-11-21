@@ -9,6 +9,8 @@ vi.mock("@/app/context/AuthContext", () => { const user = {uid:"owner"}; return 
 vi.mock("@/app/context/GlobalUIProvider", () => ({useGlobalUI: () => ({toast:{success:vi.fn(),error:vi.fn(),warning:vi.fn()},confirm:vi.fn()})}));
 vi.mock("@/app/lib/db", () => ({getCustomTemplates:vi.fn(),saveCustomTemplate:vi.fn(),deleteCustomTemplate:vi.fn()}));
 vi.mock("@/app/lib/docx/templateReader", () => ({readWordTemplate:vi.fn()}));
+vi.mock("@/app/lib/docx/wordTemplate", () => ({wordTemplateForms:async()=>[],selectWordForm:vi.fn()}));
+vi.mock("@/app/lib/docx/templateStorage", () => ({saveWordFile:async (_file:File,name:string)=>({path:"users/owner/uploads/word/template.docx",name})}));
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -29,7 +31,7 @@ it("reviews a Word upload, persists the selected interpretation and selects the 
   fireEvent.click(screen.getByRole("button",{name:"Lưu mẫu mới"}));
   await waitFor(()=>expect(saveCustomTemplate).toHaveBeenCalledWith("owner",expect.objectContaining({sourceFileName:file.name,sourceMode:"example",structure:"## Kết quả\nVăn phong báo cáo mẫu."})));
   fireEvent.click(await screen.findByRole("button",{name:"Sử dụng mẫu này"}));
-  expect(onSelectTemplate).toHaveBeenCalledWith(expect.objectContaining({id:"uploaded-template",sourceMode:"example"}));
+  expect(onSelectTemplate).toHaveBeenCalledWith(expect.objectContaining({id:"uploaded-template",sourceMode:"example",wordSource:{path:"users/owner/uploads/word/template.docx",name:file.name}}));
 });
 
 it("shows an import error without saving or replacing the current template", async () => {

@@ -61,6 +61,20 @@ describe("POST /api/gemini — retry + validate (bug unknown, test logic mới)"
     expect(body.error).toContain("text");
   });
 
+  it("fills Word through grounded text edits rather than generating formatted Markdown", async () => {
+    fetchMock.mockResolvedValue({ok:true,json:async()=>({choices:[{message:{content:'[{"id":"p0","find":"Lan","text":"Chi"}]'}}]})});
+    const res=await POST(makeRequest({mode:"docx_fill",text:"Học viên Chi",wordSlots:[{id:"p0",text:"Học viên Lan"}],aiMeeting:{kind:"meeting",id:"meeting-1"}}));
+    expect(res.status).toBe(200);
+    expect(JSON.parse((await res.json()).summary)).toEqual([{id:"p0",find:"Lan",text:"Chi"}]);
+    const prompt=JSON.parse(fetchMock.mock.calls[0][1].body).messages[0].content;
+    expect(prompt).toContain("FILE WORD GỐC");expect(prompt).toContain("không Markdown");
+  });
+
+  it("rejects oversized or duplicate Word slots before invoking the model", async () => {
+    const res=await POST(makeRequest({mode:"docx_fill",text:"Report",wordSlots:[{id:"p0",text:"A"},{id:"p0",text:"B"}]}));
+    expect(res.status).toBe(400);expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it.each(["outline", "example", "auto"] as const)("sends %s template semantics without treating example facts as current evidence", async sourceMode => {
     fetchMock.mockResolvedValueOnce({ok:true,json:async()=>({choices:[{message:{content:"## Kết quả\nDoanh thu 12 tỷ đồng."}}]})});
     const template = {...DEFAULT_TEMPLATES[0], sourceMode, structure:"## Kết quả\nTheo báo cáo của Ông A, doanh thu 25 tỷ đồng."};

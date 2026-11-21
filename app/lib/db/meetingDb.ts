@@ -41,6 +41,8 @@ export interface Meeting {
   segments: Segment[];
   speakers: Speaker[];
   summary?: string;
+  summaryWordTemplate?: import("../docx/wordTemplate").WordSource;
+  summaryDocx?: import("../docx/wordTemplate").WordSource & { summaryHash: string; templatePath: string; formatVersion?: number };
   status: MeetingStatus;
   isDeleted: boolean;
   errorMessage?: string;

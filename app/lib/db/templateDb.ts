@@ -37,6 +37,7 @@ export const saveCustomTemplate = async (userId: string, template: Partial<Meeti
       description: template.description || "",
       structure: template.structure,
       ...(template.sourceFileName ? { sourceFileName: template.sourceFileName } : {}),
+      ...(template.wordSource ? { wordSource: template.wordSource } : {}),
       ...(template.sourceMode ? { sourceMode: template.sourceMode } : {}),
       updatedAt: Date.now()
     };

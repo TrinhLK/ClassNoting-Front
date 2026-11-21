@@ -1,5 +1,6 @@
 // app/api/gemini/route.ts
 import { resolveSpeakerNames } from "@/app/lib/resolve-speaker-names";
+import { validWordSlots, validateWordEdits, wordFillPrompt } from "@/app/lib/docx/wordFillPrompt";
 import { NextResponse } from "next/server";
 import { checkRateLimit } from "@/app/lib/rate-limit";
 import { stripCjk, stripEvidenceReferences, stripThinking } from "@/app/lib/text";
@@ -19,6 +20,7 @@ const MODELS = {
   detect_fill: "gemini-3.7-flash",
   extract_json: "gemini-3.7-flash",
   speaker_names: "gemini-3.7-flash",
+  docx_fill: "gemini-3.7-flash",
 };
 const DEFAULT_MODEL = "gemini-3.7-flash";
 const FALLBACK_MODELS = ["gemini-3.6-flash"];
@@ -159,7 +161,7 @@ export async function POST(req: Request) {
 
   let access: Awaited<ReturnType<typeof authorizeAiUsage>> | undefined;
   try {
-    let { text, mode, sessionId, aiMeeting, dateContext, previousSummary, departments, teams, question, history, templateStructure, meetingObjectives, placeholders, context, duration, createdAt } = await req.json();
+    let { text, mode, sessionId, aiMeeting, dateContext, previousSummary, departments, teams, question, history, templateStructure, meetingObjectives, placeholders, context, duration, createdAt, wordSlots } = await req.json();
     if (templateStructure !== undefined && (typeof templateStructure !== "string" || templateStructure.length > 100_000)) {
       return NextResponse.json({ error: "Mẫu biên bản không hợp lệ hoặc quá dài." }, { status: 400 });
     }
@@ -177,6 +179,9 @@ export async function POST(req: Request) {
     if (!Object.prototype.hasOwnProperty.call(MODELS, mode)) {
       return NextResponse.json({ error: "Chế độ AI không hợp lệ." }, { status: 400 });
     }
+    if (mode === "docx_fill" && (!validWordSlots(wordSlots) || typeof text !== "string" || text.length > 200000)) {
+      return NextResponse.json({ error: "Mẫu Word hoặc nội dung biên bản không hợp lệ." }, { status: 400 });
+    }
     const auth = await verifyExtensionAuth(req);
     if (auth instanceof NextResponse) return auth;
     const inferredMeeting = sessionId.startsWith("summary-") || sessionId.startsWith("tasks-")
@@ -193,6 +198,12 @@ export async function POST(req: Request) {
       : [primaryModel];
 
     let prompt = "";
+
+    if (mode === "docx_fill") {
+      const raw = await generateWithFallback(wordFillPrompt(text, wordSlots), chosenModels, mode, sessionId, requestId, access.apiKey);
+      const edits = validateWordEdits(parseAiJson(raw, mode, "array"), wordSlots);
+      return await complete(JSON.stringify(edits));
+    }
 
     if (mode === "speaker_names") {
       if (aiMeeting?.kind !== "meeting" || typeof aiMeeting.id !== "string") {

@@ -38,6 +38,14 @@ it("clears a stale error after a successful summary", async () => {
   expect(vi.mocked(updateMeetingProcess).mock.calls.at(-1)?.[1]).toHaveProperty("errorMessage");
 });
 
+it("links the original Word file to the successful summary and invalidates the previous export", async () => {
+  const source={path:"users/owner/uploads/word/template.docx",name:"Template.docx",formIndex:3};
+  const hook=renderHook(()=>useSummarize());
+  await act(async()=>{await hook.result.current(mockMeeting(),"Transcript","Template instructions",{id:"word-template",name:"Template",description:"",structure:"Template instructions",wordSource:source});});
+  expect(vi.mocked(updateMeetingProcess).mock.calls.at(-1)?.[1]).toMatchObject({summaryWordTemplate:source,summary:"Summary"});
+  expect(vi.mocked(updateMeetingProcess).mock.calls.at(-1)?.[1]).toHaveProperty("summaryDocx");
+});
+
 it("summary and task hooks reuse meeting-scoped IDs on rerun/remount and separate workflows/meetings", async () => {
   const meeting = mockMeeting();
   const other = mockMeeting({ id: "other-meeting" });

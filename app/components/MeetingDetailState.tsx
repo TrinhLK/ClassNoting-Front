@@ -36,7 +36,7 @@ export default function MeetingDetailState({
   audioSrc: string,
   onBack: () => void,
   onEdit: () => void,
-  onSummarize?: (meeting: Meeting, text: string, templateStructure?: string) => void,
+  onSummarize?: (meeting: Meeting, text: string, templateStructure?: string, wordTemplate?: MeetingTemplate) => void,
   isReadOnly?: boolean;
 }) {
   const { toast } = useGlobalUI();

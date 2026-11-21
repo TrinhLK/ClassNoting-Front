@@ -361,3 +361,9 @@ it.each([
   expect(paragraphs).toContain("Sĩ số 3.400 - 4.000, khoảng 80 chuyến.");
   expect(paragraphs).toContain("Đại học: 5 - 7 hội thảo.");
 });
+
+it('exports level-four headings and inline table breaks without literal Markdown or HTML markers',async()=>{
+ const nodes=parseMarkdownToDocx('#### PHẦN III - CÔNG BỐ KẾT QUẢ\n\n| THƯ KÝ<br>HỘI ĐỒNG | CHỦ TỊCH |\n| --- | --- |\n| Ký tên | Ký tên |');
+ const xml=await packAndReadXml(nodes);
+ expect(xml).not.toContain('####');expect(xml).not.toContain('&lt;br');expect(xml).toContain('<w:br/>');expect(xml).toContain('PHẦN III');
+});

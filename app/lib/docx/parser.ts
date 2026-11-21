@@ -45,7 +45,7 @@ export const parseInline = (text: string): InlineToken[] => {
 };
 
 export const tokensToRuns = (tokens: InlineToken[], size = 26): TextRun[] =>
-  tokens.map((t) => new TextRun({ text: t.text, bold: t.bold, italics: t.italic, font: "Times New Roman", size }));
+  tokens.flatMap((t) => t.text.split(/<br\s*\/?\s*>|\n/gi).map((text, index) => new TextRun({ text, ...(index ? {break:1} : {}), bold: t.bold, italics: t.italic, font: "Times New Roman", size })));
 
 const BODY_SPACING = { after: 160, line: 300 };
 const LIST_SPACING = { after: 80, line: 280 };
@@ -154,7 +154,7 @@ export const parseMarkdownToDocx = (md: string): SummaryNode[] => {
 
     const h1 = line.match(/^#\s+(.*)/);
     const h2 = line.match(/^##\s+(.*)/);
-    const h3 = line.match(/^###\s+(.*)/);
+    const h3 = line.match(/^#{3,6}\s+(.*)/);
     const bullet = line.match(/^(\s*)[-*+]\s+(.*)/);
     const numbered = line.match(/^(\s*)\d+[.)]\s+(.*)/);
 

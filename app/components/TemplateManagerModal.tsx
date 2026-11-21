@@ -33,6 +33,9 @@ export default function TemplateManagerModal({
   const [newTemplateDesc, setNewTemplateDesc] = useState("");
   const [newTemplateStructure, setNewTemplateStructure] = useState("");
   const [sourceFileName, setSourceFileName] = useState("");
+  const [sourceWordFile, setSourceWordFile] = useState<File | null>(null);
+  const [wordForms, setWordForms] = useState<{index:number;label:string}[]>([]);
+  const [wordFormIndex, setWordFormIndex] = useState<number | undefined>();
   const [sourceMode, setSourceMode] = useState<NonNullable<MeetingTemplate["sourceMode"]>>("auto");
   const [isImporting, setIsImporting] = useState(false);
   const [importError, setImportError] = useState("");
@@ -56,6 +59,8 @@ export default function TemplateManagerModal({
     setIsImporting(false);
     setNewTemplateName(""); setNewTemplateDesc(""); setNewTemplateStructure("");
     setSourceFileName(""); setSourceMode("auto"); setImportError("");
+    setSourceWordFile(null);
+    setWordForms([]); setWordFormIndex(undefined);
   };
 
   const handleImportWord = async (file: File) => {
@@ -63,11 +68,18 @@ export default function TemplateManagerModal({
     setIsImporting(true); setImportError("");
     try {
       const { readWordTemplate } = await import("../lib/docx/templateReader");
-      const structure = await readWordTemplate(file);
+      // Validate the package before inspecting or retaining it.
+      const fullStructure = await readWordTemplate(file);
+      const { wordTemplateForms, selectWordForm } = await import("../lib/docx/wordTemplate");
+      const forms = await wordTemplateForms(file);
+      const selected = forms.length ? 0 : undefined;
+      const structure = selected===undefined ? fullStructure : await readWordTemplate(new File([await selectWordForm(file,selected)],file.name));
       if (version !== importVersion.current) return;
       setNewTemplateStructure(structure);
       setNewTemplateName(file.name.replace(/\.(docx|dotx)$/i, ""));
       setNewTemplateDesc(""); setSourceMode("auto"); setSourceFileName(file.name);
+      setSourceWordFile(file);
+      setWordForms(forms); setWordFormIndex(selected);
       setIsCreatingTemplate(true);
     } catch (error) {
       if (version === importVersion.current) setImportError(error instanceof Error ? error.message : "Không đọc được mẫu Word.");
@@ -104,12 +116,17 @@ export default function TemplateManagerModal({
     if (isSubmitting || isImporting) return;
     setIsSubmitting(true);
     try {
+      const savedSource = sourceWordFile
+        ? await (await import("../lib/docx/templateStorage")).saveWordFile(sourceWordFile, sourceWordFile.name)
+        : undefined;
+      const wordSource = savedSource ? { ...savedSource, ...(wordFormIndex===undefined ? {} : {formIndex:wordFormIndex}) } : undefined;
       const draft = {
         name: newTemplateName.trim(),
         description: newTemplateDesc,
         structure: newTemplateStructure,
         sourceMode,
         ...(sourceFileName ? { sourceFileName } : {}),
+        ...(wordSource ? { wordSource } : {}),
       };
       const id = await saveCustomTemplate(user.uid, draft);
       if (id) setSelectedTemplate({ ...draft, id, isCustom: true, userId: user.uid });
@@ -240,6 +257,25 @@ export default function TemplateManagerModal({
                     {isImporting ? "Đang đọc mẫu Word..." : sourceFileName ? "Thay file Word" : "Tải mẫu Word lên"}
                   </button>
                   {sourceFileName && <p className="mt-1 break-all">{sourceFileName}</p>}
+                  {wordForms.length>1 && <label className="block mt-2">Phạm vi mẫu Word
+                    <select aria-label="Phạm vi mẫu Word" value={wordFormIndex??"all"} disabled={isImporting || isSubmitting} className="block w-full mt-1 rounded border p-2 bg-white" onChange={async e=>{
+                      if(!sourceWordFile) return;
+                      const index=e.target.value==="all"?undefined:Number(e.target.value);
+                      const version=++importVersion.current;
+                      setIsImporting(true);setImportError("");
+                      try {
+                        const {selectWordForm}=await import("../lib/docx/wordTemplate");
+                        const {readWordTemplate}=await import("../lib/docx/templateReader");
+                        const chosen=index===undefined?sourceWordFile:new File([await selectWordForm(sourceWordFile,index)],sourceWordFile.name);
+                        const text=await readWordTemplate(chosen);
+                        if(version===importVersion.current) {setNewTemplateStructure(text);setWordFormIndex(index);}
+                      } catch(error) {if(version===importVersion.current) setImportError(error instanceof Error?error.message:"Không đọc được biên bản con.");}
+                      finally {if(version===importVersion.current) setIsImporting(false);}
+                    }}>
+                      {wordForms.map(form=><option key={form.index} value={form.index}>Biên bản {form.index+1}: {form.label.slice(0,100)}</option>)}
+                      <option value="all">Giữ toàn bộ {wordForms.length} biên bản trong file</option>
+                    </select>
+                  </label>}
                   <p className="text-xs mt-1">Kiểm tra nội dung đã đọc bên dưới trước khi lưu. Mẫu hướng dẫn bố cục và cách viết; dữ kiện báo cáo lấy từ cuộc họp mới.</p>
                 </div>
                 <div>
@@ -308,7 +344,7 @@ export default function TemplateManagerModal({
                     className="w-full min-h-[160px] p-3 border rounded-lg font-mono text-sm focus:ring-2 focus:ring-indigo-500 outline-none resize-none bg-slate-50"
                     placeholder={`# MẪU BIÊN BẢN \n\n## 1. PHẦN 1...\n## 2. PHẦN 2...`}
                   />
-                  <p className="text-xs text-slate-500 mt-1">Có thể sửa hoặc nhập Markdown trực tiếp. {newTemplateStructure.length.toLocaleString("vi-VN")} / 40.000 ký tự. Bố cục trang, hình ảnh và chữ ký Word không được sao chép.</p>
+                  <p className="text-xs text-slate-500 mt-1">{newTemplateStructure.length.toLocaleString("vi-VN")} / 40.000 ký tự. {sourceWordFile ? "File Word gốc được lưu để giữ phông chữ, căn lề, bảng và bố cục khi tải DOCX. Phần chữ bên trên dùng để hướng dẫn AI viết nội dung." : "Có thể sửa hoặc nhập Markdown trực tiếp. Tải file Word lên nếu cần giữ định dạng khi xuất DOCX."}</p>
                 </div>
                 <div className="flex justify-end gap-3 pt-4 border-t">
                   <button
@@ -335,6 +371,7 @@ export default function TemplateManagerModal({
                   {selectedTemplate.sourceMode && <p className="text-xs text-slate-500 mt-1">{selectedTemplate.sourceMode === "outline" ? "Dùng các tiêu đề làm khung tóm tắt." : selectedTemplate.sourceMode === "example" ? "Viết báo cáo mới theo bố cục và văn phong mẫu; không dùng lại dữ kiện ví dụ." : "Tự nhận diện khung tiêu đề hoặc báo cáo có ví dụ để áp dụng cho cuộc họp mới."}</p>}
                 </div>
                 <div className="flex-1 overflow-y-auto bg-slate-50 rounded-xl border p-6">
+                  {selectedTemplate.sourceFileName && !selectedTemplate.wordSource && <p className="mb-3 text-sm text-amber-800">Mẫu cũ chỉ lưu phần chữ. Hãy tải lại file Word gốc để xuất DOCX giữ đúng định dạng.</p>}
                   <pre className="whitespace-pre-wrap font-mono text-sm text-slate-600 leading-relaxed">
                     {selectedTemplate.structure}
                   </pre>
