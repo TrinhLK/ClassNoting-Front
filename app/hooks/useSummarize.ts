@@ -9,6 +9,9 @@ import { useGlobalUI } from "../context/GlobalUIProvider";
 import { meetingAiSessionId } from "../lib/ai-session";
 import { deleteFieldValue } from "../lib/utils/firestore";
 
+// Shared across hook instances/remounts in this tab while a report is in flight.
+const activeSummaries = new Set<string>();
+
 export function useSummarize(onRefresh?: () => void) {
   const { user } = useAuth();
   const { toast } = useGlobalUI();
@@ -19,6 +22,13 @@ export function useSummarize(onRefresh?: () => void) {
     templateStructure?: string,
     wordTemplate?: MeetingTemplate
   ) => {
+    const operationKey = `${user?.uid}:${meeting.id}`;
+    if (activeSummaries.has(operationKey)) {
+      toast.info("Đang tóm tắt cuộc họp này. Vui lòng đợi kết quả.");
+      return;
+    }
+    activeSummaries.add(operationKey);
+    try {
     const isDraft = meeting.status === MEETING_STATUS.DRAFT;
     const meetingId = meeting.id;
 
@@ -84,6 +94,10 @@ export function useSummarize(onRefresh?: () => void) {
 
       toast.success(`Đã tóm tắt xong cuộc họp!`);
     } catch (error: any) {
+      if (error.code === "AI_MEETING_BUSY" || error.status === 409) {
+        toast.info(error.message || "Cuộc họp đang được xử lý. Vui lòng đợi kết quả.");
+        return;
+      }
       console.error("[summarize] failed:", {
         meetingId,
         status: error.status,
@@ -115,6 +129,9 @@ export function useSummarize(onRefresh?: () => void) {
       toast.error(userMessage);
     } finally {
       onRefresh?.();
+    }
+    } finally {
+      activeSummaries.delete(operationKey);
     }
   }, [user, toast, onRefresh]);
 }

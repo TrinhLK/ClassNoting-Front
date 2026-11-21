@@ -60,7 +60,6 @@ describe("ten distinct free meetings", () => {
   });
   it("releases failed reservations; stale completions cannot charge a newer request", async () => {
     await reserveFreeMeeting("alice", "m", "failed");
-    await expect(reserveFreeMeeting("alice", "m", "parallel")).rejects.toMatchObject({ status: 409 });
     await finishFreeMeeting("alice", "m", "failed", false);
     expect(await getAiAccountStatus("alice")).toMatchObject({ freeUsed: 0, freePending: 0 });
     await reserveFreeMeeting("alice", "m", "new");
@@ -72,6 +71,23 @@ describe("ten distinct free meetings", () => {
   it("expires abandoned leases without expiring successfully used meetings", async () => {
     state.store.set("server_ai_usage/alice", { meetings: { old: { state: "pending", expiresAt: Date.now() - 1 }, used: { state: "used", expiresAt: 0 } } });
     expect(await getAiAccountStatus("alice")).toMatchObject({ freeUsed: 1, freePending: 0, freeRemaining: 9 });
+  });
+  it("shares one quota slot between concurrent workflows and charges only the first success", async () => {
+    await reserveFreeMeeting("alice", "m", "live");
+    await reserveFreeMeeting("alice", "m", "full");
+    expect(await getAiAccountStatus("alice")).toMatchObject({freePending:1,freeUsed:0});
+    await finishFreeMeeting("alice", "m", "live", false);
+    expect(await getAiAccountStatus("alice")).toMatchObject({freePending:1,freeUsed:0});
+    await reserveFreeMeeting("alice", "m", "naming");
+    await finishFreeMeeting("alice", "m", "full", true);
+    await finishFreeMeeting("alice", "m", "naming", true);
+    expect(await getAiAccountStatus("alice")).toMatchObject({freePending:0,freeUsed:1});
+  });
+  it("retries an abandoned but unexpired reservation without consuming another slot", async () => {
+    await reserveFreeMeeting("alice", "m", "abandoned");
+    await reserveFreeMeeting("alice", "m", "retry");
+    await finishFreeMeeting("alice", "m", "retry", true);
+    expect(await getAiAccountStatus("alice")).toMatchObject({freePending:0,freeUsed:1});
   });
   it("maps extension live and final summary to the same meeting, and verifies ownership", async () => {
     state.store.set("ext_sessions/session-1", { ownerUid: "alice" });

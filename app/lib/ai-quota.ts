@@ -9,8 +9,8 @@ export function effectiveAiQuota(uid: string, policy?: Record<string, any>) {
   return { limit, unlimited };
 }
 
-type Pending = { requestId: string; expiresAt: number };
-export function normalizeAiUsage(data: Record<string, any> | undefined, now = Date.now()) {
+type Pending = { requestId: string; expiresAt: number; requestIds?: string[] };
+export function normalizeAiUsage(data: Record<string, any> | undefined, now = Date.now()): { usedCount: number; legacyMeetingIds: string[]; pending: Record<string, Pending> } {
   if (data?.schemaVersion === 2) {
     return {
       usedCount: Number.isSafeInteger(data.usedCount) && data.usedCount >= 0 ? data.usedCount as number : 0,

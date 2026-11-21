@@ -81,7 +81,16 @@ export async function reserveFreeMeeting(uid: string, meetingId: string, request
     const [snap, policy, meeting] = await Promise.all([tx.get(ref), tx.get(policyRef(uid)), tx.get(meetingRef)]);
     const ledger = normalizeAiUsage(snap.data());
     if (meeting.exists || ledger.legacyMeetingIds.includes(meetingId)) return false;
-    if (Object.hasOwn(ledger.pending, meetingId)) throw new AiAccountError("AI_MEETING_BUSY", "Cuộc họp đang được tóm tắt. Vui lòng đợi kết quả.", 409);
+    const pending = ledger.pending[meetingId];
+    if (pending) {
+      // Quota is per distinct meeting, not an execution lock. Live summaries,
+      // naming and a full report may legitimately overlap for the same meeting.
+      ledger.pending[meetingId] = { ...pending,
+        requestIds: [...new Set([...(pending.requestIds || [pending.requestId]), requestId])],
+        expiresAt: Date.now() + 12 * 60_000 };
+      tx.set(ref, { ...snap.data(), ...ledger, schemaVersion: 2, updatedAt: Date.now() });
+      return true;
+    }
     const quota = effectiveAiQuota(uid, policy.data());
     const pendingCount = Object.keys(ledger.pending).length;
     if (!quota.unlimited && ledger.usedCount + pendingCount >= quota.limit) {
@@ -99,8 +108,14 @@ export async function finishFreeMeeting(uid: string, meetingId: string, requestI
   await getAdminDb().runTransaction(async tx => {
     const snap = await tx.get(ref);
     const ledger = normalizeAiUsage(snap.data(), 0);
-    if (ledger.pending[meetingId]?.requestId !== requestId) return;
-    delete ledger.pending[meetingId];
+    const pending = ledger.pending[meetingId];
+    if (!pending) return;
+    const requestIds = pending.requestIds || [pending.requestId];
+    if (!requestIds.includes(requestId)) return;
+    const remaining = requestIds.filter(id => id !== requestId);
+    // First success settles this meeting once for all concurrent requests.
+    if (success || !remaining.length) delete ledger.pending[meetingId];
+    else ledger.pending[meetingId] = { ...pending, requestId: remaining[0], requestIds: remaining };
     if (success) {
       ledger.usedCount += 1;
       tx.set(meetingRef, { usedAt: Date.now() });

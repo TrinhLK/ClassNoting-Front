@@ -73,3 +73,26 @@ it("summary and task hooks reuse meeting-scoped IDs on rerun/remount and separat
   ]);
   expect(vi.mocked(postGemini).mock.calls.every(call => call[0].mode === "extract_json")).toBe(true);
 });
+
+it("does not submit a second full report while the first is still running across hook instances", async () => {
+  let complete!: (value:string)=>void;
+  vi.mocked(requestSummary).mockImplementationOnce(()=>new Promise(resolve=>{complete=resolve;}));
+  const first=renderHook(()=>useSummarize());
+  const second=renderHook(()=>useSummarize());
+  const meeting=mockMeeting();
+  let running!: Promise<void>;
+  await act(async()=>{running=first.result.current(meeting,"Transcript");});
+  await act(async()=>{await second.result.current(meeting,"Transcript");});
+  expect(requestSummary).toHaveBeenCalledTimes(1);
+  await act(async()=>{complete("Full report");await running;});
+  await act(async()=>{await second.result.current(meeting,"Transcript");});
+  expect(requestSummary).toHaveBeenCalledTimes(2);
+});
+
+it("does not overwrite another request's state when the server reports an active task", async()=>{
+  vi.mocked(requestSummary).mockRejectedValueOnce(Object.assign(new Error("Still running"),{status:409,code:"AI_MEETING_BUSY"}));
+  const hook=renderHook(()=>useSummarize());
+  await act(async()=>{await hook.result.current(mockMeeting(),"Transcript");});
+  expect(updateMeetingProcess).toHaveBeenCalledTimes(1);
+  expect(updateMeetingProcess).toHaveBeenCalledWith(expect.any(String),{status:"summarizing"});
+});
