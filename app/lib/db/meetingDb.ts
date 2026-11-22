@@ -42,6 +42,7 @@ export interface Meeting {
   speakers: Speaker[];
   summary?: string;
   summaryProgress?: import("../summary-progress").SummaryProgress;
+  summaryWordPlan?: {summaryHash:string;templatePath:string;formatVersion:4|5;replacements:import('../docx/paragraphPlan').ParagraphReplacement[]};
   summaryWordTemplate?: import("../docx/wordTemplate").WordSource;
   summaryDocx?: import("../docx/wordTemplate").WordSource & { summaryHash: string; templatePath: string; formatVersion?: number };
   status: MeetingStatus;

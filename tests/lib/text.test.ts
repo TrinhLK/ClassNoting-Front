@@ -196,3 +196,9 @@ describe("normalizeMinuteMarkdown", () => {
     expect(normalizeMinuteMarkdown("<p>Giữ nguyên</p>")).toBe("<p>Giữ nguyên</p>");
   });
 });
+
+it('removes paired and unfinished thought blocks without consuming self-closing markers',()=>{
+ expect(stripThinking('<thought>Internal reasoning</thought>Biên bản')).toBe('Biên bản');
+ expect(stripThinking('<thought>Unfinished reasoning')).toBe('');
+ expect(stripThinking('<think/>Biên bản')).toBe('Biên bản');
+});

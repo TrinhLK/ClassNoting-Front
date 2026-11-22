@@ -1,6 +1,7 @@
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage, auth } from "../firebase";
 import { DOCX_MIME, type WordSource } from "./wordTemplate";
+export const wordExportIdentity = () => auth.currentUser?.uid;
 
 export async function saveWordFile(file: Blob, name: string): Promise<WordSource> {
   const uid=auth.currentUser?.uid;

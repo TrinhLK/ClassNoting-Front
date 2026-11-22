@@ -3,7 +3,7 @@ import JSZip from "jszip";
 export const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 export type WordSource = { path: string; name: string; formIndex?: number };
 export type WordSlot = { id: string; text: string };
-export type WordEdit = { id: string; find: string; text: string };
+export type WordEdit = { id: string; find: string; text: string; offset?: number; literal?: boolean };
 const W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const escapeXml = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const decodeXml = (text: string) => text.replace(/&(#x[\da-f]+|#\d+|amp|lt|gt|quot|apos);/gi, (_, entity: string) => {
@@ -72,8 +72,10 @@ function textElement(text:string,prefix:string) {
 }
 function replaceInParagraph(xml:string,prefix:string,edit:WordEdit) {
   const nodes=textNodes(xml,prefix),old=nodes.map(n=>n.text).join("");
-  const value=plainText(edit.text);
-  if(edit.find==="") {
+  // Diff fragments are already plain text. A fragment such as " - 01:51"
+  // is a time range, not a Markdown bullet, and must be inserted verbatim.
+  const value=edit.literal ? edit.text.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g,'') : plainText(edit.text);
+  if(edit.find==="" && edit.offset===undefined) {
     if(old.trim()) throw new Error("Không thể điền vào đoạn Word không trống.");
     const content=textElement(value,prefix);
     if(nodes.length) return xml.slice(0,nodes[0].start)+content+xml.slice(nodes[0].end);
@@ -88,8 +90,16 @@ function replaceInParagraph(xml:string,prefix:string,edit:WordEdit) {
     if(end<0) return xml.replace(/\s*\/>$/,`><${prefix}:r>${content}</${prefix}:r></${prefix}:p>`);
     return xml.slice(0,end)+`<${prefix}:r>${content}</${prefix}:r>`+xml.slice(end);
   }
-  const start=old.indexOf(edit.find);
-  if(start<0 || old.indexOf(edit.find,start+edit.find.length)>=0) throw new Error("AI trả vị trí điền Word không khớp hoặc không duy nhất. Hãy thử lại.");
+  const start=edit.offset ?? old.indexOf(edit.find);
+  if(!Number.isInteger(start) || start<0 || start>old.length || old.slice(start,start+edit.find.length)!==edit.find
+    || (edit.offset===undefined && old.indexOf(edit.find,start+edit.find.length)>=0)) throw new Error("AI trả vị trí điền Word không khớp hoặc không duy nhất. Hãy thử lại.");
+  if(edit.find==='') {
+    let at=0;
+    const target=nodes.find((node,index)=>{const next=at+node.text.length;const found=start<next || index===nodes.length-1; if(!found)at=next; return found;});
+    if(!target) throw new Error('Không tìm thấy vùng chữ Word để chèn.');
+    const local=start-at;
+    return xml.slice(0,target.start)+textElement(target.text.slice(0,local)+value+target.text.slice(local),prefix)+xml.slice(target.end);
+  }
   const end=start+edit.find.length;
   let offset=0,inserted=false;
   const patches:{start:number;end:number;text:string}[]=[];
@@ -142,7 +152,7 @@ export async function fillWordTemplate(file:Blob,edits:WordEdit[]):Promise<Blob>
     if(!changes) continue;
     // Apply ranges from right to left so replacement text cannot become another search target.
     const original=textNodes(p.xml,p.prefix).map(n=>n.text).join("");
-    const ranges=changes.map(e=>({e,at:e.find===""?0:original.indexOf(e.find)})).sort((a,b)=>b.at-a.at);
+    const ranges=changes.map(e=>({e,at:e.offset ?? (e.find===""?0:original.indexOf(e.find))})).sort((a,b)=>b.at-a.at);
     for(let i=1;i<ranges.length;i++) if(ranges[i].at+ranges[i].e.find.length>ranges[i-1].at || ranges[i].at===ranges[i-1].at) throw new Error("Các vị trí điền Word bị trùng.");
     let changed=p.xml;
     for(const {e} of ranges) changed=replaceInParagraph(changed,p.prefix,e);

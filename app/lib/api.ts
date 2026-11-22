@@ -43,7 +43,7 @@ export async function postGemini(body: Record<string, unknown> & { sessionId: st
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify(body),
       signal: controller.signal,
-    }).finally(() => clearTimeout(timeoutId));
+    });
 
     const rawBody = await response.text();
     let data: any = {};

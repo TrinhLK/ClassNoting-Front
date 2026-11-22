@@ -2,7 +2,8 @@
 import { resolveSpeakerNames } from "@/app/lib/resolve-speaker-names";
 import { updateSummaryStage } from "@/app/lib/summary-progress-server";
 import type { SummaryStage } from "@/app/lib/summary-progress";
-import { validWordSlots, validateWordEdits, wordFillPrompt } from "@/app/lib/docx/wordFillPrompt";
+import { validWordSlots, validateWordEdits, wordFillPrompt, wordParagraphPrompt } from "@/app/lib/docx/wordFillPrompt";
+import { WORD_PLAN_RESPONSE_FORMAT, validateParagraphPlan } from "@/app/lib/docx/paragraphPlan";
 import { NextResponse } from "next/server";
 import { checkRateLimit } from "@/app/lib/rate-limit";
 import { stripCjk, stripEvidenceReferences, stripThinking } from "@/app/lib/text";
@@ -60,6 +61,7 @@ async function generateWithRetry(prompt: string, model: string, mode: string, se
     logDiagnostic("attempt_start", diagnostic, metadata);
     try {
       const response = await fetch(`${BASE_URL}/chat/completions`, {
+        ...(mode === 'docx_fill' ? {signal:AbortSignal.timeout(60000)} : {}),
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -69,6 +71,7 @@ async function generateWithRetry(prompt: string, model: string, mode: string, se
           model: model,
           messages: [{ role: "user", content: prompt }],
           max_tokens: 32768,
+          ...(mode === 'docx_fill' ? {reasoning_effort:'low',response_format:WORD_PLAN_RESPONSE_FORMAT} : {}),
         }),
       });
       logDiagnostic("headers", diagnostic, { ...metadata, status: response.status, headersMs: performance.now() - startedAt });
@@ -95,7 +98,7 @@ async function generateWithRetry(prompt: string, model: string, mode: string, se
       const data = await response.json();
       logDiagnostic("body_complete", diagnostic, { ...metadata, status: response.status, durationMs: performance.now() - startedAt });
       const message = data.choices?.[0]?.message;
-      const raw = (message?.content || message?.reasoning_content || "").trim();
+      const raw = (message?.content || "").trim();
       const content = stripThinking(raw);
       if (content) {
         logDiagnostic("attempt_success", diagnostic, {
@@ -138,11 +141,12 @@ async function generateWithFallback(prompt: string, models: string[], mode: stri
   let lastError: unknown;
   for (const [index, model] of models.entries()) {
     try {
-      const content = await generateWithRetry(prompt, model, mode, sessionId, diagnostic, apiKey);
+      const content = await generateWithRetry(prompt, model, mode, sessionId, diagnostic, apiKey, mode === 'docx_fill' ? 1 : 3);
       logDiagnostic("pipeline_complete", diagnostic, { outcome: "success", requestedModel: model, durationMs: performance.now() - startedAt });
       return content;
     } catch (error) {
       lastError = error;
+      if (mode === 'docx_fill' && [401,403].includes((error as {status?:number}).status||0)) break;
       const fallback = models[index + 1];
       if (fallback) {
         logDiagnostic("fallback", diagnostic, { requestedModel: model, fallbackModel: fallback });
@@ -164,7 +168,7 @@ export async function POST(req: Request) {
   let access: Awaited<ReturnType<typeof authorizeAiUsage>> | undefined;
   let reportStage: (stage: SummaryStage) => Promise<void> = async () => {};
   try {
-    let { text, mode, sessionId, aiMeeting, dateContext, previousSummary, departments, teams, question, history, templateStructure, meetingObjectives, placeholders, context, duration, createdAt, wordSlots, summaryOperationId } = await req.json();
+    let { text, mode, sessionId, aiMeeting, dateContext, previousSummary, departments, teams, question, history, templateStructure, meetingObjectives, placeholders, context, duration, createdAt, wordSlots, summaryOperationId, wordPlanVersion } = await req.json();
     if (templateStructure !== undefined && (typeof templateStructure !== "string" || templateStructure.length > 100_000)) {
       return NextResponse.json({ error: "Mẫu biên bản không hợp lệ hoặc quá dài." }, { status: 400 });
     }
@@ -210,8 +214,11 @@ export async function POST(req: Request) {
     let prompt = "";
 
     if (mode === "docx_fill") {
-      const raw = await generateWithFallback(wordFillPrompt(text, wordSlots), chosenModels, mode, sessionId, requestId, access.apiKey);
-      const edits = validateWordEdits(parseAiJson(raw, mode, "array"), wordSlots);
+      const plan = wordPlanVersion === 2;
+      const raw = await generateWithFallback(plan ? wordParagraphPrompt(text, wordSlots) : wordFillPrompt(text, wordSlots), chosenModels, plan ? 'docx_fill' : 'docx_fill_legacy', sessionId, requestId, access.apiKey);
+      let edits;
+      try { edits = plan ? validateParagraphPlan(parseAiJson(raw, mode, "object"),wordSlots) : validateWordEdits(parseAiJson(raw, mode, "array"), wordSlots); }
+      catch { throw new AiAccountError('WORD_FILL_INVALID','AI chưa trả nội dung khớp mẫu Word. Biên bản vẫn được giữ; bạn có thể thử tải Word lại.',422); }
       return await complete(JSON.stringify(edits));
     }
 

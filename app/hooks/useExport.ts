@@ -48,12 +48,14 @@ export function useExport(
   }, [meeting, toast]);
 
   const exportDocx = useCallback(async () => {
-    const toastId = toast.loading(meeting.summaryWordTemplate ? "Đang điền biên bản vào mẫu Word gốc..." : "Đang xuất Word...") as string;
+    let toastId = toast.loading(meeting.summaryWordTemplate ? "Đang chuẩn bị xuất Word theo mẫu gốc..." : "Đang xuất Word...") as string;
     try {
       if (meeting.summaryWordTemplate) {
         const { exportWordTemplate } = await import("../lib/docx/exportWordTemplate");
         const key = JSON.stringify([meeting.userId, meeting.id, meeting.summary, meeting.summaryWordTemplate]);
-        if (wordExport.current?.key !== key) wordExport.current = { key, result: exportWordTemplate(meeting) };
+        if (wordExport.current?.key !== key) wordExport.current = { key, result: exportWordTemplate(meeting,message=>{
+          toast.dismiss(toastId);toastId=toast.loading(message) as string;
+        }) };
         let blob: Blob;
         try { blob = await wordExport.current.result; }
         catch (error) { wordExport.current = null; throw error; }

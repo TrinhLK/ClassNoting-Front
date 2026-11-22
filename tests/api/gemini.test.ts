@@ -87,6 +87,20 @@ describe("POST /api/gemini — retry + validate (bug unknown, test logic mới)"
     const res=await POST(makeRequest({mode:"docx_fill",text:"Report",wordSlots:[{id:"p0",text:"A"},{id:"p0",text:"B"}]}));
     expect(res.status).toBe(400);expect(fetchMock).not.toHaveBeenCalled();
   });
+  it('fills paragraph plans with constrained JSON and leaves exact text matching to code',async()=>{
+    fetchMock.mockResolvedValue({ok:true,json:async()=>({choices:[{message:{content:'{"edits":[{"id":"p0","text":"Học viên Chi"}]}'}}]})});
+    const res=await POST(makeRequest({mode:'docx_fill',wordPlanVersion:2,text:'Học viên Chi',wordSlots:[{id:'p0',text:'Học viên Lan'}],aiMeeting:{kind:'meeting',id:'meeting-1'}}));
+    expect(res.status).toBe(200);
+    expect(JSON.parse((await res.json()).summary)).toEqual([{id:'p0',text:'Học viên Chi'}]);
+    const body=JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.reasoning_effort).toBe('low');expect(body.response_format.type).toBe('json_schema');
+    expect(body.messages[0].content).toContain('không trả find, offset');
+  });
+  it('reports invalid Word plan data explicitly instead of a generic provider outage',async()=>{
+    fetchMock.mockResolvedValue({ok:true,json:async()=>({choices:[{message:{content:'{"edits":[{"id":"p99","text":"Chi"}]}'}}]})});
+    const res=await POST(makeRequest({mode:'docx_fill',wordPlanVersion:2,text:'Report',wordSlots:[{id:'p0',text:'Lan'}]}));
+    expect(res.status).toBe(422);expect((await res.json()).code).toBe('WORD_FILL_INVALID');
+  });
 
   it.each(["outline", "example", "auto"] as const)("sends %s template semantics without treating example facts as current evidence", async sourceMode => {
     fetchMock.mockResolvedValueOnce({ok:true,json:async()=>({choices:[{message:{content:"## Kết quả\nDoanh thu 12 tỷ đồng."}}]})});

@@ -40,6 +40,8 @@ export const stripCjk = (text: string): string => {
 export const stripThinking = (text: string): string => {
   if (!text) return "";
   return text
+    .replace(/<(thought|think|thinking|reasoning)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, "")
+    .replace(/<(?:thought|think|thinking|reasoning)\b(?![^>]*\/>)[^>]*>[\s\S]*$/gi, "")
     .replace(/<!--[\s\S]*?-->/g, "")
     .replace(/<\|thinking\|>[\s\S]*?<\|\/thinking\|>/gi, "")
     .replace(/<\|reasoning\|>[\s\S]*?<\|\/reasoning\|>/gi, "")
